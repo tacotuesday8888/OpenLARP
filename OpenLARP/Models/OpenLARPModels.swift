@@ -345,6 +345,20 @@ struct ProofDetailContent: Equatable {
     }
 }
 
+struct ProofArchiveContent: Equatable {
+    var receipts: [ProofRecord]
+    var countText: String
+    var emptyMessage: String
+
+    init(proofs: [ProofRecord]) {
+        receipts = proofs.sorted { lhs, rhs in
+            lhs.submittedAt > rhs.submittedAt
+        }
+        countText = receipts.count == 1 ? "1 proof receipt" : "\(receipts.count) proof receipts"
+        emptyMessage = "Proof receipts appear here after you submit quest proof."
+    }
+}
+
 struct ReadinessMetrics: Codable, Equatable {
     var overall: Int
     var proofStrength: Int

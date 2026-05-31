@@ -5,6 +5,7 @@ struct ProgressTabView: View {
     let attachmentURL: (ProofAttachment) -> URL
     let improveWeakestArea: () -> Void
     @State private var selectedProof: ProofRecord?
+    @State private var showingProofArchive = false
 
     var body: some View {
         ScrollView {
@@ -48,6 +49,12 @@ struct ProgressTabView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedProof) { proof in
             ProofDetailView(proof: proof, attachmentURL: attachmentURL)
+        }
+        .sheet(isPresented: $showingProofArchive) {
+            ProofArchiveView(
+                proofs: state.progress.recentProof,
+                attachmentURL: attachmentURL
+            )
         }
     }
 
@@ -111,6 +118,13 @@ struct ProgressTabView: View {
                 Text("Recent proof")
                     .font(.headline)
                     .foregroundStyle(Color.openLARPInk)
+
+                Button {
+                    showingProofArchive = true
+                } label: {
+                    Label("All proof receipts", systemImage: "archivebox")
+                }
+                .buttonStyle(SecondaryButtonStyle())
 
                 if state.progress.recentProof.isEmpty {
                     Text("No proof yet. Today’s quest is where the first receipt comes from.")

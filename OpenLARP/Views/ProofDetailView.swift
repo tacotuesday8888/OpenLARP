@@ -3,7 +3,18 @@ import UIKit
 
 struct ProofReceiptRow: View {
     let proof: ProofRecord
+    let showsMetadata: Bool
     let attachmentURL: (ProofAttachment) -> URL
+
+    init(
+        proof: ProofRecord,
+        showsMetadata: Bool = false,
+        attachmentURL: @escaping (ProofAttachment) -> URL
+    ) {
+        self.proof = proof
+        self.showsMetadata = showsMetadata
+        self.attachmentURL = attachmentURL
+    }
 
     private var content: ProofDetailContent {
         ProofDetailContent(proof: proof)
@@ -17,6 +28,15 @@ struct ProofReceiptRow: View {
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(Color.openLARPInk)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if showsMetadata {
+                        HStack(spacing: 8) {
+                            Label(content.proofType, systemImage: "checkmark.seal")
+                            Label(submittedDateText, systemImage: "calendar")
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                    }
 
                     HStack(spacing: 8) {
                         Text(content.qualityLabel)
@@ -66,6 +86,10 @@ struct ProofReceiptRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens proof receipt details")
+    }
+
+    private var submittedDateText: String {
+        content.submittedAt.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
