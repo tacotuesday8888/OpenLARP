@@ -52,7 +52,9 @@ struct AppRootView: View {
         case .today:
             TodayView(store: store)
         case .map:
-            QuestMapView(state: store.state) {
+            QuestMapView(state: store.state, attachmentURL: { attachment in
+                store.localURL(for: attachment)
+            }) {
                 selectedTab = .today
             }
         case .progress:
