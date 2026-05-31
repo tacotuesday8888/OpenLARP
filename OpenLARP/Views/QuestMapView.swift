@@ -51,6 +51,13 @@ struct QuestMapView: View {
 
                             ProgressView(value: Double(state.progress.completedQuestCount), total: 7)
                                 .tint(.openLARPGreen)
+
+                            if let recovery = MissedDayRecoveryContent(state: state) {
+                                Label("\(recovery.missedDaysText) Continue from Today to rebuild the active streak.", systemImage: "arrow.counterclockwise")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.openLARPCoral)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
 

@@ -108,6 +108,13 @@ struct ProgressTabView: View {
                     ProgressStat(value: "\(state.progress.proofCount)", label: "proof")
                     ProgressStat(value: "\(state.progress.streakCount)", label: "streak")
                 }
+
+                if let recovery = MissedDayRecoveryContent(state: state) {
+                    Label("\(recovery.previousStreakText). Active streak reset after \(recovery.missedDaysText.lowercased())", systemImage: "arrow.counterclockwise")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPCoral)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }

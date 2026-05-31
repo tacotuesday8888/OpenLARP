@@ -480,6 +480,42 @@ struct TodayCompletionContent: Equatable {
     }
 }
 
+struct MissedDayRecoveryContent: Equatable {
+    var title: String
+    var missedDaysText: String
+    var bodyText: String
+    var previousStreakText: String
+    var activeStreakText: String
+    var nextQuestTitle: String
+    var nextQuestObjectiveText: String
+    var nextQuestMetaText: String
+    var primaryActionTitle: String
+
+    init?(state: OpenLARPState) {
+        guard state.missedDayRecovery.startedAt != nil,
+              let nextQuestID = state.missedDayRecovery.nextQuestID,
+              let nextQuest = state.plan.first(where: { $0.id == nextQuestID })
+        else {
+            return nil
+        }
+
+        title = "Streak reset, track still alive"
+        let missedDayCount = max(1, state.missedDayRecovery.missedDayCount)
+        missedDaysText = missedDayCount == 1 ? "You missed 1 quest day." : "You missed \(missedDayCount) quest days."
+        bodyText = "No shame. Your XP and proof receipts are still here. Start the next quest to rebuild from today."
+
+        let previousStreakCount = state.missedDayRecovery.previousStreakCount
+        previousStreakText = previousStreakCount == 1 ? "Previous streak: 1 day" : "Previous streak: \(previousStreakCount) days"
+        let activeStreakCount = state.progress.streakCount
+        activeStreakText = activeStreakCount == 1 ? "Active streak: 1 day" : "Active streak: \(activeStreakCount) days"
+
+        nextQuestTitle = nextQuest.title
+        nextQuestObjectiveText = nextQuest.purpose
+        nextQuestMetaText = "\(nextQuest.timeEstimate), \(nextQuest.difficulty), +\(nextQuest.xpReward) XP"
+        primaryActionTitle = "Continue Next Quest"
+    }
+}
+
 struct ReadinessMetrics: Codable, Equatable {
     var overall: Int
     var proofStrength: Int
@@ -548,6 +584,22 @@ struct DailyCadenceState: Codable, Equatable {
     )
 }
 
+struct MissedDayRecoveryState: Codable, Equatable {
+    var startedAt: Date?
+    var missedDayCount: Int
+    var lastCompletedQuestID: UUID?
+    var nextQuestID: UUID?
+    var previousStreakCount: Int
+
+    static let empty = MissedDayRecoveryState(
+        startedAt: nil,
+        missedDayCount: 0,
+        lastCompletedQuestID: nil,
+        nextQuestID: nil,
+        previousStreakCount: 0
+    )
+}
+
 struct OpenLARPState: Codable, Equatable {
     var goal: CareerGoal?
     var diagnostic: CookedDiagnostic?
@@ -555,6 +607,7 @@ struct OpenLARPState: Codable, Equatable {
     var progress: ProgressState
     var updatedAt: Date
     var dailyCadence: DailyCadenceState = .empty
+    var missedDayRecovery: MissedDayRecoveryState = .empty
 
     static let empty = OpenLARPState(
         goal: nil,
@@ -584,6 +637,7 @@ extension OpenLARPState {
         case progress
         case updatedAt
         case dailyCadence
+        case missedDayRecovery
     }
 
     init(from decoder: Decoder) throws {
@@ -594,6 +648,7 @@ extension OpenLARPState {
         progress = try container.decode(ProgressState.self, forKey: .progress)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         dailyCadence = try container.decodeIfPresent(DailyCadenceState.self, forKey: .dailyCadence) ?? .empty
+        missedDayRecovery = try container.decodeIfPresent(MissedDayRecoveryState.self, forKey: .missedDayRecovery) ?? .empty
     }
 
     func encode(to encoder: Encoder) throws {
@@ -604,6 +659,7 @@ extension OpenLARPState {
         try container.encode(progress, forKey: .progress)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(dailyCadence, forKey: .dailyCadence)
+        try container.encode(missedDayRecovery, forKey: .missedDayRecovery)
     }
 }
 
