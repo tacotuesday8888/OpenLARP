@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		066022B6F446EAEBE1111E35 /* V0EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 164D2BA7F6FBB1EFCC90AED1 /* V0EngineTests.swift */; };
+		32C31764411CEAE637F3BF77 /* ProofArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38A7544CA52F69EBE427B74 /* ProofArchiveView.swift */; };
 		42E61DF100617B92FA6DF24F /* OpenLARPPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B5407A901AC7364EF7007F /* OpenLARPPersistence.swift */; };
 		4E8C53CC1AB2DCA6BAA5ABDD /* QuestMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC8DF9C8B644BCA48495AD3 /* QuestMapView.swift */; };
 		51AE5DCE1739E7F608591FC1 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 158AE576FBB3972BC8DFD382 /* TodayView.swift */; };
@@ -51,6 +52,7 @@
 		87BE10675BD57C8E1C60DEF5 /* OpenLARPTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenLARPTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A24A3F46612F09ED9FC79C08 /* ProofDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofDetailView.swift; sourceTree = "<group>"; };
 		A32FE957054753A00B9C9E6F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A38A7544CA52F69EBE427B74 /* ProofArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofArchiveView.swift; sourceTree = "<group>"; };
 		A9B5407A901AC7364EF7007F /* OpenLARPPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPPersistence.swift; sourceTree = "<group>"; };
 		AF4DB2E5098EE63EAE50613B /* OpenLARP.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenLARP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B39EFD52A49CEC4F79A489C4 /* ProgressTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressTabView.swift; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 				56D7AF5561E51E598C8712C6 /* AgentChatView.swift */,
 				12DC112A777D32FCE8C8EE04 /* ProfileView.swift */,
 				B39EFD52A49CEC4F79A489C4 /* ProgressTabView.swift */,
+				A38A7544CA52F69EBE427B74 /* ProofArchiveView.swift */,
 				6665166CE64A9711A38AB8EA /* ProofAttachmentViews.swift */,
 				A24A3F46612F09ED9FC79C08 /* ProofDetailView.swift */,
 				1AC8DF9C8B644BCA48495AD3 /* QuestMapView.swift */,
@@ -245,6 +248,7 @@
 				FEB94BF664A1A40EC36DC14F /* OpenLARPStyle.swift in Sources */,
 				C34A260A0624B02D5546FB74 /* ProfileView.swift in Sources */,
 				D59915296DAB4292D6F76100 /* ProgressTabView.swift in Sources */,
+				32C31764411CEAE637F3BF77 /* ProofArchiveView.swift in Sources */,
 				94B10889BBCB318BCD66E952 /* ProofAttachmentViews.swift in Sources */,
 				9C84C795C180DDBA3E60F32B /* ProofDetailView.swift in Sources */,
 				4E8C53CC1AB2DCA6BAA5ABDD /* QuestMapView.swift in Sources */,

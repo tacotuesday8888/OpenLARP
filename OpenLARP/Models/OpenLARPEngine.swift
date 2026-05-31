@@ -114,7 +114,6 @@ enum OpenLARPEngine {
             quality: result
         )
         next.progress.recentProof.insert(record, at: 0)
-        next.progress.recentProof = Array(next.progress.recentProof.prefix(12))
         next.updatedAt = now
         return next
     }

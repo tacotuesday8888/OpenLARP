@@ -212,6 +212,69 @@ final class V0EngineTests: XCTestCase {
         XCTAssertNil(content.proofURL)
     }
 
+    func testProofArchiveContentSortsReceiptsNewestFirstAndReportsCount() {
+        let oldProof = proofRecord(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            questTitle: "Older proof",
+            submittedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let newestProof = proofRecord(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            questTitle: "Newest proof",
+            submittedAt: Date(timeIntervalSince1970: 3_000)
+        )
+        let middleProof = proofRecord(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            questTitle: "Middle proof",
+            submittedAt: Date(timeIntervalSince1970: 2_000)
+        )
+
+        let content = ProofArchiveContent(proofs: [oldProof, newestProof, middleProof])
+
+        XCTAssertEqual(content.receipts.map(\.questTitle), ["Newest proof", "Middle proof", "Older proof"])
+        XCTAssertEqual(content.countText, "3 proof receipts")
+        XCTAssertEqual(content.emptyMessage, "Proof receipts appear here after you submit quest proof.")
+    }
+
+    func testClaimKeepsAllProofReceiptsForArchiveHistory() throws {
+        let questIDs = (1...13).map { index in
+            UUID(uuidString: String(format: "AAAAAAAA-AAAA-AAAA-AAAA-%012d", index))!
+        }
+        var state = OpenLARPState(
+            goal: goal,
+            diagnostic: nil,
+            plan: questIDs.enumerated().map { index, id in
+                Quest(
+                    id: id,
+                    day: index + 1,
+                    title: "Quest \(index + 1)",
+                    purpose: "Create real proof \(index + 1).",
+                    proofRequired: "Submit proof.",
+                    xpReward: 100,
+                    status: .available
+                )
+            },
+            progress: .empty,
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        for index in 1...13 {
+            let proof = ProofSubmission(
+                kind: .proof,
+                text: "I created useful proof item number \(index) with enough detail to count as meaningful career progress.",
+                submittedAt: Date(timeIntervalSince1970: TimeInterval(index))
+            )
+            let result = try OpenLARPEngine.checkProof(proof, in: state)
+            state = try OpenLARPEngine.claim(result, proof: proof, in: state)
+        }
+
+        let content = ProofArchiveContent(proofs: state.progress.recentProof)
+
+        XCTAssertEqual(state.progress.recentProof.count, 13)
+        XCTAssertEqual(content.receipts.first?.questTitle, "Quest 13")
+        XCTAssertEqual(content.receipts.last?.questTitle, "Quest 1")
+    }
+
     func testPersistenceRoundTripKeepsGoalProgressAndQuestStatuses() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -237,5 +300,30 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(reloaded.plan[0].status, .completed)
         XCTAssertEqual(reloaded.progress.recentProof.count, 1)
         XCTAssertEqual(reloaded.progress.recentProof.first?.text, proof.text)
+    }
+
+    private func proofRecord(
+        id: UUID,
+        questTitle: String,
+        submittedAt: Date
+    ) -> ProofRecord {
+        ProofRecord(
+            id: id,
+            questID: UUID(),
+            questTitle: questTitle,
+            kind: .proof,
+            text: "Saved proof text",
+            link: "",
+            submittedAt: submittedAt,
+            quality: QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 80,
+                label: "Strong proof",
+                reason: "Concrete enough to count.",
+                improvement: "Connect it to a target-role requirement.",
+                xpEarned: 100,
+                readinessDelta: 6
+            )
+        )
     }
 }

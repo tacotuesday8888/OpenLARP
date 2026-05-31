@@ -6,6 +6,7 @@ struct ProfileView: View {
     @State private var shareWins = true
     @State private var showingResetConfirmation = false
     @State private var selectedProof: ProofRecord?
+    @State private var showingProofArchive = false
 
     var body: some View {
         ScrollView {
@@ -34,6 +35,11 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedProof) { proof in
             ProofDetailView(proof: proof) { attachment in
+                store.localURL(for: attachment)
+            }
+        }
+        .sheet(isPresented: $showingProofArchive) {
+            ProofArchiveView(proofs: store.state.progress.recentProof) { attachment in
                 store.localURL(for: attachment)
             }
         }
@@ -132,6 +138,13 @@ struct ProfileView: View {
                 Text("Proof receipts")
                     .font(.headline)
                     .foregroundStyle(Color.openLARPInk)
+
+                Button {
+                    showingProofArchive = true
+                } label: {
+                    Label("Proof archive", systemImage: "archivebox")
+                }
+                .buttonStyle(SecondaryButtonStyle())
 
                 if store.state.progress.recentProof.isEmpty {
                     Text("Recent proof will show up here after you complete a quest.")
