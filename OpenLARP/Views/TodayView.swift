@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct TodayView: View {
@@ -379,10 +380,14 @@ private struct ProofComposer: View {
     @State private var kind: ProofKind = .proof
     @State private var text = ""
     @State private var link = ""
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var attachments: [ProofAttachment] = []
+    @State private var isSavingAttachments = false
 
     private var canSubmit: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !attachments.isEmpty
     }
 
     var body: some View {
@@ -414,19 +419,99 @@ private struct ProofComposer: View {
                 .textInputAutocapitalization(.never)
                 .keyboardType(.URL)
 
+            if kind == .proof {
+                PhotosPicker(
+                    selection: $selectedPhotoItems,
+                    maxSelectionCount: 4,
+                    matching: .images
+                ) {
+                    Label("Add Screenshot or Photo", systemImage: "photo.on.rectangle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(isSavingAttachments)
+                .onChange(of: selectedPhotoItems) { _, newItems in
+                    Task {
+                        await saveSelectedPhotos(newItems)
+                    }
+                }
+
+                if isSavingAttachments {
+                    Label("Saving proof images locally...", systemImage: "arrow.down.doc")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                }
+
+                if !attachments.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Saved locally")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color.openLARPGreen)
+                            .textCase(.uppercase)
+
+                        ProofAttachmentStrip(attachments: attachments) { attachment in
+                            store.localURL(for: attachment)
+                        }
+
+                        ForEach(attachments) { attachment in
+                            Button {
+                                remove(attachment)
+                            } label: {
+                                Label("Remove \(attachment.originalFileName.isEmpty ? "image" : attachment.originalFileName)", systemImage: "xmark.circle")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(Color.openLARPCoral)
+                        }
+                    }
+                }
+            }
+
             Button {
-                store.checkProof(kind: kind, text: text, link: link)
+                store.checkProof(kind: kind, text: text, link: link, attachments: kind == .proof ? attachments : [])
             } label: {
                 Label("Check My Proof", systemImage: "checkmark.seal.fill")
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!canSubmit)
-            .opacity(canSubmit ? 1 : 0.5)
+            .disabled(!canSubmit || isSavingAttachments)
+            .opacity(canSubmit && !isSavingAttachments ? 1 : 0.5)
 
             Text(kind == .selfReport ? "Self-report keeps momentum, but earns less than real evidence." : "A link, screenshot note, or concrete artifact earns stronger progress.")
                 .font(.caption)
                 .foregroundStyle(Color.openLARPSoftInk)
         }
+    }
+
+    @MainActor
+    private func saveSelectedPhotos(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        isSavingAttachments = true
+        defer { isSavingAttachments = false }
+
+        for item in items {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    continue
+                }
+                let contentType = item.supportedContentTypes.first?.preferredMIMEType ?? "image/jpeg"
+                let originalFileName = item.itemIdentifier ?? "selected-proof-image"
+                let attachment = try store.saveProofImage(
+                    data: data,
+                    contentType: contentType,
+                    originalFileName: originalFileName
+                )
+                if !attachments.contains(attachment) {
+                    attachments.append(attachment)
+                }
+            } catch {
+                store.errorMessage = OpenLARPError.attachmentStorageFailed.localizedDescription
+            }
+        }
+        selectedPhotoItems = []
+    }
+
+    private func remove(_ attachment: ProofAttachment) {
+        attachments.removeAll { $0.id == attachment.id }
+        store.deleteProofImage(attachment)
     }
 }
 

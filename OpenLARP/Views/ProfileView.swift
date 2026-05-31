@@ -22,6 +22,7 @@ struct ProfileView: View {
                 activeGoalCard
                 privacyCard
                 badgeCard
+                proofCard
                 rulesCard
             }
             .padding(20)
@@ -114,6 +115,39 @@ struct ProfileView: View {
                         .foregroundStyle(Color.openLARPSoftInk)
                 } else {
                     FlowLayout(items: store.state.progress.badges.map(\.rawValue))
+                }
+            }
+        }
+    }
+
+    private var proofCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Proof receipts")
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPInk)
+
+                if store.state.progress.recentProof.isEmpty {
+                    Text("Recent proof will show up here after you complete a quest.")
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                } else {
+                    ForEach(store.state.progress.recentProof.prefix(3)) { proof in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(proof.questTitle)
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(Color.openLARPInk)
+                            Text(proof.attachmentSummary)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(proof.attachments.isEmpty ? Color.openLARPSoftInk : Color.openLARPGreen)
+                            if !proof.attachments.isEmpty {
+                                ProofAttachmentStrip(attachments: proof.attachments) { attachment in
+                                    store.localURL(for: attachment)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
                 }
             }
         }

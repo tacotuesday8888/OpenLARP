@@ -37,7 +37,8 @@ enum OpenLARPEngine {
 
         let trimmedText = proof.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLink = proof.link.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty || !trimmedLink.isEmpty else {
+        let hasAttachment = !proof.attachments.isEmpty
+        guard !trimmedText.isEmpty || !trimmedLink.isEmpty || hasAttachment else {
             throw OpenLARPError.emptyProof
         }
 
@@ -55,14 +56,14 @@ enum OpenLARPEngine {
 
         let wordCount = trimmedText.split { $0.isWhitespace || $0.isNewline }.count
         let hasUsefulLink = trimmedLink.hasPrefix("http://") || trimmedLink.hasPrefix("https://")
-        let accepted = wordCount >= 18 || hasUsefulLink
+        let accepted = wordCount >= 18 || hasUsefulLink || hasAttachment
 
         if accepted {
             return QualityCheckResult(
                 isAccepted: true,
-                qualityScore: hasUsefulLink ? 86 : 78,
+                qualityScore: hasAttachment ? 88 : hasUsefulLink ? 86 : 78,
                 label: "Strong proof",
-                reason: "This gives OpenLARP something concrete to count: a real artifact, action, or trace of work.",
+                reason: hasAttachment ? "This includes a saved screenshot or photo, so it is more than a claim." : "This gives OpenLARP something concrete to count: a real artifact, action, or trace of work.",
                 improvement: "Next time, connect the artifact to one target-role requirement so the proof becomes easier to reuse.",
                 xpEarned: quest.xpReward,
                 readinessDelta: 7
@@ -108,6 +109,7 @@ enum OpenLARPEngine {
             kind: proof.kind,
             text: proof.text,
             link: proof.link,
+            attachments: proof.attachments,
             submittedAt: proof.submittedAt,
             quality: result
         )

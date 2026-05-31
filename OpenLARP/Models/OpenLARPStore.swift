@@ -5,14 +5,19 @@ import Observation
 @Observable
 final class OpenLARPStore {
     private let persistence: OpenLARPPersistence
+    private let attachmentStore: OpenLARPAttachmentStore
 
     var state: OpenLARPState
     var pendingProof: ProofSubmission?
     var pendingQualityResult: QualityCheckResult?
     var errorMessage: String?
 
-    init(persistence: OpenLARPPersistence = .live) {
+    init(
+        persistence: OpenLARPPersistence = .live,
+        attachmentStore: OpenLARPAttachmentStore = .live
+    ) {
         self.persistence = persistence
+        self.attachmentStore = attachmentStore
         do {
             state = try persistence.load()
         } catch {
@@ -47,9 +52,14 @@ final class OpenLARPStore {
         }
     }
 
-    func checkProof(kind: ProofKind, text: String, link: String) {
+    func checkProof(
+        kind: ProofKind,
+        text: String,
+        link: String,
+        attachments: [ProofAttachment] = []
+    ) {
         do {
-            let proof = ProofSubmission(kind: kind, text: text, link: link)
+            let proof = ProofSubmission(kind: kind, text: text, link: link, attachments: attachments)
             let result = try OpenLARPEngine.checkProof(proof, in: state)
             pendingProof = proof
             pendingQualityResult = result
@@ -75,6 +85,35 @@ final class OpenLARPStore {
     func discardPendingQualityResult() {
         pendingProof = nil
         pendingQualityResult = nil
+    }
+
+    func saveProofImage(
+        data: Data,
+        contentType: String,
+        originalFileName: String = ""
+    ) throws -> ProofAttachment {
+        do {
+            return try attachmentStore.saveImage(
+                data: data,
+                contentType: contentType,
+                originalFileName: originalFileName
+            )
+        } catch {
+            errorMessage = OpenLARPError.attachmentStorageFailed.localizedDescription
+            throw OpenLARPError.attachmentStorageFailed
+        }
+    }
+
+    func localURL(for attachment: ProofAttachment) -> URL {
+        attachmentStore.url(for: attachment)
+    }
+
+    func deleteProofImage(_ attachment: ProofAttachment) {
+        do {
+            try attachmentStore.delete(attachment)
+        } catch {
+            errorMessage = "That local proof image could not be removed."
+        }
     }
 
     private func mutate(_ change: () throws -> OpenLARPState) {
