@@ -155,6 +155,63 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: attachment).path))
     }
 
+    func testProofDetailContentTrimsProofMetadataAndKeepsQualityFields() {
+        let proof = ProofRecord(
+            id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            questID: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            questTitle: "Build a target-role proof map",
+            kind: .proof,
+            text: "  I made a requirements map from three internship posts.  ",
+            link: " https://example.com/proof-map ",
+            submittedAt: Date(timeIntervalSince1970: 4_200),
+            quality: QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 88,
+                label: "Strong proof",
+                reason: "This includes a concrete artifact.",
+                improvement: "Tie the artifact to one target-role requirement.",
+                xpEarned: 120,
+                readinessDelta: 7
+            )
+        )
+
+        let content = ProofDetailContent(proof: proof)
+
+        XCTAssertEqual(content.questTitle, "Build a target-role proof map")
+        XCTAssertEqual(content.proofType, "Proof")
+        XCTAssertEqual(content.submittedAt, Date(timeIntervalSince1970: 4_200))
+        XCTAssertEqual(content.qualityLabel, "Strong proof")
+        XCTAssertEqual(content.xpText, "120 XP")
+        XCTAssertEqual(content.reason, "This includes a concrete artifact.")
+        XCTAssertEqual(content.improvement, "Tie the artifact to one target-role requirement.")
+        XCTAssertEqual(content.proofText, "I made a requirements map from three internship posts.")
+        XCTAssertEqual(content.proofLinkText, "https://example.com/proof-map")
+        XCTAssertEqual(content.proofURL, URL(string: "https://example.com/proof-map"))
+    }
+
+    func testProofDetailContentUsesFallbacksWhenQualityIsMissing() {
+        let proof = ProofRecord(
+            id: UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!,
+            questID: UUID(uuidString: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")!,
+            questTitle: "Reflect on outreach",
+            kind: .selfReport,
+            text: "   ",
+            link: "not a url",
+            submittedAt: Date(timeIntervalSince1970: 4_800),
+            quality: nil
+        )
+
+        let content = ProofDetailContent(proof: proof)
+
+        XCTAssertEqual(content.qualityLabel, "Self-report")
+        XCTAssertEqual(content.xpText, "0 XP")
+        XCTAssertEqual(content.reason, "No quality check is attached to this receipt yet.")
+        XCTAssertEqual(content.improvement, "Submit stronger proof on the next quest to get sharper feedback.")
+        XCTAssertNil(content.proofText)
+        XCTAssertEqual(content.proofLinkText, "not a url")
+        XCTAssertNil(content.proofURL)
+    }
+
     func testPersistenceRoundTripKeepsGoalProgressAndQuestStatuses() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

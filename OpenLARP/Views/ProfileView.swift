@@ -5,6 +5,7 @@ struct ProfileView: View {
     @State private var memoryEnabled = true
     @State private var shareWins = true
     @State private var showingResetConfirmation = false
+    @State private var selectedProof: ProofRecord?
 
     var body: some View {
         ScrollView {
@@ -31,6 +32,11 @@ struct ProfileView: View {
         .background(Color.openLARPBackground)
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selectedProof) { proof in
+            ProofDetailView(proof: proof) { attachment in
+                store.localURL(for: attachment)
+            }
+        }
         .confirmationDialog(
             "Change goal?",
             isPresented: $showingResetConfirmation,
@@ -133,20 +139,14 @@ struct ProfileView: View {
                         .foregroundStyle(Color.openLARPSoftInk)
                 } else {
                     ForEach(store.state.progress.recentProof.prefix(3)) { proof in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(proof.questTitle)
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(Color.openLARPInk)
-                            Text(proof.attachmentSummary)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(proof.attachments.isEmpty ? Color.openLARPSoftInk : Color.openLARPGreen)
-                            if !proof.attachments.isEmpty {
-                                ProofAttachmentStrip(attachments: proof.attachments) { attachment in
-                                    store.localURL(for: attachment)
-                                }
+                        Button {
+                            selectedProof = proof
+                        } label: {
+                            ProofReceiptRow(proof: proof) { attachment in
+                                store.localURL(for: attachment)
                             }
                         }
-                        .padding(.vertical, 6)
+                        .buttonStyle(.plain)
                     }
                 }
             }
