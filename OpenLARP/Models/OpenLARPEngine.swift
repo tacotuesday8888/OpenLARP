@@ -31,6 +31,43 @@ enum OpenLARPEngine {
         return next
     }
 
+    static func skipCurrentQuest(
+        in state: OpenLARPState,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) throws -> OpenLARPState {
+        guard let currentQuest = state.currentQuest else {
+            throw OpenLARPError.noCurrentQuest
+        }
+        guard currentQuest.status == .available || currentQuest.status == .inProgress else {
+            throw OpenLARPError.questNotAvailable
+        }
+
+        var next = state
+        let previousStreakCount = next.progress.streakCount
+        let nextQuestID = nextQuestID(after: currentQuest.id, in: next)
+
+        setQuestStatus(currentQuest.id, to: .skipped, in: &next)
+        lockFutureAvailableQuests(after: currentQuest.id, in: &next)
+        if let nextQuestID {
+            setQuestStatus(nextQuestID, to: .locked, in: &next)
+        }
+
+        next.progress.streakCount = 0
+        next.dailyCadence = .empty
+        next.missedDayRecovery = .empty
+        next.skippedToday = SkippedTodayState(
+            skippedQuestID: currentQuest.id,
+            skippedQuestTitle: currentQuest.title,
+            skippedAt: now,
+            previousStreakCount: previousStreakCount,
+            nextQuestID: nextQuestID,
+            nextUnlockDate: nextQuestID == nil ? nil : nextLocalDay(after: now, calendar: calendar)
+        )
+        next.updatedAt = now
+        return next
+    }
+
     static func checkProof(_ proof: ProofSubmission, in state: OpenLARPState) throws -> QualityCheckResult {
         guard let quest = state.currentQuest else {
             throw OpenLARPError.noCurrentQuest
@@ -131,6 +168,24 @@ enum OpenLARPEngine {
         now: Date = Date(),
         calendar: Calendar = .autoupdatingCurrent
     ) -> OpenLARPState {
+        if let skippedAt = state.skippedToday.skippedAt {
+            var next = state
+
+            if calendar.isDate(skippedAt, inSameDayAs: now) {
+                if let nextQuestID = next.skippedToday.nextQuestID {
+                    setQuestStatus(nextQuestID, to: .locked, in: &next)
+                }
+                return next
+            }
+
+            if let nextQuestID = next.skippedToday.nextQuestID {
+                setQuestStatus(nextQuestID, to: .available, in: &next)
+            }
+            next.skippedToday = .empty
+            next.updatedAt = now
+            return next
+        }
+
         guard let completedAt = state.dailyCadence.completedAt else {
             return state
         }
@@ -377,6 +432,7 @@ enum OpenLARPEngine {
             nextUnlockDate: nextQuestID == nil ? nil : nextLocalDay(after: now, calendar: calendar)
         )
         state.missedDayRecovery = .empty
+        state.skippedToday = .empty
     }
 
     private static func nextLocalDay(after date: Date, calendar: Calendar) -> Date {

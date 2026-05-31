@@ -139,6 +139,11 @@ struct ProfileView: View {
                             .font(.subheadline)
                             .foregroundStyle(Color.openLARPSoftInk)
                             .fixedSize(horizontal: false, vertical: true)
+                    } else if let skipped = SkippedTodayContent(state: store.state) {
+                        Text("\(skipped.previousStreakText). \(skipped.unlockMessage)")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text("This is the current live streak for the local quest track.")
                             .font(.subheadline)

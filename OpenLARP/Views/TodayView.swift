@@ -4,6 +4,7 @@ import SwiftUI
 struct TodayView: View {
     let store: OpenLARPStore
     @State private var showingAgent = false
+    @State private var showingSkipConfirmation = false
     @State private var selectedProof: ProofRecord?
 
     var body: some View {
@@ -39,6 +40,18 @@ struct TodayView: View {
             ProofDetailView(proof: proof) { attachment in
                 store.localURL(for: attachment)
             }
+        }
+        .confirmationDialog(
+            "Skip today?",
+            isPresented: $showingSkipConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Skip Today", role: .destructive) {
+                store.skipCurrentQuest()
+            }
+            Button("Keep Working", role: .cancel) {}
+        } message: {
+            Text("This resets the active streak to 0, keeps your earlier XP and proof receipts, and locks the next quest until tomorrow.")
         }
         .onAppear {
             store.refreshDailyAvailability()
@@ -143,6 +156,8 @@ struct TodayView: View {
             MissedDayRecoveryCard(content: recovery) {
                 store.startCurrentQuest()
             }
+        } else if let skipped = SkippedTodayContent(state: store.state) {
+            SkippedTodayCard(content: skipped)
         } else if let completion = TodayCompletionContent(state: store.state) {
             DoneForTodayCard(
                 content: completion,
@@ -181,25 +196,29 @@ struct TodayView: View {
 
                     switch quest.status {
                     case .available:
-                        HStack(spacing: 10) {
-                            Button {
-                                store.startCurrentQuest()
-                            } label: {
-                                Label("Start Quest", systemImage: "play.fill")
-                            }
-                            .buttonStyle(PrimaryButtonStyle())
+                        VStack(spacing: 10) {
+                            HStack(spacing: 10) {
+                                Button {
+                                    store.startCurrentQuest()
+                                } label: {
+                                    Label("Start Quest", systemImage: "play.fill")
+                                }
+                                .buttonStyle(PrimaryButtonStyle())
 
-                            Button {
-                                store.swapCurrentQuest()
-                            } label: {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.headline)
-                                    .foregroundStyle(Color.openLARPInk)
-                                    .frame(width: 48, height: 48)
-                                    .background(Color.openLARPYellow.opacity(0.24))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                Button {
+                                    store.swapCurrentQuest()
+                                } label: {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .font(.headline)
+                                        .foregroundStyle(Color.openLARPInk)
+                                        .frame(width: 48, height: 48)
+                                        .background(Color.openLARPYellow.opacity(0.24))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }
+                                .accessibilityLabel("Swap quest")
                             }
-                            .accessibilityLabel("Swap quest")
+
+                            skipTodayButton
                         }
                     case .inProgress:
                         questSteps(quest.steps)
@@ -208,6 +227,7 @@ struct TodayView: View {
                         } else {
                             ProofComposer(store: store)
                         }
+                        skipTodayButton
                     case .completed:
                         Label("Quest complete. Your next quest is ready on the map.", systemImage: "checkmark.circle.fill")
                             .font(.headline)
@@ -235,6 +255,15 @@ struct TodayView: View {
                 }
             }
         }
+    }
+
+    private var skipTodayButton: some View {
+        Button {
+            showingSkipConfirmation = true
+        } label: {
+            Label("Skip Today", systemImage: "forward.end")
+        }
+        .buttonStyle(SecondaryButtonStyle())
     }
 
     private func questSteps(_ steps: [String]) -> some View {
@@ -284,6 +313,79 @@ struct TodayView: View {
                     StatPill(value: "\(store.state.progress.completedQuestCount)", label: "quests")
                     StatPill(value: "\(store.state.progress.badges.count)", label: "badges")
                 }
+            }
+        }
+    }
+}
+
+private struct SkippedTodayCard: View {
+    let content: SkippedTodayContent
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                Label(content.title, systemImage: "forward.end.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPCoral)
+
+                Text(content.skippedQuestTitle)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(Color.openLARPInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(content.bodyText)
+                    .font(.body)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Pill(title: content.previousStreakText, systemImage: "flame", color: .openLARPCoral)
+                    Pill(title: content.activeStreakText, systemImage: "flame.fill", color: .openLARPGreen)
+                }
+
+                Text(content.preservedProgressText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.openLARPInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 9) {
+                    Text(content.nextQuestTitle == nil ? "Track status" : "Tomorrow preview")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.openLARPGreen)
+                        .textCase(.uppercase)
+
+                    if let nextQuestTitle = content.nextQuestTitle {
+                        Text(nextQuestTitle)
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPInk)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if let nextQuestObjectiveText = content.nextQuestObjectiveText {
+                            Text(nextQuestObjectiveText)
+                                .font(.subheadline)
+                                .foregroundStyle(Color.openLARPSoftInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if let nextQuestMetaText = content.nextQuestMetaText {
+                            Text(nextQuestMetaText)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.openLARPSoftInk)
+                        }
+                    } else {
+                        Text(content.nextQuestStatusText)
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPInk)
+                    }
+
+                    Label(content.unlockMessage, systemImage: content.nextQuestTitle == nil ? "checkmark.seal.fill" : "lock.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.openLARPCoral)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .background(Color.openLARPBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
     }

@@ -114,6 +114,11 @@ struct ProgressTabView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.openLARPCoral)
                         .fixedSize(horizontal: false, vertical: true)
+                } else if let skipped = SkippedTodayContent(state: state) {
+                    Label("\(skipped.previousStreakText). \(skipped.unlockMessage)", systemImage: "forward.end")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPCoral)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

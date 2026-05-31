@@ -480,6 +480,60 @@ struct TodayCompletionContent: Equatable {
     }
 }
 
+struct SkippedTodayContent: Equatable {
+    var skippedQuestTitle: String
+    var title: String
+    var bodyText: String
+    var previousStreakText: String
+    var activeStreakText: String
+    var preservedProgressText: String
+    var nextQuestTitle: String?
+    var nextQuestObjectiveText: String?
+    var nextQuestMetaText: String?
+    var nextQuestStatusText: String
+    var unlockMessage: String
+
+    init?(
+        state: OpenLARPState,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) {
+        guard let skippedAt = state.skippedToday.skippedAt,
+              calendar.isDate(skippedAt, inSameDayAs: now)
+        else {
+            return nil
+        }
+
+        let skippedQuest = state.skippedToday.skippedQuestID.flatMap { questID in
+            state.plan.first { $0.id == questID }
+        }
+        skippedQuestTitle = state.skippedToday.skippedQuestTitle ?? skippedQuest?.title ?? "Today's quest"
+        title = "Skipped today"
+        bodyText = "Your active streak reset to 0. Your earlier XP, proof receipts, badges, and completed quests are still saved."
+
+        let previousStreakCount = state.skippedToday.previousStreakCount
+        previousStreakText = previousStreakCount == 1 ? "Previous streak: 1 day" : "Previous streak: \(previousStreakCount) days"
+        let activeStreakCount = state.progress.streakCount
+        activeStreakText = activeStreakCount == 1 ? "Active streak: 1 day" : "Active streak: \(activeStreakCount) days"
+        preservedProgressText = "\(state.progress.xp) XP, \(state.progress.proofCount) proof receipts, and \(state.progress.completedQuestCount) completed quests preserved."
+
+        if let nextQuestID = state.skippedToday.nextQuestID,
+           let nextQuest = state.plan.first(where: { $0.id == nextQuestID }) {
+            nextQuestTitle = nextQuest.title
+            nextQuestObjectiveText = nextQuest.purpose
+            nextQuestMetaText = "\(nextQuest.timeEstimate), \(nextQuest.difficulty), +\(nextQuest.xpReward) XP"
+            nextQuestStatusText = "Locked until tomorrow"
+            unlockMessage = "Your next quest unlocks tomorrow."
+        } else {
+            nextQuestTitle = nil
+            nextQuestObjectiveText = nil
+            nextQuestMetaText = nil
+            nextQuestStatusText = "Track complete"
+            unlockMessage = "You skipped the final local quest. The track is finished for now."
+        }
+    }
+}
+
 struct MissedDayRecoveryContent: Equatable {
     var title: String
     var missedDaysText: String
@@ -600,6 +654,24 @@ struct MissedDayRecoveryState: Codable, Equatable {
     )
 }
 
+struct SkippedTodayState: Codable, Equatable {
+    var skippedQuestID: UUID?
+    var skippedQuestTitle: String?
+    var skippedAt: Date?
+    var previousStreakCount: Int
+    var nextQuestID: UUID?
+    var nextUnlockDate: Date?
+
+    static let empty = SkippedTodayState(
+        skippedQuestID: nil,
+        skippedQuestTitle: nil,
+        skippedAt: nil,
+        previousStreakCount: 0,
+        nextQuestID: nil,
+        nextUnlockDate: nil
+    )
+}
+
 struct OpenLARPState: Codable, Equatable {
     var goal: CareerGoal?
     var diagnostic: CookedDiagnostic?
@@ -608,6 +680,7 @@ struct OpenLARPState: Codable, Equatable {
     var updatedAt: Date
     var dailyCadence: DailyCadenceState = .empty
     var missedDayRecovery: MissedDayRecoveryState = .empty
+    var skippedToday: SkippedTodayState = .empty
 
     static let empty = OpenLARPState(
         goal: nil,
@@ -622,7 +695,7 @@ struct OpenLARPState: Codable, Equatable {
     }
 
     var currentQuest: Quest? {
-        if dailyCadence.completedAt != nil {
+        if dailyCadence.completedAt != nil || skippedToday.skippedAt != nil {
             return nil
         }
         return plan.first { $0.status == .inProgress } ?? plan.first { $0.status == .available }
@@ -638,6 +711,7 @@ extension OpenLARPState {
         case updatedAt
         case dailyCadence
         case missedDayRecovery
+        case skippedToday
     }
 
     init(from decoder: Decoder) throws {
@@ -649,6 +723,7 @@ extension OpenLARPState {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         dailyCadence = try container.decodeIfPresent(DailyCadenceState.self, forKey: .dailyCadence) ?? .empty
         missedDayRecovery = try container.decodeIfPresent(MissedDayRecoveryState.self, forKey: .missedDayRecovery) ?? .empty
+        skippedToday = try container.decodeIfPresent(SkippedTodayState.self, forKey: .skippedToday) ?? .empty
     }
 
     func encode(to encoder: Encoder) throws {
@@ -660,6 +735,7 @@ extension OpenLARPState {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(dailyCadence, forKey: .dailyCadence)
         try container.encode(missedDayRecovery, forKey: .missedDayRecovery)
+        try container.encode(skippedToday, forKey: .skippedToday)
     }
 }
 

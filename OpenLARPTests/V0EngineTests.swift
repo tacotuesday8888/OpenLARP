@@ -205,6 +205,196 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.progress.streakCount, 0)
     }
 
+    func testSkipAvailableQuestMarksSkippedLocksNextAndResetsStreak() throws {
+        let skipTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        var state = OpenLARPEngine.confirmGoal(goal, now: skipTime)
+        state.progress.streakCount = 3
+
+        state = try OpenLARPEngine.skipCurrentQuest(
+            in: state,
+            now: skipTime,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(state.plan[0].status, .skipped)
+        XCTAssertEqual(state.plan[1].status, .locked)
+        XCTAssertNil(state.currentQuest)
+        XCTAssertEqual(state.progress.streakCount, 0)
+        XCTAssertEqual(state.skippedToday.skippedQuestID, state.plan[0].id)
+        XCTAssertEqual(state.skippedToday.skippedQuestTitle, state.plan[0].title)
+        XCTAssertEqual(state.skippedToday.previousStreakCount, 3)
+        XCTAssertEqual(state.skippedToday.nextQuestID, state.plan[1].id)
+        XCTAssertEqual(state.dailyCadence, .empty)
+        XCTAssertEqual(state.missedDayRecovery, .empty)
+    }
+
+    @MainActor
+    func testStoreSkipInProgressQuestClearsPendingProofAndQualityResult() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let skipTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            now: { skipTime },
+            calendar: testCalendar
+        )
+
+        store.confirmGoal(goal)
+        store.startCurrentQuest()
+        store.checkProof(
+            kind: .proof,
+            text: "I mapped repeated iOS internship requirements, chose one proof-building path, and saved notes that connect the work to a target role.",
+            link: "https://example.com/requirements"
+        )
+
+        XCTAssertNotNil(store.pendingProof)
+        XCTAssertNotNil(store.pendingQualityResult)
+
+        store.skipCurrentQuest()
+
+        XCTAssertNil(store.pendingProof)
+        XCTAssertNil(store.pendingQualityResult)
+        XCTAssertEqual(store.state.plan[0].status, .skipped)
+        XCTAssertEqual(store.state.plan[1].status, .locked)
+        XCTAssertNil(store.state.currentQuest)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.skippedToday.skippedQuestID, store.state.plan[0].id)
+        XCTAssertNil(reloaded.currentQuest)
+    }
+
+    func testRefreshDailyAvailabilityKeepsSkippedStateOnSameLocalDay() throws {
+        let skipTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let sameDayLater = localDate(year: 2026, month: 5, day: 31, hour: 21)
+        var state = OpenLARPEngine.confirmGoal(goal, now: skipTime)
+        state = try OpenLARPEngine.skipCurrentQuest(
+            in: state,
+            now: skipTime,
+            calendar: testCalendar
+        )
+
+        let refreshed = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: sameDayLater,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(refreshed.plan[0].status, .skipped)
+        XCTAssertEqual(refreshed.plan[1].status, .locked)
+        XCTAssertEqual(refreshed.skippedToday.skippedQuestID, state.plan[0].id)
+        XCTAssertNil(refreshed.currentQuest)
+        XCTAssertNotNil(SkippedTodayContent(
+            state: refreshed,
+            now: sameDayLater,
+            calendar: testCalendar
+        ))
+    }
+
+    func testRefreshDailyAvailabilityUnlocksNextQuestAfterSkippedTodayClears() throws {
+        let skipTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let nextDay = localDate(year: 2026, month: 6, day: 1, hour: 8)
+        var state = OpenLARPEngine.confirmGoal(goal, now: skipTime)
+        state = try OpenLARPEngine.skipCurrentQuest(
+            in: state,
+            now: skipTime,
+            calendar: testCalendar
+        )
+
+        let refreshed = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: nextDay,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(refreshed.plan[0].status, .skipped)
+        XCTAssertEqual(refreshed.plan[1].status, .available)
+        XCTAssertEqual(refreshed.currentQuest?.id, refreshed.plan[1].id)
+        XCTAssertEqual(refreshed.skippedToday, .empty)
+        XCTAssertEqual(refreshed.missedDayRecovery, .empty)
+    }
+
+    func testSkipPreservesPriorProgressProofBadgesCompletedQuestsAndReadiness() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let nextDay = localDate(year: 2026, month: 6, day: 1, hour: 8)
+        var state = OpenLARPEngine.refreshDailyAvailability(
+            in: try completedFirstQuestState(claimTime: claimTime),
+            now: nextDay,
+            calendar: testCalendar
+        )
+
+        let preservedXP = state.progress.xp
+        let preservedProofCount = state.progress.proofCount
+        let preservedCompletedQuestCount = state.progress.completedQuestCount
+        let preservedBadges = state.progress.badges
+        let preservedReadiness = state.progress.readiness
+        let preservedProofs = state.progress.recentProof
+        let previousStreak = state.progress.streakCount
+
+        state = try OpenLARPEngine.skipCurrentQuest(
+            in: state,
+            now: nextDay,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(state.progress.xp, preservedXP)
+        XCTAssertEqual(state.progress.proofCount, preservedProofCount)
+        XCTAssertEqual(state.progress.completedQuestCount, preservedCompletedQuestCount)
+        XCTAssertEqual(state.progress.badges, preservedBadges)
+        XCTAssertEqual(state.progress.readiness, preservedReadiness)
+        XCTAssertEqual(state.progress.recentProof, preservedProofs)
+        XCTAssertEqual(state.progress.streakCount, 0)
+        XCTAssertEqual(state.skippedToday.previousStreakCount, previousStreak)
+    }
+
+    func testSkipFinalQuestShowsNoNextQuestState() throws {
+        let skipTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let nextDay = localDate(year: 2026, month: 6, day: 1, hour: 8)
+        let finalQuest = Quest(
+            id: UUID(uuidString: "FAFAFAFA-FAFA-FAFA-FAFA-FAFAFAFAFAFA")!,
+            day: 7,
+            title: "Run the weekly less-cooked check",
+            purpose: "Review what changed this week.",
+            proofRequired: "Write what proof improved.",
+            xpReward: 160,
+            status: .available
+        )
+        var state = OpenLARPState(
+            goal: goal,
+            diagnostic: nil,
+            plan: [finalQuest],
+            progress: .empty,
+            updatedAt: skipTime
+        )
+
+        state = try OpenLARPEngine.skipCurrentQuest(
+            in: state,
+            now: skipTime,
+            calendar: testCalendar
+        )
+
+        let content = try XCTUnwrap(SkippedTodayContent(
+            state: state,
+            now: skipTime,
+            calendar: testCalendar
+        ))
+
+        XCTAssertEqual(state.plan[0].status, .skipped)
+        XCTAssertNil(state.skippedToday.nextQuestID)
+        XCTAssertNil(content.nextQuestTitle)
+        XCTAssertEqual(content.nextQuestStatusText, "Track complete")
+        XCTAssertEqual(content.unlockMessage, "You skipped the final local quest. The track is finished for now.")
+
+        let refreshed = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: nextDay,
+            calendar: testCalendar
+        )
+        XCTAssertEqual(refreshed.skippedToday, .empty)
+        XCTAssertEqual(refreshed.plan[0].status, .skipped)
+        XCTAssertNil(refreshed.currentQuest)
+    }
+
     func testPersistenceRoundTripKeepsMissedDayRecoveryState() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -65,6 +65,23 @@ final class OpenLARPStore {
         }
     }
 
+    func skipCurrentQuest() {
+        refreshDailyAvailability()
+        do {
+            state = try OpenLARPEngine.skipCurrentQuest(
+                in: state,
+                now: now(),
+                calendar: calendar
+            )
+            pendingProof = nil
+            pendingQualityResult = nil
+            errorMessage = nil
+            save()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func swapCurrentQuest() {
         mutate {
             try OpenLARPEngine.swappedCurrentQuest(in: state, now: now())
