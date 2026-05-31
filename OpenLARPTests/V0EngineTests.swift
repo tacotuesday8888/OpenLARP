@@ -2,6 +2,12 @@ import XCTest
 @testable import OpenLARP
 
 final class V0EngineTests: XCTestCase {
+    private var testCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
     private let goal = CareerGoal(
         currentStatus: .student,
         targetRole: "iOS engineering internship",
@@ -46,7 +52,137 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.progress.readiness.proofStrength, 49)
         XCTAssertTrue(state.progress.badges.contains(.firstProof))
         XCTAssertEqual(state.plan[0].status, .completed)
+        XCTAssertEqual(state.plan[1].status, .locked)
+        XCTAssertEqual(state.dailyCadence.nextQuestID, state.plan[1].id)
+    }
+
+    func testClaimLocksNextQuestUntilNextLocalDay() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        var state = OpenLARPEngine.confirmGoal(goal, now: claimTime)
+        state = try OpenLARPEngine.startCurrentQuest(in: state, now: claimTime)
+
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "I mapped repeated iOS internship requirements, chose one proof-building path, and saved notes that connect the work to a target role.",
+            link: "https://example.com/requirements",
+            submittedAt: claimTime
+        )
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+
+        state = try OpenLARPEngine.claim(
+            result,
+            proof: proof,
+            in: state,
+            now: claimTime,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(state.plan[0].status, .completed)
+        XCTAssertEqual(state.plan[1].status, .locked)
+        XCTAssertNil(state.currentQuest)
+        XCTAssertEqual(state.dailyCadence.lastCompletedQuestID, state.plan[0].id)
+        XCTAssertEqual(state.dailyCadence.completedQuestTitle, state.plan[0].title)
+        XCTAssertEqual(state.dailyCadence.xpEarned, result.xpEarned)
+        XCTAssertEqual(state.dailyCadence.streakCountAfterCompletion, 1)
+        XCTAssertEqual(state.dailyCadence.nextQuestID, state.plan[1].id)
+    }
+
+    func testRefreshDailyAvailabilityKeepsNextQuestLockedOnSameLocalDay() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let sameDayLater = localDate(year: 2026, month: 5, day: 31, hour: 22)
+        var state = try completedFirstQuestState(claimTime: claimTime)
+
+        state = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: sameDayLater,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(state.plan[1].status, .locked)
+        XCTAssertNil(state.currentQuest)
+        XCTAssertEqual(state.dailyCadence.nextQuestID, state.plan[1].id)
+    }
+
+    func testRefreshDailyAvailabilityUnlocksNextQuestOnNextLocalDay() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let nextDay = localDate(year: 2026, month: 6, day: 1, hour: 8)
+        var state = try completedFirstQuestState(claimTime: claimTime)
+
+        state = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: nextDay,
+            calendar: testCalendar
+        )
+
         XCTAssertEqual(state.plan[1].status, .available)
+        XCTAssertEqual(state.currentQuest?.id, state.plan[1].id)
+        XCTAssertEqual(state.dailyCadence, .empty)
+    }
+
+    func testTodayCompletionContentShowsDoneStateAndNextQuestPreview() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let sameDayLater = localDate(year: 2026, month: 5, day: 31, hour: 18)
+        let state = try completedFirstQuestState(claimTime: claimTime)
+
+        let content = try XCTUnwrap(TodayCompletionContent(
+            state: state,
+            now: sameDayLater,
+            calendar: testCalendar
+        ))
+
+        XCTAssertEqual(content.completedQuestTitle, state.plan[0].title)
+        XCTAssertEqual(content.resultSummary, "Strong proof")
+        XCTAssertEqual(content.xpText, "+120 XP")
+        XCTAssertEqual(content.streakText, "1-day streak")
+        XCTAssertEqual(content.proofRecord?.questID, state.plan[0].id)
+        XCTAssertEqual(content.nextQuestTitle, state.plan[1].title)
+        XCTAssertEqual(content.nextQuestStatusText, "Locked until tomorrow")
+        XCTAssertEqual(content.unlockMessage, "Your next quest unlocks tomorrow.")
+    }
+
+    func testTodayCompletionContentShowsFinishedTrackWhenNoNextQuestExists() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let finalQuest = Quest(
+            id: UUID(uuidString: "FAFAFAFA-FAFA-FAFA-FAFA-FAFAFAFAFAFA")!,
+            day: 7,
+            title: "Run the weekly less-cooked check",
+            purpose: "Review what changed this week.",
+            proofRequired: "Write what proof improved.",
+            xpReward: 160,
+            status: .available
+        )
+        var state = OpenLARPState(
+            goal: goal,
+            diagnostic: nil,
+            plan: [finalQuest],
+            progress: .empty,
+            updatedAt: claimTime
+        )
+        state = try OpenLARPEngine.startCurrentQuest(in: state, now: claimTime)
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "I reviewed the week, named the proof I created, and wrote the next honest gap to shrink.",
+            submittedAt: claimTime
+        )
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        state = try OpenLARPEngine.claim(
+            result,
+            proof: proof,
+            in: state,
+            now: claimTime,
+            calendar: testCalendar
+        )
+
+        let content = try XCTUnwrap(TodayCompletionContent(
+            state: state,
+            now: claimTime,
+            calendar: testCalendar
+        ))
+
+        XCTAssertEqual(content.completedQuestTitle, finalQuest.title)
+        XCTAssertNil(content.nextQuestTitle)
+        XCTAssertEqual(content.nextQuestStatusText, "Track complete")
+        XCTAssertEqual(content.unlockMessage, "You finished the local seven-day track.")
     }
 
     func testSelfReportAwardsPartialCreditWithoutPretendingProofIsStrong() throws {
@@ -259,13 +395,28 @@ final class V0EngineTests: XCTestCase {
         )
 
         for index in 1...13 {
+            let claimTime = localDate(year: 2026, month: 5, day: index, hour: 9)
             let proof = ProofSubmission(
                 kind: .proof,
                 text: "I created useful proof item number \(index) with enough detail to count as meaningful career progress.",
-                submittedAt: Date(timeIntervalSince1970: TimeInterval(index))
+                submittedAt: claimTime
             )
             let result = try OpenLARPEngine.checkProof(proof, in: state)
-            state = try OpenLARPEngine.claim(result, proof: proof, in: state)
+            state = try OpenLARPEngine.claim(
+                result,
+                proof: proof,
+                in: state,
+                now: claimTime,
+                calendar: testCalendar
+            )
+
+            if index < 13 {
+                state = OpenLARPEngine.refreshDailyAvailability(
+                    in: state,
+                    now: localDate(year: 2026, month: 5, day: index + 1, hour: 8),
+                    calendar: testCalendar
+                )
+            }
         }
 
         let content = ProofArchiveContent(proofs: state.progress.recentProof)
@@ -440,6 +591,9 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(reloaded.progress.xp, 120)
         XCTAssertEqual(reloaded.progress.streakCount, 1)
         XCTAssertEqual(reloaded.plan[0].status, .completed)
+        XCTAssertEqual(reloaded.plan[1].status, .locked)
+        XCTAssertNil(reloaded.currentQuest)
+        XCTAssertEqual(reloaded.dailyCadence.nextQuestID, reloaded.plan[1].id)
         XCTAssertEqual(reloaded.progress.recentProof.count, 1)
         XCTAssertEqual(reloaded.progress.recentProof.first?.text, proof.text)
     }
@@ -468,5 +622,34 @@ final class V0EngineTests: XCTestCase {
                 readinessDelta: 6
             )
         )
+    }
+
+    private func completedFirstQuestState(claimTime: Date) throws -> OpenLARPState {
+        var state = OpenLARPEngine.confirmGoal(goal, now: claimTime)
+        state = try OpenLARPEngine.startCurrentQuest(in: state, now: claimTime)
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "I mapped repeated iOS internship requirements, chose one proof-building path, and saved notes that connect the work to a target role.",
+            link: "https://example.com/requirements",
+            submittedAt: claimTime
+        )
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        return try OpenLARPEngine.claim(
+            result,
+            proof: proof,
+            in: state,
+            now: claimTime,
+            calendar: testCalendar
+        )
+    }
+
+    private func localDate(year: Int, month: Int, day: Int, hour: Int) -> Date {
+        testCalendar.date(from: DateComponents(
+            timeZone: testCalendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: hour
+        ))!
     }
 }
