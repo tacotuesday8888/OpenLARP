@@ -1,85 +1,28 @@
 import SwiftUI
 
 struct ProfileView: View {
-    let profile: ProfileSummary
+    let store: OpenLARPStore
     @State private var memoryEnabled = true
     @State private var shareWins = true
+    @State private var showingResetConfirmation = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(profile.name)
+                    Text("Profile")
                         .font(.largeTitle.weight(.black))
                         .foregroundStyle(Color.openLARPInk)
 
-                    Text(profile.status)
+                    Text(store.state.goal?.currentStatus.rawValue ?? "Goal setup pending")
                         .font(.headline)
                         .foregroundStyle(Color.openLARPSoftInk)
                 }
 
-                Card {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Active goal")
-                            .font(.headline)
-                            .foregroundStyle(Color.openLARPInk)
-
-                        Text(profile.goal)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(Color.openLARPInk)
-
-                        HStack {
-                            Pill(title: profile.timeline, systemImage: "calendar", color: .openLARPCoral)
-                            Pill(title: "\(profile.proofItems) proof items", systemImage: "checkmark.seal", color: .openLARPGreen)
-                        }
-
-                        Button {
-                            // Goal rebuild/adapt flow comes after onboarding is wired.
-                        } label: {
-                            Label("Change goal", systemImage: "slider.horizontal.3")
-                        }
-                        .buttonStyle(SecondaryButtonStyle())
-                    }
-                }
-
-                Card {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Privacy")
-                            .font(.headline)
-                            .foregroundStyle(Color.openLARPInk)
-
-                        Toggle("Long-term memory", isOn: $memoryEnabled)
-                        Toggle("Allow shareable wins", isOn: $shareWins)
-
-                        Text(memoryEnabled ? profile.memoryMode : "Memory off for future sensitive chats")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.openLARPSoftInk)
-                    }
-                }
-
-                Card {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Badges")
-                            .font(.headline)
-                            .foregroundStyle(Color.openLARPInk)
-
-                        FlowLayout(items: profile.badges)
-                    }
-                }
-
-                Card {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Product rules")
-                            .font(.headline)
-                            .foregroundStyle(Color.openLARPInk)
-
-                        Label("Package real experience aggressively.", systemImage: "sparkles")
-                        Label("Never invent employers, certificates, titles, dates, projects, or ownership.", systemImage: "checkmark.shield")
-                        Label("The agent drafts. You approve external actions.", systemImage: "hand.tap")
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(Color.openLARPSoftInk)
-                }
+                activeGoalCard
+                privacyCard
+                badgeCard
+                rulesCard
             }
             .padding(20)
             .padding(.bottom, 88)
@@ -87,6 +30,127 @@ struct ProfileView: View {
         .background(Color.openLARPBackground)
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Change goal?",
+            isPresented: $showingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reset Goal And Local Plan", role: .destructive) {
+                store.resetGoal()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This clears the local diagnostic and questline so you can set a new target.")
+        }
+    }
+
+    private var activeGoalCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Active goal")
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPInk)
+
+                if let goal = store.state.goal {
+                    Text(goal.targetRole)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Color.openLARPInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack {
+                        Pill(title: goal.timeline, systemImage: "calendar", color: .openLARPCoral)
+                        Pill(title: "\(store.state.progress.proofCount) proof items", systemImage: "checkmark.seal", color: .openLARPGreen)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        ProfileDetailRow(title: "Background", value: goal.background.isEmpty ? "Not provided yet" : goal.background)
+                        ProfileDetailRow(title: "Existing proof", value: goal.existingProof.isEmpty ? "Thin or not provided yet" : goal.existingProof)
+                        ProfileDetailRow(title: "Biggest blocker", value: goal.biggestBlocker.isEmpty ? "Not provided yet" : goal.biggestBlocker)
+                    }
+
+                    Button {
+                        showingResetConfirmation = true
+                    } label: {
+                        Label("Change goal", systemImage: "slider.horizontal.3")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                } else {
+                    Text("Set a career target from Today to unlock the diagnostic, quest map, and progress baseline.")
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                }
+            }
+        }
+    }
+
+    private var privacyCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Privacy")
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPInk)
+
+                Toggle("Long-term memory", isOn: $memoryEnabled)
+                Toggle("Allow shareable wins", isOn: $shareWins)
+
+                Text(memoryEnabled ? "Local memory is on for this device. Real cloud memory is not built yet." : "Memory is off for future sensitive chats on this device.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var badgeCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Badges")
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPInk)
+
+                if store.state.progress.badges.isEmpty {
+                    Text("Lock a goal and submit proof to earn the first badges.")
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                } else {
+                    FlowLayout(items: store.state.progress.badges.map(\.rawValue))
+                }
+            }
+        }
+    }
+
+    private var rulesCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Product rules")
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPInk)
+
+                Label("Package real experience aggressively.", systemImage: "sparkles")
+                Label("Never invent employers, schools, certificates, titles, dates, projects, or ownership.", systemImage: "checkmark.shield")
+                Label("The agent drafts. You approve external actions.", systemImage: "hand.tap")
+            }
+            .font(.subheadline)
+            .foregroundStyle(Color.openLARPSoftInk)
+        }
+    }
+}
+
+private struct ProfileDetailRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.openLARPGreen)
+                .textCase(.uppercase)
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(Color.openLARPSoftInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

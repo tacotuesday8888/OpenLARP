@@ -1,29 +1,133 @@
 import Foundation
 import SwiftUI
 
-struct UserSnapshot {
-    let name: String
-    let targetRole: String
-    let targetTimeline: String
-    let cookedLabel: String
-    let cookedScore: Int
-    let mainGap: String
-    let streakCount: Int
-    let xp: Int
-    let xpGoal: Int
-    let todayQuest: Quest
-    let proofCount: Int
-    let readiness: [ReadinessGap]
+enum CurrentStatus: String, Codable, CaseIterable, Identifiable {
+    case student = "Student"
+    case newGrad = "New grad"
+    case careerSwitcher = "Career switcher"
+    case unemployed = "Unemployed"
+    case employed = "Employed"
+
+    var id: String { rawValue }
 }
 
-struct Quest: Identifiable {
-    let id: UUID
-    let title: String
-    let purpose: String
-    let timeEstimate: String
-    let difficulty: String
-    let proofRequired: String
-    let xpReward: Int
+struct CareerGoal: Codable, Equatable {
+    var currentStatus: CurrentStatus
+    var targetRole: String
+    var timeline: String
+    var background: String
+    var existingProof: String
+    var confidence: Int
+    var biggestBlocker: String
+
+    static let empty = CareerGoal(
+        currentStatus: .student,
+        targetRole: "",
+        timeline: "30 days",
+        background: "",
+        existingProof: "",
+        confidence: 3,
+        biggestBlocker: ""
+    )
+}
+
+struct CookedDiagnostic: Codable, Equatable {
+    var score: Int
+    var label: String
+    var mainGap: String
+    var strongestSignal: String
+    var fastestFix: String
+    var readinessBaseline: Int
+}
+
+enum CareerGap: String, Codable, CaseIterable, Identifiable {
+    case targetClarity
+    case proofStrength
+    case confidence
+    case consistency
+    case networking
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .targetClarity: "Target clarity"
+        case .proofStrength: "Proof strength"
+        case .confidence: "Confidence"
+        case .consistency: "Consistency"
+        case .networking: "Networking"
+        }
+    }
+}
+
+enum QuestStatus: String, Codable, CaseIterable {
+    case locked
+    case available
+    case inProgress
+    case completed
+    case skipped
+
+    var label: String {
+        switch self {
+        case .locked: "Locked"
+        case .available: "Today"
+        case .inProgress: "In progress"
+        case .completed: "Complete"
+        case .skipped: "Skipped"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .locked: .openLARPGray
+        case .available: .openLARPCoral
+        case .inProgress: .openLARPYellow
+        case .completed: .openLARPGreen
+        case .skipped: .openLARPGray
+        }
+    }
+}
+
+struct Quest: Codable, Equatable, Identifiable {
+    var id: UUID
+    var day: Int
+    var title: String
+    var purpose: String
+    var timeEstimateMinutes: Int
+    var difficulty: String
+    var gap: CareerGap
+    var proofRequired: String
+    var xpReward: Int
+    var steps: [String]
+    var status: QuestStatus
+
+    var timeEstimate: String { "\(timeEstimateMinutes) min" }
+
+    init(
+        id: UUID = UUID(),
+        day: Int = 1,
+        title: String,
+        purpose: String,
+        timeEstimateMinutes: Int = 25,
+        difficulty: String = "Adaptive",
+        gap: CareerGap = .proofStrength,
+        proofRequired: String,
+        xpReward: Int,
+        steps: [String] = [],
+        status: QuestStatus = .available
+    ) {
+        self.id = id
+        self.day = day
+        self.title = title
+        self.purpose = purpose
+        self.timeEstimateMinutes = timeEstimateMinutes
+        self.difficulty = difficulty
+        self.gap = gap
+        self.proofRequired = proofRequired
+        self.xpReward = xpReward
+        self.steps = steps
+        self.status = status
+    }
 
     init(
         id: UUID = UUID(),
@@ -34,76 +138,157 @@ struct Quest: Identifiable {
         proofRequired: String,
         xpReward: Int
     ) {
-        self.id = id
-        self.title = title
-        self.purpose = purpose
-        self.timeEstimate = timeEstimate
-        self.difficulty = difficulty
-        self.proofRequired = proofRequired
-        self.xpReward = xpReward
+        let minutes = Int(timeEstimate.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()) ?? 25
+        self.init(
+            id: id,
+            title: title,
+            purpose: purpose,
+            timeEstimateMinutes: minutes,
+            difficulty: difficulty,
+            proofRequired: proofRequired,
+            xpReward: xpReward
+        )
     }
 }
 
-struct QuestDay: Identifiable {
-    let id: UUID
-    let day: Int
-    let title: String
-    let focus: String
-    let status: QuestStatus
-    let xpReward: Int
+enum ProofKind: String, Codable, CaseIterable, Identifiable {
+    case proof
+    case selfReport
 
-    init(
-        id: UUID = UUID(),
-        day: Int,
-        title: String,
-        focus: String,
-        status: QuestStatus,
-        xpReward: Int
-    ) {
-        self.id = id
-        self.day = day
-        self.title = title
-        self.focus = focus
-        self.status = status
-        self.xpReward = xpReward
-    }
-}
-
-enum QuestStatus {
-    case complete
-    case current
-    case locked
+    var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .complete: "Complete"
-        case .current: "Today"
-        case .locked: "Locked"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .complete: .openLARPGreen
-        case .current: .openLARPCoral
-        case .locked: .openLARPGray
+        case .proof: "Proof"
+        case .selfReport: "Self-report"
         }
     }
 }
 
-struct ReadinessGap: Identifiable {
-    let id: UUID
-    let title: String
-    let value: Double
-    let label: String
-    let color: Color
+struct ProofSubmission: Codable, Equatable, Identifiable {
+    var id: UUID
+    var kind: ProofKind
+    var text: String
+    var link: String
+    var submittedAt: Date
 
-    init(id: UUID = UUID(), title: String, value: Double, label: String, color: Color) {
+    init(
+        id: UUID = UUID(),
+        kind: ProofKind,
+        text: String,
+        link: String = "",
+        submittedAt: Date = Date()
+    ) {
         self.id = id
-        self.title = title
-        self.value = value
-        self.label = label
-        self.color = color
+        self.kind = kind
+        self.text = text
+        self.link = link
+        self.submittedAt = submittedAt
+    }
+}
+
+struct QualityCheckResult: Codable, Equatable {
+    var isAccepted: Bool
+    var qualityScore: Int
+    var label: String
+    var reason: String
+    var improvement: String
+    var xpEarned: Int
+    var readinessDelta: Int
+}
+
+struct ProofRecord: Codable, Equatable, Identifiable {
+    var id: UUID
+    var questID: UUID
+    var questTitle: String
+    var kind: ProofKind
+    var text: String
+    var link: String
+    var submittedAt: Date
+    var quality: QualityCheckResult?
+}
+
+struct ReadinessMetrics: Codable, Equatable {
+    var overall: Int
+    var proofStrength: Int
+    var confidence: Int
+    var consistency: Int
+
+    static let baseline = ReadinessMetrics(
+        overall: 42,
+        proofStrength: 42,
+        confidence: 36,
+        consistency: 28
+    )
+}
+
+enum Badge: String, Codable, CaseIterable, Identifiable {
+    case firstGoal = "First target locked"
+    case firstProof = "First proof submitted"
+    case strongProof = "Strong proof"
+    case threeDayStreak = "3-day streak"
+    case weeklyStreak = "7-day streak"
+
+    var id: String { rawValue }
+}
+
+struct ProgressState: Codable, Equatable {
+    var xp: Int
+    var xpGoal: Int
+    var streakCount: Int
+    var completedQuestCount: Int
+    var proofCount: Int
+    var badges: [Badge]
+    var readiness: ReadinessMetrics
+    var recentProof: [ProofRecord]
+
+    static let empty = ProgressState(
+        xp: 0,
+        xpGoal: 1_000,
+        streakCount: 0,
+        completedQuestCount: 0,
+        proofCount: 0,
+        badges: [],
+        readiness: .baseline,
+        recentProof: []
+    )
+}
+
+struct OpenLARPState: Codable, Equatable {
+    var goal: CareerGoal?
+    var diagnostic: CookedDiagnostic?
+    var plan: [Quest]
+    var progress: ProgressState
+    var updatedAt: Date
+
+    static let empty = OpenLARPState(
+        goal: nil,
+        diagnostic: nil,
+        plan: [],
+        progress: .empty,
+        updatedAt: Date(timeIntervalSince1970: 0)
+    )
+
+    var needsGoalSetup: Bool {
+        goal == nil || diagnostic == nil || plan.isEmpty
+    }
+
+    var currentQuest: Quest? {
+        plan.first { $0.status == .inProgress } ?? plan.first { $0.status == .available }
+    }
+}
+
+enum OpenLARPError: Error, LocalizedError, Equatable {
+    case noCurrentQuest
+    case questNotAvailable
+    case emptyProof
+
+    var errorDescription: String? {
+        switch self {
+        case .noCurrentQuest: "There is no current quest to work on."
+        case .questNotAvailable: "This quest is not available yet."
+        case .emptyProof: "Add a short proof note or self-report before checking quality."
+        }
     }
 }
 
@@ -117,14 +302,4 @@ struct AgentPrompt: Identifiable {
         self.title = title
         self.description = description
     }
-}
-
-struct ProfileSummary {
-    let name: String
-    let status: String
-    let goal: String
-    let timeline: String
-    let memoryMode: String
-    let proofItems: Int
-    let badges: [String]
 }

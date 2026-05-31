@@ -3,7 +3,7 @@ import SwiftUI
 enum AppTab: String, CaseIterable, Identifiable {
     case today
     case map
-    case chat
+    case progress
     case profile
 
     var id: String { rawValue }
@@ -12,7 +12,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         switch self {
         case .today: "Today"
         case .map: "Map"
-        case .chat: "Chat"
+        case .progress: "Progress"
         case .profile: "Profile"
         }
     }
@@ -21,13 +21,14 @@ enum AppTab: String, CaseIterable, Identifiable {
         switch self {
         case .today: "target"
         case .map: "map"
-        case .chat: "sparkles"
+        case .progress: "chart.line.uptrend.xyaxis"
         case .profile: "person.crop.circle"
         }
     }
 }
 
 struct AppRootView: View {
+    let store: OpenLARPStore
     @State private var selectedTab: AppTab = .today
 
     var body: some View {
@@ -49,13 +50,17 @@ struct AppRootView: View {
     private func tabContent(for tab: AppTab) -> some View {
         switch tab {
         case .today:
-            TodayView(snapshot: .sample)
+            TodayView(store: store)
         case .map:
-            QuestMapView(quests: QuestDay.sampleWeek)
-        case .chat:
-            AgentChatView(prompts: AgentPrompt.samplePrompts)
+            QuestMapView(state: store.state) {
+                selectedTab = .today
+            }
+        case .progress:
+            ProgressTabView(state: store.state) {
+                selectedTab = .today
+            }
         case .profile:
-            ProfileView(profile: .sample)
+            ProfileView(store: store)
         }
     }
 }
