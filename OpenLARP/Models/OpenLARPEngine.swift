@@ -26,6 +26,7 @@ enum OpenLARPEngine {
 
         var next = state
         setQuestStatus(currentQuest.id, to: .inProgress, in: &next)
+        next.missedDayRecovery = .empty
         next.updatedAt = now
         return next
     }
@@ -145,6 +146,22 @@ enum OpenLARPEngine {
 
         if let nextQuestID = next.dailyCadence.nextQuestID {
             setQuestStatus(nextQuestID, to: .available, in: &next)
+
+            let unlockDate = next.dailyCadence.nextUnlockDate ?? nextLocalDay(after: completedAt, calendar: calendar)
+            let missedDayCount = missedQuestDayCount(unlockDate: unlockDate, returnDate: now, calendar: calendar)
+            if missedDayCount > 0 {
+                let previousStreakCount = next.dailyCadence.streakCountAfterCompletion ?? next.progress.streakCount
+                next.progress.streakCount = 0
+                next.missedDayRecovery = MissedDayRecoveryState(
+                    startedAt: now,
+                    missedDayCount: missedDayCount,
+                    lastCompletedQuestID: next.dailyCadence.lastCompletedQuestID,
+                    nextQuestID: nextQuestID,
+                    previousStreakCount: previousStreakCount
+                )
+            } else {
+                next.missedDayRecovery = .empty
+            }
         }
         next.dailyCadence = .empty
         next.updatedAt = now
@@ -359,11 +376,19 @@ enum OpenLARPEngine {
             nextQuestID: nextQuestID,
             nextUnlockDate: nextQuestID == nil ? nil : nextLocalDay(after: now, calendar: calendar)
         )
+        state.missedDayRecovery = .empty
     }
 
     private static func nextLocalDay(after date: Date, calendar: Calendar) -> Date {
         let startOfToday = calendar.startOfDay(for: date)
         return calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? date.addingTimeInterval(86_400)
+    }
+
+    private static func missedQuestDayCount(unlockDate: Date, returnDate: Date, calendar: Calendar) -> Int {
+        let unlockDay = calendar.startOfDay(for: unlockDate)
+        let returnDay = calendar.startOfDay(for: returnDate)
+        let dayDifference = calendar.dateComponents([.day], from: unlockDay, to: returnDay).day ?? 0
+        return max(0, dayDifference)
     }
 
     private static func updatedReadiness(_ readiness: ReadinessMetrics, delta: Int) -> ReadinessMetrics {

@@ -139,7 +139,11 @@ struct TodayView: View {
 
     @ViewBuilder
     private var questCard: some View {
-        if let completion = TodayCompletionContent(state: store.state) {
+        if let recovery = MissedDayRecoveryContent(state: store.state) {
+            MissedDayRecoveryCard(content: recovery) {
+                store.startCurrentQuest()
+            }
+        } else if let completion = TodayCompletionContent(state: store.state) {
             DoneForTodayCard(
                 content: completion,
                 attachmentURL: { attachment in
@@ -280,6 +284,67 @@ struct TodayView: View {
                     StatPill(value: "\(store.state.progress.completedQuestCount)", label: "quests")
                     StatPill(value: "\(store.state.progress.badges.count)", label: "badges")
                 }
+            }
+        }
+    }
+}
+
+private struct MissedDayRecoveryCard: View {
+    let content: MissedDayRecoveryContent
+    let continueQuest: () -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                Label(content.title, systemImage: "arrow.counterclockwise.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPCoral)
+
+                Text(content.missedDaysText)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(Color.openLARPInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(content.bodyText)
+                    .font(.body)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Pill(title: content.previousStreakText, systemImage: "flame", color: .openLARPCoral)
+                    Pill(title: content.activeStreakText, systemImage: "flame.fill", color: .openLARPGreen)
+                }
+
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("Next quest")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.openLARPGreen)
+                        .textCase(.uppercase)
+
+                    Text(content.nextQuestTitle)
+                        .font(.headline)
+                        .foregroundStyle(Color.openLARPInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(content.nextQuestObjectiveText)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(content.nextQuestMetaText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                }
+                .padding(12)
+                .background(Color.openLARPBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                Button {
+                    continueQuest()
+                } label: {
+                    Label(content.primaryActionTitle, systemImage: "play.fill")
+                }
+                .buttonStyle(PrimaryButtonStyle())
             }
         }
     }

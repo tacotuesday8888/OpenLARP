@@ -22,6 +22,7 @@ struct ProfileView: View {
                 }
 
                 activeGoalCard
+                streakCard
                 privacyCard
                 badgeCard
                 proofCard
@@ -110,6 +111,41 @@ struct ProfileView: View {
                     .font(.subheadline)
                     .foregroundStyle(Color.openLARPSoftInk)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var streakCard: some View {
+        if !store.state.needsGoalSetup {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Active streak")
+                        .font(.headline)
+                        .foregroundStyle(Color.openLARPInk)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(store.state.progress.streakCount)")
+                            .font(.largeTitle.weight(.black))
+                            .foregroundStyle(Color.openLARPCoral)
+
+                        Text(store.state.progress.streakCount == 1 ? "day" : "days")
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                    }
+
+                    if let recovery = MissedDayRecoveryContent(state: store.state) {
+                        Text("\(recovery.previousStreakText). \(recovery.missedDaysText) Continue from Today to rebuild the active streak.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("This is the current live streak for the local quest track.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
     }

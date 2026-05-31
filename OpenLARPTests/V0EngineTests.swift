@@ -119,6 +119,113 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.dailyCadence, .empty)
     }
 
+    func testRefreshDailyAvailabilityDoesNotShowMissedDayOnSameLocalDay() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let sameDayLater = localDate(year: 2026, month: 5, day: 31, hour: 22)
+        let state = try completedFirstQuestState(claimTime: claimTime)
+
+        let refreshed = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: sameDayLater,
+            calendar: testCalendar
+        )
+
+        XCTAssertNil(refreshed.missedDayRecovery.startedAt)
+        XCTAssertEqual(refreshed.progress.streakCount, 1)
+        XCTAssertNil(MissedDayRecoveryContent(state: refreshed))
+    }
+
+    func testRefreshDailyAvailabilityUnlocksNextDayWithoutMissedDayWarning() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let nextDay = localDate(year: 2026, month: 6, day: 1, hour: 8)
+        let state = try completedFirstQuestState(claimTime: claimTime)
+
+        let refreshed = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: nextDay,
+            calendar: testCalendar
+        )
+
+        XCTAssertNil(refreshed.missedDayRecovery.startedAt)
+        XCTAssertEqual(refreshed.progress.streakCount, 1)
+        XCTAssertEqual(refreshed.currentQuest?.id, refreshed.plan[1].id)
+    }
+
+    func testRefreshDailyAvailabilityShowsRecoveryAfterSkippingAvailableQuestDay() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let skippedReturn = localDate(year: 2026, month: 6, day: 2, hour: 8)
+        let state = try completedFirstQuestState(claimTime: claimTime)
+
+        let refreshed = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: skippedReturn,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(refreshed.plan[1].status, .available)
+        XCTAssertEqual(refreshed.progress.streakCount, 0)
+        XCTAssertEqual(refreshed.missedDayRecovery.missedDayCount, 1)
+        XCTAssertEqual(refreshed.missedDayRecovery.nextQuestID, refreshed.plan[1].id)
+    }
+
+    func testMissedDayRecoveryContentExplainsStreakAndNextQuest() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let skippedReturn = localDate(year: 2026, month: 6, day: 3, hour: 8)
+        let state = OpenLARPEngine.refreshDailyAvailability(
+            in: try completedFirstQuestState(claimTime: claimTime),
+            now: skippedReturn,
+            calendar: testCalendar
+        )
+
+        let content = try XCTUnwrap(MissedDayRecoveryContent(state: state))
+
+        XCTAssertEqual(content.title, "Streak reset, track still alive")
+        XCTAssertEqual(content.missedDaysText, "You missed 2 quest days.")
+        XCTAssertEqual(content.bodyText, "No shame. Your XP and proof receipts are still here. Start the next quest to rebuild from today.")
+        XCTAssertEqual(content.previousStreakText, "Previous streak: 1 day")
+        XCTAssertEqual(content.activeStreakText, "Active streak: 0 days")
+        XCTAssertEqual(content.nextQuestTitle, state.plan[1].title)
+        XCTAssertEqual(content.nextQuestObjectiveText, state.plan[1].purpose)
+        XCTAssertEqual(content.primaryActionTitle, "Continue Next Quest")
+    }
+
+    func testStartingCurrentQuestClearsMissedDayRecovery() throws {
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let skippedReturn = localDate(year: 2026, month: 6, day: 2, hour: 8)
+        var state = OpenLARPEngine.refreshDailyAvailability(
+            in: try completedFirstQuestState(claimTime: claimTime),
+            now: skippedReturn,
+            calendar: testCalendar
+        )
+
+        state = try OpenLARPEngine.startCurrentQuest(in: state, now: skippedReturn)
+
+        XCTAssertEqual(state.plan[1].status, .inProgress)
+        XCTAssertEqual(state.missedDayRecovery, .empty)
+        XCTAssertEqual(state.progress.streakCount, 0)
+    }
+
+    func testPersistenceRoundTripKeepsMissedDayRecoveryState() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
+        let skippedReturn = localDate(year: 2026, month: 6, day: 2, hour: 8)
+        let state = OpenLARPEngine.refreshDailyAvailability(
+            in: try completedFirstQuestState(claimTime: claimTime),
+            now: skippedReturn,
+            calendar: testCalendar
+        )
+
+        try persistence.save(state)
+        let reloaded = try persistence.load()
+
+        XCTAssertEqual(reloaded.missedDayRecovery.missedDayCount, 1)
+        XCTAssertEqual(reloaded.missedDayRecovery.nextQuestID, reloaded.plan[1].id)
+        XCTAssertEqual(reloaded.progress.streakCount, 0)
+        XCTAssertEqual(reloaded.currentQuest?.id, reloaded.plan[1].id)
+    }
+
     func testTodayCompletionContentShowsDoneStateAndNextQuestPreview() throws {
         let claimTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
         let sameDayLater = localDate(year: 2026, month: 5, day: 31, hour: 18)
