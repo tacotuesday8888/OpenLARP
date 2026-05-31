@@ -165,11 +165,44 @@ enum ProofKind: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+struct ProofAttachment: Codable, Equatable, Identifiable {
+    var id: UUID
+    var fileName: String
+    var originalFileName: String
+    var contentType: String
+    var byteCount: Int
+    var createdAt: Date
+    var localRelativePath: String
+
+    init(
+        id: UUID = UUID(),
+        fileName: String,
+        originalFileName: String = "",
+        contentType: String,
+        byteCount: Int,
+        createdAt: Date = Date(),
+        localRelativePath: String? = nil
+    ) {
+        self.id = id
+        self.fileName = fileName
+        self.originalFileName = originalFileName
+        self.contentType = contentType
+        self.byteCount = byteCount
+        self.createdAt = createdAt
+        self.localRelativePath = localRelativePath ?? "ProofAttachments/\(fileName)"
+    }
+
+    var isImage: Bool {
+        contentType.hasPrefix("image/")
+    }
+}
+
 struct ProofSubmission: Codable, Equatable, Identifiable {
     var id: UUID
     var kind: ProofKind
     var text: String
     var link: String
+    var attachments: [ProofAttachment]
     var submittedAt: Date
 
     init(
@@ -177,13 +210,34 @@ struct ProofSubmission: Codable, Equatable, Identifiable {
         kind: ProofKind,
         text: String,
         link: String = "",
+        attachments: [ProofAttachment] = [],
         submittedAt: Date = Date()
     ) {
         self.id = id
         self.kind = kind
         self.text = text
         self.link = link
+        self.attachments = attachments
         self.submittedAt = submittedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case text
+        case link
+        case attachments
+        case submittedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(ProofKind.self, forKey: .kind)
+        text = try container.decode(String.self, forKey: .text)
+        link = try container.decode(String.self, forKey: .link)
+        attachments = try container.decodeIfPresent([ProofAttachment].self, forKey: .attachments) ?? []
+        submittedAt = try container.decode(Date.self, forKey: .submittedAt)
     }
 }
 
@@ -204,8 +258,62 @@ struct ProofRecord: Codable, Equatable, Identifiable {
     var kind: ProofKind
     var text: String
     var link: String
+    var attachments: [ProofAttachment]
     var submittedAt: Date
     var quality: QualityCheckResult?
+
+    var attachmentSummary: String {
+        let imageCount = attachments.filter(\.isImage).count
+        guard imageCount > 0 else { return "No attachments" }
+        return imageCount == 1 ? "1 image" : "\(imageCount) images"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case questID
+        case questTitle
+        case kind
+        case text
+        case link
+        case attachments
+        case submittedAt
+        case quality
+    }
+
+    init(
+        id: UUID,
+        questID: UUID,
+        questTitle: String,
+        kind: ProofKind,
+        text: String,
+        link: String,
+        attachments: [ProofAttachment] = [],
+        submittedAt: Date,
+        quality: QualityCheckResult?
+    ) {
+        self.id = id
+        self.questID = questID
+        self.questTitle = questTitle
+        self.kind = kind
+        self.text = text
+        self.link = link
+        self.attachments = attachments
+        self.submittedAt = submittedAt
+        self.quality = quality
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        questID = try container.decode(UUID.self, forKey: .questID)
+        questTitle = try container.decode(String.self, forKey: .questTitle)
+        kind = try container.decode(ProofKind.self, forKey: .kind)
+        text = try container.decode(String.self, forKey: .text)
+        link = try container.decode(String.self, forKey: .link)
+        attachments = try container.decodeIfPresent([ProofAttachment].self, forKey: .attachments) ?? []
+        submittedAt = try container.decode(Date.self, forKey: .submittedAt)
+        quality = try container.decodeIfPresent(QualityCheckResult.self, forKey: .quality)
+    }
 }
 
 struct ReadinessMetrics: Codable, Equatable {
@@ -282,12 +390,14 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
     case noCurrentQuest
     case questNotAvailable
     case emptyProof
+    case attachmentStorageFailed
 
     var errorDescription: String? {
         switch self {
         case .noCurrentQuest: "There is no current quest to work on."
         case .questNotAvailable: "This quest is not available yet."
-        case .emptyProof: "Add a short proof note or self-report before checking quality."
+        case .emptyProof: "Add a short proof note, link, photo, or screenshot before checking quality."
+        case .attachmentStorageFailed: "That image could not be saved locally. Try another screenshot or photo."
         }
     }
 }

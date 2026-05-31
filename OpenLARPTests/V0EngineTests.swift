@@ -73,6 +73,88 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.progress.recentProof.first?.quality?.label, "Needs stronger proof")
     }
 
+    func testImageAttachmentProofAwardsFullCreditWithoutTextOrLink() throws {
+        var state = OpenLARPEngine.confirmGoal(goal)
+        state = try OpenLARPEngine.startCurrentQuest(in: state)
+
+        let attachment = ProofAttachment(
+            fileName: "proof-image.png",
+            originalFileName: "whiteboard.png",
+            contentType: "image/png",
+            byteCount: 128,
+            createdAt: Date(timeIntervalSince1970: 2_800)
+        )
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "",
+            link: "",
+            attachments: [attachment],
+            submittedAt: Date(timeIntervalSince1970: 2_900)
+        )
+
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        state = try OpenLARPEngine.claim(result, proof: proof, in: state)
+
+        XCTAssertTrue(result.isAccepted)
+        XCTAssertEqual(result.xpEarned, 120)
+        XCTAssertEqual(result.label, "Strong proof")
+        XCTAssertEqual(state.progress.xp, 120)
+        XCTAssertEqual(state.progress.proofCount, 1)
+        XCTAssertEqual(state.progress.recentProof.first?.attachments, [attachment])
+    }
+
+    func testPersistenceRoundTripKeepsProofAttachmentMetadata() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+
+        var state = OpenLARPEngine.confirmGoal(goal)
+        state = try OpenLARPEngine.startCurrentQuest(in: state)
+        let attachment = ProofAttachment(
+            fileName: "proof-image.jpg",
+            originalFileName: "screenshot.jpg",
+            contentType: "image/jpeg",
+            byteCount: 256,
+            createdAt: Date(timeIntervalSince1970: 3_200)
+        )
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "This screenshot shows the requirement map I made.",
+            link: "",
+            attachments: [attachment],
+            submittedAt: Date(timeIntervalSince1970: 3_300)
+        )
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        state = try OpenLARPEngine.claim(result, proof: proof, in: state)
+
+        try persistence.save(state)
+        let reloaded = try persistence.load()
+
+        XCTAssertEqual(reloaded.progress.recentProof.first?.attachments, [attachment])
+        XCTAssertEqual(reloaded.progress.recentProof.first?.attachmentSummary, "1 image")
+    }
+
+    func testAttachmentStoreWritesAndDeletesImageData() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPAttachmentStore(directory: directory)
+        let imageData = Data([0x89, 0x50, 0x4E, 0x47])
+
+        let attachment = try store.saveImage(
+            data: imageData,
+            contentType: "image/png",
+            originalFileName: "proof.png",
+            now: Date(timeIntervalSince1970: 3_600)
+        )
+
+        XCTAssertEqual(attachment.contentType, "image/png")
+        XCTAssertEqual(attachment.byteCount, imageData.count)
+        XCTAssertEqual(try store.data(for: attachment), imageData)
+
+        try store.delete(attachment)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: attachment).path))
+    }
+
     func testPersistenceRoundTripKeepsGoalProgressAndQuestStatuses() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

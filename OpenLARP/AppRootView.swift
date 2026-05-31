@@ -56,7 +56,9 @@ struct AppRootView: View {
                 selectedTab = .today
             }
         case .progress:
-            ProgressTabView(state: store.state) {
+            ProgressTabView(state: store.state, attachmentURL: { attachment in
+                store.localURL(for: attachment)
+            }) {
                 selectedTab = .today
             }
         case .profile:
