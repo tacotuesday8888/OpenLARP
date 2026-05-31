@@ -385,6 +385,46 @@ struct CompletedQuestDetailContent: Equatable {
     }
 }
 
+struct QuestPreviewContent: Equatable {
+    var dayText: String
+    var statusText: String
+    var title: String
+    var objectiveText: String
+    var stepTexts: [String]
+    var proofRequiredText: String
+    var gapText: String
+    var xpRewardText: String
+    var timeEstimateText: String
+    var difficultyText: String
+    var todayCTATitle: String?
+    var canOpenToday: Bool
+
+    init(quest: Quest) {
+        dayText = "Day \(quest.day)"
+        statusText = quest.status.label
+        title = quest.title
+        objectiveText = quest.purpose
+        stepTexts = quest.steps
+        proofRequiredText = quest.proofRequired
+        gapText = quest.gap.title
+        xpRewardText = "\(quest.xpReward) XP"
+        timeEstimateText = quest.timeEstimate
+        difficultyText = quest.difficulty
+
+        switch quest.status {
+        case .available:
+            todayCTATitle = "Go to Today to Start"
+            canOpenToday = true
+        case .inProgress:
+            todayCTATitle = "Go to Today to Continue"
+            canOpenToday = true
+        case .locked, .completed, .skipped:
+            todayCTATitle = nil
+            canOpenToday = false
+        }
+    }
+}
+
 struct ReadinessMetrics: Codable, Equatable {
     var overall: Int
     var proofStrength: Int

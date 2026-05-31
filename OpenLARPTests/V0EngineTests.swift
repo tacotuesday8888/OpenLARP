@@ -343,6 +343,80 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(content.xpRewardText, "110 XP")
     }
 
+    func testQuestPreviewContentShowsAvailableQuestMetadataAndStartCTA() {
+        let quest = Quest(
+            id: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!,
+            day: 2,
+            title: "Create one tiny proof artifact",
+            purpose: "A small real artifact beats a big unsupported claim.",
+            timeEstimateMinutes: 30,
+            difficulty: "Starter",
+            gap: .proofStrength,
+            proofRequired: "Add a link, screenshot, or notes showing what you made.",
+            xpReward: 130,
+            steps: ["Make the first version.", "Write what it proves honestly."],
+            status: .available
+        )
+
+        let content = QuestPreviewContent(quest: quest)
+
+        XCTAssertEqual(content.dayText, "Day 2")
+        XCTAssertEqual(content.statusText, "Today")
+        XCTAssertEqual(content.title, "Create one tiny proof artifact")
+        XCTAssertEqual(content.objectiveText, "A small real artifact beats a big unsupported claim.")
+        XCTAssertEqual(content.stepTexts, ["Make the first version.", "Write what it proves honestly."])
+        XCTAssertEqual(content.proofRequiredText, "Add a link, screenshot, or notes showing what you made.")
+        XCTAssertEqual(content.gapText, "Proof strength")
+        XCTAssertEqual(content.xpRewardText, "130 XP")
+        XCTAssertEqual(content.timeEstimateText, "30 min")
+        XCTAssertEqual(content.difficultyText, "Starter")
+        XCTAssertEqual(content.todayCTATitle, "Go to Today to Start")
+        XCTAssertTrue(content.canOpenToday)
+    }
+
+    func testQuestPreviewContentUsesContinueCTAForInProgressQuest() {
+        let quest = Quest(
+            id: UUID(uuidString: "ABABABAB-ABAB-ABAB-ABAB-ABABABABABAB")!,
+            day: 1,
+            title: "Map 3 real requirements",
+            purpose: "Know what proof matters before building it.",
+            timeEstimateMinutes: 25,
+            difficulty: "Starter",
+            gap: .targetClarity,
+            proofRequired: "Paste requirement notes.",
+            xpReward: 120,
+            steps: ["Find two postings.", "Pick repeated requirements."],
+            status: .inProgress
+        )
+
+        let content = QuestPreviewContent(quest: quest)
+
+        XCTAssertEqual(content.statusText, "In progress")
+        XCTAssertEqual(content.todayCTATitle, "Go to Today to Continue")
+        XCTAssertTrue(content.canOpenToday)
+    }
+
+    func testQuestPreviewContentDoesNotExposeTodayCTAForLockedQuest() {
+        let quest = Quest(
+            id: UUID(uuidString: "CDCDCDCD-CDCD-CDCD-CDCD-CDCDCDCDCDCD")!,
+            day: 5,
+            title: "Find one low-friction networking target",
+            purpose: "Networking gets easier when the ask is specific and tied to real work.",
+            timeEstimateMinutes: 20,
+            difficulty: "Spicy",
+            gap: .networking,
+            proofRequired: "Paste the person's role and why they are relevant.",
+            xpReward: 120,
+            status: .locked
+        )
+
+        let content = QuestPreviewContent(quest: quest)
+
+        XCTAssertEqual(content.statusText, "Locked")
+        XCTAssertNil(content.todayCTATitle)
+        XCTAssertFalse(content.canOpenToday)
+    }
+
     func testPersistenceRoundTripKeepsGoalProgressAndQuestStatuses() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
