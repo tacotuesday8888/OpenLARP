@@ -1,31 +1,61 @@
 import SwiftUI
 
 struct AgentChatView: View {
-    let prompts: [AgentPrompt]
+    let store: OpenLARPStore
+    @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
+
+    private var prompts: [AgentPrompt] {
+        [
+            AgentPrompt(title: "Why this quest?", description: store.state.currentQuest?.purpose ?? "Set a goal first so the agent has context."),
+            AgentPrompt(title: "Make this easier", description: "Shrink the action without turning it into fake progress."),
+            AgentPrompt(title: "Improve my proof", description: "Turn a self-report into something more defensible."),
+            AgentPrompt(title: "Change my goal", description: "Rebuild the questline when the target is wrong.")
+        ]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Career agent")
+                        Text("Agent helper")
                             .font(.largeTitle.weight(.black))
                             .foregroundStyle(Color.openLARPInk)
 
-                        Text("Ask for help when you need to change goals, understand a quest, or get unstuck. The app still starts with action.")
+                        Text("Use this to unblock today’s quest. OpenLARP still starts with action, not chat.")
                             .font(.body)
                             .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let quest = store.state.currentQuest {
+                        Card {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Current context")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.openLARPInk)
+                                Text(quest.title)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(Color.openLARPInk)
+                                Text(quest.proofRequired)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.openLARPSoftInk)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                     }
 
                     Card {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Memory")
+                            Text("Boundaries")
                                 .font(.headline)
-                            Text("Memory is on for useful career context. Sensitive chats can be kept out of long-term memory.")
+                                .foregroundStyle(Color.openLARPInk)
+                            Text("Local helper only. No real AI call, no backend memory, and no external action without user approval.")
                                 .font(.subheadline)
                                 .foregroundStyle(Color.openLARPSoftInk)
-                            Pill(title: "Drafts only. You approve external actions.", systemImage: "hand.raised", color: .openLARPCoral)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Pill(title: "Drafts only", systemImage: "hand.raised", color: .openLARPCoral)
                         }
                     }
 
@@ -63,7 +93,7 @@ struct AgentChatView: View {
             }
 
             HStack(spacing: 10) {
-                TextField("Ask the agent", text: $draft)
+                TextField("Ask about today's quest", text: $draft)
                     .textFieldStyle(.roundedBorder)
 
                 Button {
@@ -79,7 +109,14 @@ struct AgentChatView: View {
             .background(.regularMaterial)
         }
         .background(Color.openLARPBackground)
-        .navigationTitle("Chat")
+        .navigationTitle("Helper")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Back to Quest") {
+                    dismiss()
+                }
+            }
+        }
     }
 }

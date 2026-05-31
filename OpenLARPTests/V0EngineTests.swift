@@ -1,0 +1,102 @@
+import XCTest
+@testable import OpenLARP
+
+final class V0EngineTests: XCTestCase {
+    private let goal = CareerGoal(
+        currentStatus: .student,
+        targetRole: "iOS engineering internship",
+        timeline: "30 days",
+        background: "Second-year CS student with one class project and no shipped app yet.",
+        existingProof: "Class project, SwiftUI tutorial clone",
+        confidence: 3,
+        biggestBlocker: "I do not have strong proof that I can build production-quality apps."
+    )
+
+    func testGoalSetupCreatesDiagnosticAndSevenDayPlan() {
+        let state = OpenLARPEngine.confirmGoal(goal)
+
+        XCTAssertEqual(state.goal, goal)
+        XCTAssertEqual(state.diagnostic?.label, "Medium Cooked")
+        XCTAssertEqual(state.plan.count, 7)
+        XCTAssertEqual(state.currentQuest?.status, .available)
+        XCTAssertEqual(state.currentQuest?.gap, .proofStrength)
+        XCTAssertEqual(state.progress.readiness.overall, 42)
+    }
+
+    func testStrongProofAwardsFullXPStreakReadinessAndBadges() throws {
+        var state = OpenLARPEngine.confirmGoal(goal)
+        state = try OpenLARPEngine.startCurrentQuest(in: state)
+
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "I built a small SwiftUI screen for the target app, tested the empty and completed states, wrote notes about the tradeoffs, and saved the code in a repo.",
+            link: "https://example.com/proof",
+            submittedAt: Date(timeIntervalSince1970: 1_800)
+        )
+
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        state = try OpenLARPEngine.claim(result, proof: proof, in: state)
+
+        XCTAssertTrue(result.isAccepted)
+        XCTAssertEqual(result.xpEarned, 120)
+        XCTAssertEqual(state.progress.xp, 120)
+        XCTAssertEqual(state.progress.streakCount, 1)
+        XCTAssertEqual(state.progress.proofCount, 1)
+        XCTAssertEqual(state.progress.completedQuestCount, 1)
+        XCTAssertEqual(state.progress.readiness.proofStrength, 49)
+        XCTAssertTrue(state.progress.badges.contains(.firstProof))
+        XCTAssertEqual(state.plan[0].status, .completed)
+        XCTAssertEqual(state.plan[1].status, .available)
+    }
+
+    func testSelfReportAwardsPartialCreditWithoutPretendingProofIsStrong() throws {
+        var state = OpenLARPEngine.confirmGoal(goal)
+        state = try OpenLARPEngine.startCurrentQuest(in: state)
+
+        let proof = ProofSubmission(
+            kind: .selfReport,
+            text: "I looked at two job posts and wrote down a few repeated skills.",
+            link: "",
+            submittedAt: Date(timeIntervalSince1970: 2_400)
+        )
+
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        state = try OpenLARPEngine.claim(result, proof: proof, in: state)
+
+        XCTAssertFalse(result.isAccepted)
+        XCTAssertEqual(result.xpEarned, 45)
+        XCTAssertEqual(result.readinessDelta, 2)
+        XCTAssertEqual(state.progress.xp, 45)
+        XCTAssertEqual(state.progress.streakCount, 1)
+        XCTAssertEqual(state.progress.proofCount, 1)
+        XCTAssertEqual(state.progress.readiness.proofStrength, 44)
+        XCTAssertEqual(state.progress.recentProof.first?.quality?.label, "Needs stronger proof")
+    }
+
+    func testPersistenceRoundTripKeepsGoalProgressAndQuestStatuses() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+
+        var state = OpenLARPEngine.confirmGoal(goal)
+        state = try OpenLARPEngine.startCurrentQuest(in: state)
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "I created a target-role requirements map with six repeated skills, picked one proof-building app idea, and wrote the first implementation checklist.",
+            link: "https://example.com/checklist",
+            submittedAt: Date(timeIntervalSince1970: 3_000)
+        )
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        state = try OpenLARPEngine.claim(result, proof: proof, in: state)
+
+        try persistence.save(state)
+        let reloaded = try persistence.load()
+
+        XCTAssertEqual(reloaded.goal, goal)
+        XCTAssertEqual(reloaded.progress.xp, 120)
+        XCTAssertEqual(reloaded.progress.streakCount, 1)
+        XCTAssertEqual(reloaded.plan[0].status, .completed)
+        XCTAssertEqual(reloaded.progress.recentProof.count, 1)
+        XCTAssertEqual(reloaded.progress.recentProof.first?.text, proof.text)
+    }
+}

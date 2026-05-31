@@ -1,15 +1,26 @@
 import SwiftUI
 
 struct TodayView: View {
-    let snapshot: UserSnapshot
+    let store: OpenLARPStore
+    @State private var showingAgent = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header
-                cookedCard
-                questCard
-                readinessCard
+                if store.state.needsGoalSetup {
+                    GoalSetupView(store: store)
+                } else {
+                    header
+                    diagnosticCard
+                    questCard
+                    progressStrip
+                    Button {
+                        showingAgent = true
+                    } label: {
+                        Label("Ask Agent about this quest", systemImage: "sparkles")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
             }
             .padding(20)
             .padding(.bottom, 88)
@@ -17,18 +28,36 @@ struct TodayView: View {
         .background(Color.openLARPBackground)
         .navigationTitle("Today")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingAgent) {
+            NavigationStack {
+                AgentChatView(store: store)
+            }
+        }
+        .alert(
+            "OpenLARP",
+            isPresented: Binding(
+                get: { store.errorMessage != nil },
+                set: { if !$0 { store.errorMessage = nil } }
+            )
+        ) {
+            Button("OK") {
+                store.errorMessage = nil
+            }
+        } message: {
+            Text(store.errorMessage ?? "")
+        }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Duolingo for your career")
+                    Text("What should I do today?")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.openLARPGreen)
                         .textCase(.uppercase)
 
-                    Text(snapshot.targetRole)
+                    Text(store.state.goal?.targetRole ?? "Career goal")
                         .font(.title2.weight(.bold))
                         .foregroundStyle(Color.openLARPInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -37,7 +66,7 @@ struct TodayView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 4) {
-                    Label("\(snapshot.streakCount)", systemImage: "flame.fill")
+                    Label("\(store.state.progress.streakCount)", systemImage: "flame.fill")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(Color.openLARPCoral)
 
@@ -48,108 +77,169 @@ struct TodayView: View {
             }
 
             HStack {
-                Pill(title: snapshot.targetTimeline, systemImage: "clock", color: .openLARPCoral)
-                Pill(title: "\(snapshot.proofCount) proof items", systemImage: "checkmark.seal", color: .openLARPGreen)
+                Pill(title: store.state.goal?.timeline ?? "14-day sprint", systemImage: "clock", color: .openLARPCoral)
+                Pill(title: "\(store.state.progress.proofCount) proof items", systemImage: "checkmark.seal", color: .openLARPGreen)
             }
         }
     }
 
-    private var cookedCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Am I Cooked?")
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(Color.openLARPInk)
+    @ViewBuilder
+    private var diagnosticCard: some View {
+        if let diagnostic = store.state.diagnostic {
+            Card {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Am I Cooked?")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(Color.openLARPInk)
 
-                        Text(snapshot.cookedLabel)
-                            .font(.largeTitle.weight(.black))
-                            .foregroundStyle(Color.openLARPCoral)
+                            Text(diagnostic.label)
+                                .font(.largeTitle.weight(.black))
+                                .foregroundStyle(Color.openLARPCoral)
+                        }
+
+                        Spacer()
+
+                        ScoreRing(score: diagnostic.score)
                     }
 
-                    Spacer()
+                    Text(diagnostic.mainGap)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    ZStack {
-                        Circle()
-                            .stroke(Color.openLARPCoral.opacity(0.18), lineWidth: 12)
-                        Circle()
-                            .trim(from: 0, to: CGFloat(snapshot.cookedScore) / 100)
-                            .stroke(Color.openLARPCoral, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                        Text("\(snapshot.cookedScore)")
-                            .font(.title2.weight(.black))
+                    Text("Fastest fix: \(diagnostic.fastestFix)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.openLARPInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if store.state.currentQuest?.status == .available {
+                        Button {
+                            store.startCurrentQuest()
+                        } label: {
+                            Label(store.state.progress.completedQuestCount == 0 ? "Start My First Quest" : "Start Quest", systemImage: "play.fill")
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
                     }
-                    .frame(width: 82, height: 82)
                 }
+            }
+        }
+    }
 
-                Text(snapshot.mainGap)
+    @ViewBuilder
+    private var questCard: some View {
+        if let quest = store.state.currentQuest {
+            Card {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Pill(title: quest.timeEstimate, systemImage: "timer", color: .openLARPGreen)
+                        Pill(title: "+\(quest.xpReward) XP", systemImage: "bolt.fill", color: .openLARPYellow)
+                        Pill(title: quest.gap.title, systemImage: "scope", color: .openLARPCoral)
+                    }
+
+                    Text(quest.title)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(Color.openLARPInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(quest.purpose)
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(quest.proofRequired, systemImage: "checkmark.seal")
+                        Label("Difficulty: \(quest.difficulty)", systemImage: "gauge.with.dots.needle.50percent")
+                    }
                     .font(.subheadline)
                     .foregroundStyle(Color.openLARPSoftInk)
-                    .fixedSize(horizontal: false, vertical: true)
 
-                Button {
-                    // Share-card generation comes after the visual direction is locked.
-                } label: {
-                    Label("Preview share card", systemImage: "square.and.arrow.up")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-            }
-        }
-    }
+                    switch quest.status {
+                    case .available:
+                        HStack(spacing: 10) {
+                            Button {
+                                store.startCurrentQuest()
+                            } label: {
+                                Label("Start Quest", systemImage: "play.fill")
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
 
-    private var questCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Pill(title: snapshot.todayQuest.timeEstimate, systemImage: "timer", color: .openLARPGreen)
-                    Pill(title: "+\(snapshot.todayQuest.xpReward) XP", systemImage: "bolt.fill", color: .openLARPYellow)
-                }
-
-                Text(snapshot.todayQuest.title)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(Color.openLARPInk)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(snapshot.todayQuest.purpose)
-                    .font(.body)
-                    .foregroundStyle(Color.openLARPSoftInk)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(snapshot.todayQuest.proofRequired, systemImage: "photo.on.rectangle")
-                    Label("One main quest. Swap only if it is a bad fit.", systemImage: "arrow.triangle.2.circlepath")
-                }
-                .font(.subheadline)
-                .foregroundStyle(Color.openLARPSoftInk)
-
-                HStack(spacing: 10) {
-                    Button {
-                        // Proof upload will connect to storage after the shell is validated.
-                    } label: {
-                        Label("Submit proof", systemImage: "checkmark.circle.fill")
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-
-                    Button {
-                        // Quest swap rules come later.
-                    } label: {
-                        Image(systemName: "arrow.triangle.2.circlepath")
+                            Button {
+                                store.swapCurrentQuest()
+                            } label: {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.openLARPInk)
+                                    .frame(width: 48, height: 48)
+                                    .background(Color.openLARPYellow.opacity(0.24))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                            .accessibilityLabel("Swap quest")
+                        }
+                    case .inProgress:
+                        questSteps(quest.steps)
+                        if let result = store.pendingQualityResult {
+                            QualityResultCard(result: result, store: store)
+                        } else {
+                            ProofComposer(store: store)
+                        }
+                    case .completed:
+                        Label("Quest complete. Your next quest is ready on the map.", systemImage: "checkmark.circle.fill")
                             .font(.headline)
-                            .foregroundStyle(Color.openLARPInk)
-                            .frame(width: 48, height: 48)
-                            .background(Color.openLARPYellow.opacity(0.24))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .foregroundStyle(Color.openLARPGreen)
+                    case .locked:
+                        Label("This quest unlocks after today's proof.", systemImage: "lock.fill")
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                    case .skipped:
+                        Label("Skipped. Use a recovery quest to protect your streak.", systemImage: "arrow.counterclockwise")
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPSoftInk)
                     }
-                    .accessibilityLabel("Swap quest")
+                }
+            }
+        } else {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Sprint complete")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(Color.openLARPInk)
+                    Text("You finished the local seven-day path. Change your goal or wait for the next sprint version.")
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
                 }
             }
         }
     }
 
-    private var readinessCard: some View {
+    private func questSteps(_ steps: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Quest steps")
+                .font(.headline)
+                .foregroundStyle(Color.openLARPInk)
+
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                HStack(alignment: .top, spacing: 10) {
+                    Text("\(index + 1)")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Color.openLARPGreen)
+                        .clipShape(Circle())
+
+                    Text(step)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var progressStrip: some View {
         Card {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Goal readiness")
                         .font(.headline)
@@ -157,29 +247,269 @@ struct TodayView: View {
 
                     Spacer()
 
-                    Text("\(snapshot.xp) / \(snapshot.xpGoal) XP")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.openLARPSoftInk)
+                    Text("\(store.state.progress.readiness.overall)%")
+                        .font(.headline.weight(.black))
+                        .foregroundStyle(Color.openLARPGreen)
                 }
 
-                ProgressView(value: Double(snapshot.xp), total: Double(snapshot.xpGoal))
+                ProgressView(value: Double(store.state.progress.readiness.overall), total: 100)
                     .tint(.openLARPGreen)
 
-                ForEach(snapshot.readiness) { gap in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(gap.title)
-                            Spacer()
-                            Text(gap.label)
-                                .foregroundStyle(gap.color)
-                        }
-                        .font(.subheadline.weight(.semibold))
-
-                        ProgressView(value: gap.value)
-                            .tint(gap.color)
-                    }
+                HStack {
+                    StatPill(value: "\(store.state.progress.xp)", label: "XP")
+                    StatPill(value: "\(store.state.progress.completedQuestCount)", label: "quests")
+                    StatPill(value: "\(store.state.progress.badges.count)", label: "badges")
                 }
             }
         }
+    }
+}
+
+private struct GoalSetupView: View {
+    let store: OpenLARPStore
+    @State private var currentStatus: CurrentStatus = .student
+    @State private var targetRole = ""
+    @State private var timeline = "30 days"
+    @State private var background = ""
+    @State private var existingProof = ""
+    @State private var confidence = 3.0
+    @State private var biggestBlocker = ""
+
+    private var canSubmit: Bool {
+        !targetRole.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("OpenLARP")
+                    .font(.largeTitle.weight(.black))
+                    .foregroundStyle(Color.openLARPInk)
+
+                Text("Set one honest target. The app will tell you how cooked you are, then give you one quest that creates real proof.")
+                    .font(.body)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Card {
+                VStack(alignment: .leading, spacing: 14) {
+                    Picker("Current status", selection: $currentStatus) {
+                        ForEach(CurrentStatus.allCases) { status in
+                            Text(status.rawValue).tag(status)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Target role or field")
+                            .font(.subheadline.weight(.semibold))
+                        TextField("Entry-level product designer", text: $targetRole)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Target role")
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Timeline")
+                            .font(.subheadline.weight(.semibold))
+                        TextField("30 days", text: $timeline)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Timeline")
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Current background")
+                            .font(.subheadline.weight(.semibold))
+                        TextField("Student, new grad, project work, current role...", text: $background, axis: .vertical)
+                            .lineLimit(3, reservesSpace: true)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Current background")
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Existing proof")
+                            .font(.subheadline.weight(.semibold))
+                        TextField("Projects, coursework, links, shipped work...", text: $existingProof, axis: .vertical)
+                            .lineLimit(3, reservesSpace: true)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Existing proof")
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Confidence: \(Int(confidence)) / 5")
+                            .font(.subheadline.weight(.semibold))
+                        Slider(value: $confidence, in: 1...5, step: 1)
+                            .tint(.openLARPGreen)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Biggest blocker")
+                            .font(.subheadline.weight(.semibold))
+                        TextField("What makes this goal feel risky?", text: $biggestBlocker, axis: .vertical)
+                            .lineLimit(3, reservesSpace: true)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Biggest blocker")
+                    }
+                }
+            }
+
+            Button {
+                let goal = CareerGoal(
+                    currentStatus: currentStatus,
+                    targetRole: targetRole.trimmingCharacters(in: .whitespacesAndNewlines),
+                    timeline: timeline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "30 days" : timeline,
+                    background: background,
+                    existingProof: existingProof,
+                    confidence: Int(confidence),
+                    biggestBlocker: biggestBlocker
+                )
+                store.confirmGoal(goal)
+            } label: {
+                Label("Check If I'm Cooked", systemImage: "flame.fill")
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(!canSubmit)
+            .opacity(canSubmit ? 1 : 0.5)
+        }
+    }
+}
+
+private struct ProofComposer: View {
+    let store: OpenLARPStore
+    @State private var kind: ProofKind = .proof
+    @State private var text = ""
+    @State private var link = ""
+
+    private var canSubmit: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Submit proof")
+                .font(.headline)
+                .foregroundStyle(Color.openLARPInk)
+
+            Picker("Proof type", selection: $kind) {
+                ForEach(ProofKind.allCases) { proofKind in
+                    Text(proofKind.label).tag(proofKind)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            TextEditor(text: $text)
+                .frame(minHeight: 116)
+                .padding(8)
+                .background(Color.openLARPBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.openLARPGray.opacity(0.25))
+                )
+                .accessibilityLabel("Proof text")
+
+            TextField("Optional proof link", text: $link)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+
+            Button {
+                store.checkProof(kind: kind, text: text, link: link)
+            } label: {
+                Label("Check My Proof", systemImage: "checkmark.seal.fill")
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(!canSubmit)
+            .opacity(canSubmit ? 1 : 0.5)
+
+            Text(kind == .selfReport ? "Self-report keeps momentum, but earns less than real evidence." : "A link, screenshot note, or concrete artifact earns stronger progress.")
+                .font(.caption)
+                .foregroundStyle(Color.openLARPSoftInk)
+        }
+    }
+}
+
+private struct QualityResultCard: View {
+    let result: QualityCheckResult
+    let store: OpenLARPStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(result.label, systemImage: result.isAccepted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.headline)
+                .foregroundStyle(result.isAccepted ? Color.openLARPGreen : Color.openLARPCoral)
+
+            Text(result.reason)
+                .font(.subheadline)
+                .foregroundStyle(Color.openLARPSoftInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Coach note: \(result.improvement)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.openLARPInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Pill(title: "+\(result.xpEarned) XP", systemImage: "bolt.fill", color: .openLARPYellow)
+                Pill(title: "+\(result.readinessDelta) proof", systemImage: "chart.line.uptrend.xyaxis", color: .openLARPGreen)
+                Pill(title: "\(result.qualityScore)/100", systemImage: "gauge", color: .openLARPCoral)
+            }
+
+            Button {
+                store.claimPendingQualityResult()
+            } label: {
+                Label(result.isAccepted ? "Claim XP" : "Accept Lower XP", systemImage: "bolt.circle.fill")
+            }
+            .buttonStyle(PrimaryButtonStyle())
+
+            if !result.isAccepted {
+                Button {
+                    store.discardPendingQualityResult()
+                } label: {
+                    Label("Improve Proof", systemImage: "pencil")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+        }
+    }
+}
+
+private struct ScoreRing: View {
+    let score: Int
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.openLARPCoral.opacity(0.18), lineWidth: 12)
+            Circle()
+                .trim(from: 0, to: CGFloat(score) / 100)
+                .stroke(Color.openLARPCoral, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(score)")
+                .font(.title2.weight(.black))
+                .foregroundStyle(Color.openLARPInk)
+        }
+        .frame(width: 82, height: 82)
+    }
+}
+
+private struct StatPill: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.headline.weight(.black))
+                .foregroundStyle(Color.openLARPInk)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(Color.openLARPSoftInk)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color.openLARPBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
