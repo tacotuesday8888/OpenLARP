@@ -16,6 +16,7 @@
 		68ED80BD8BCA86D0FF55459F /* AgentChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56D7AF5561E51E598C8712C6 /* AgentChatView.swift */; };
 		69E98E51E60CFE43659236BC /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8681DC4AF3698AFDF55C89E7 /* AppRootView.swift */; };
 		73D12E53D11D4CA44568D043 /* OpenLARPEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C9DDB58985395E7EA0E0FAC /* OpenLARPEngine.swift */; };
+		801E18711540F14E001E6BBF /* QuestPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65AE049F689207B56A408E9 /* QuestPreviewView.swift */; };
 		94B10889BBCB318BCD66E952 /* ProofAttachmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6665166CE64A9711A38AB8EA /* ProofAttachmentViews.swift */; };
 		98FD63DD9FE8F0E6D1606BEB /* OpenLARPStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB4C508489FA00F82B277CF /* OpenLARPStore.swift */; };
 		9C84C795C180DDBA3E60F32B /* ProofDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24A3F46612F09ED9FC79C08 /* ProofDetailView.swift */; };
@@ -54,6 +55,7 @@
 		A24A3F46612F09ED9FC79C08 /* ProofDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofDetailView.swift; sourceTree = "<group>"; };
 		A32FE957054753A00B9C9E6F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A38A7544CA52F69EBE427B74 /* ProofArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofArchiveView.swift; sourceTree = "<group>"; };
+		A65AE049F689207B56A408E9 /* QuestPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestPreviewView.swift; sourceTree = "<group>"; };
 		A9B5407A901AC7364EF7007F /* OpenLARPPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPPersistence.swift; sourceTree = "<group>"; };
 		AF4DB2E5098EE63EAE50613B /* OpenLARP.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenLARP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B39EFD52A49CEC4F79A489C4 /* ProgressTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressTabView.swift; sourceTree = "<group>"; };
@@ -95,6 +97,7 @@
 				6665166CE64A9711A38AB8EA /* ProofAttachmentViews.swift */,
 				A24A3F46612F09ED9FC79C08 /* ProofDetailView.swift */,
 				1AC8DF9C8B644BCA48495AD3 /* QuestMapView.swift */,
+				A65AE049F689207B56A408E9 /* QuestPreviewView.swift */,
 				158AE576FBB3972BC8DFD382 /* TodayView.swift */,
 			);
 			path = Views;
@@ -256,6 +259,7 @@
 				94B10889BBCB318BCD66E952 /* ProofAttachmentViews.swift in Sources */,
 				9C84C795C180DDBA3E60F32B /* ProofDetailView.swift in Sources */,
 				4E8C53CC1AB2DCA6BAA5ABDD /* QuestMapView.swift in Sources */,
+				801E18711540F14E001E6BBF /* QuestPreviewView.swift in Sources */,
 				51AE5DCE1739E7F608591FC1 /* TodayView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -4,7 +4,7 @@ struct QuestMapView: View {
     let state: OpenLARPState
     let attachmentURL: (ProofAttachment) -> URL
     let viewToday: () -> Void
-    @State private var selectedCompletedQuest: Quest?
+    @State private var selectedSheet: MapQuestSheet?
 
     var body: some View {
         ScrollView {
@@ -58,9 +58,11 @@ struct QuestMapView: View {
                         ForEach(state.plan) { quest in
                             QuestDayRow(
                                 quest: quest,
-                                viewToday: viewToday,
                                 openCompletedQuest: {
-                                    selectedCompletedQuest = quest
+                                    selectedSheet = .completed(quest)
+                                },
+                                openPreviewQuest: {
+                                    selectedSheet = .preview(quest)
                                 }
                             )
                         }
@@ -73,20 +75,37 @@ struct QuestMapView: View {
         .background(Color.openLARPBackground)
         .navigationTitle("Map")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $selectedCompletedQuest) { quest in
-            CompletedQuestDetailView(
-                quest: quest,
-                proofs: state.progress.recentProof,
-                attachmentURL: attachmentURL
-            )
+        .sheet(item: $selectedSheet) { sheet in
+            switch sheet {
+            case .completed(let quest):
+                CompletedQuestDetailView(
+                    quest: quest,
+                    proofs: state.progress.recentProof,
+                    attachmentURL: attachmentURL
+                )
+            case .preview(let quest):
+                QuestPreviewView(quest: quest, openToday: viewToday)
+            }
+        }
+    }
+}
+
+private enum MapQuestSheet: Identifiable {
+    case completed(Quest)
+    case preview(Quest)
+
+    var id: String {
+        switch self {
+        case .completed(let quest): "completed-\(quest.id.uuidString)"
+        case .preview(let quest): "preview-\(quest.id.uuidString)"
         }
     }
 }
 
 private struct QuestDayRow: View {
     let quest: Quest
-    let viewToday: () -> Void
     let openCompletedQuest: () -> Void
+    let openPreviewQuest: () -> Void
 
     var body: some View {
         Group {
@@ -95,12 +114,17 @@ private struct QuestDayRow: View {
                     rowContent
                 }
                 .buttonStyle(.plain)
+            } else if quest.status == .available || quest.status == .inProgress {
+                Button(action: openPreviewQuest) {
+                    rowContent
+                }
+                .buttonStyle(.plain)
             } else {
                 rowContent
             }
         }
         .opacity(quest.status == .locked ? 0.72 : 1)
-        .accessibilityHint(quest.status == .completed ? "Opens completed quest details" : "")
+        .accessibilityHint(accessibilityHintText)
     }
 
     private var rowContent: some View {
@@ -127,7 +151,7 @@ private struct QuestDayRow: View {
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(Color.openLARPGreen)
                         } else if quest.status == .available || quest.status == .inProgress {
-                            Button("View Today", action: viewToday)
+                            Label("Preview", systemImage: "chevron.right")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(Color.openLARPGreen)
                         }
@@ -160,6 +184,17 @@ private struct QuestDayRow: View {
             Text(quest.status.label)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(quest.status.color)
+        }
+    }
+
+    private var accessibilityHintText: String {
+        switch quest.status {
+        case .completed:
+            "Opens completed quest details"
+        case .available, .inProgress:
+            "Opens quest preview"
+        case .locked, .skipped:
+            ""
         }
     }
 }
