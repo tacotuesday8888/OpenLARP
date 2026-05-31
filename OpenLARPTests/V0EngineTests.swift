@@ -275,6 +275,74 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(content.receipts.last?.questTitle, "Quest 1")
     }
 
+    func testCompletedQuestDetailContentMatchesSavedProofByQuestID() {
+        let questID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+        let otherQuestID = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
+        let quest = Quest(
+            id: questID,
+            day: 2,
+            title: "Create one tiny proof artifact",
+            purpose: "A small real artifact beats a big unsupported claim.",
+            timeEstimateMinutes: 30,
+            difficulty: "Starter",
+            gap: .proofStrength,
+            proofRequired: "Add a link, screenshot, or notes showing what you made.",
+            xpReward: 130,
+            steps: ["Make the first version.", "Write what it proves honestly."],
+            status: .completed
+        )
+        let matchingProof = proofRecord(
+            id: UUID(uuidString: "66666666-6666-6666-6666-666666666666")!,
+            questID: questID,
+            questTitle: quest.title,
+            submittedAt: Date(timeIntervalSince1970: 5_200)
+        )
+        let unrelatedProof = proofRecord(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777777")!,
+            questID: otherQuestID,
+            questTitle: "Different quest",
+            submittedAt: Date(timeIntervalSince1970: 5_600)
+        )
+
+        let content = CompletedQuestDetailContent(
+            quest: quest,
+            proofs: [unrelatedProof, matchingProof]
+        )
+
+        XCTAssertEqual(content.dayText, "Day 2")
+        XCTAssertEqual(content.statusText, "Complete")
+        XCTAssertEqual(content.title, "Create one tiny proof artifact")
+        XCTAssertEqual(content.objectiveText, "A small real artifact beats a big unsupported claim.")
+        XCTAssertEqual(content.stepTexts, ["Make the first version.", "Write what it proves honestly."])
+        XCTAssertEqual(content.proofRequiredText, "Add a link, screenshot, or notes showing what you made.")
+        XCTAssertEqual(content.gapText, "Proof strength")
+        XCTAssertEqual(content.xpRewardText, "130 XP")
+        XCTAssertEqual(content.savedProof, matchingProof)
+        XCTAssertEqual(content.noProofMessage, "No proof receipt saved for this completed quest.")
+    }
+
+    func testCompletedQuestDetailContentShowsFallbackWhenNoProofReceiptExists() {
+        let quest = Quest(
+            id: UUID(uuidString: "88888888-8888-8888-8888-888888888888")!,
+            day: 4,
+            title: "Explain your proof in five bullets",
+            purpose: "If you cannot explain the work, it will not help in interviews.",
+            timeEstimateMinutes: 25,
+            difficulty: "Balanced",
+            gap: .confidence,
+            proofRequired: "Paste the five bullets.",
+            xpReward: 110,
+            status: .completed
+        )
+
+        let content = CompletedQuestDetailContent(quest: quest, proofs: [])
+
+        XCTAssertNil(content.savedProof)
+        XCTAssertEqual(content.noProofMessage, "No proof receipt saved for this completed quest.")
+        XCTAssertEqual(content.gapText, "Confidence")
+        XCTAssertEqual(content.xpRewardText, "110 XP")
+    }
+
     func testPersistenceRoundTripKeepsGoalProgressAndQuestStatuses() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -304,12 +372,13 @@ final class V0EngineTests: XCTestCase {
 
     private func proofRecord(
         id: UUID,
+        questID: UUID = UUID(),
         questTitle: String,
         submittedAt: Date
     ) -> ProofRecord {
         ProofRecord(
             id: id,
-            questID: UUID(),
+            questID: questID,
             questTitle: questTitle,
             kind: .proof,
             text: "Saved proof text",

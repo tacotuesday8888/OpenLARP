@@ -2,7 +2,9 @@ import SwiftUI
 
 struct QuestMapView: View {
     let state: OpenLARPState
+    let attachmentURL: (ProofAttachment) -> URL
     let viewToday: () -> Void
+    @State private var selectedCompletedQuest: Quest?
 
     var body: some View {
         ScrollView {
@@ -54,7 +56,13 @@ struct QuestMapView: View {
 
                     VStack(spacing: 12) {
                         ForEach(state.plan) { quest in
-                            QuestDayRow(quest: quest, viewToday: viewToday)
+                            QuestDayRow(
+                                quest: quest,
+                                viewToday: viewToday,
+                                openCompletedQuest: {
+                                    selectedCompletedQuest = quest
+                                }
+                            )
                         }
                     }
                 }
@@ -65,38 +73,43 @@ struct QuestMapView: View {
         .background(Color.openLARPBackground)
         .navigationTitle("Map")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selectedCompletedQuest) { quest in
+            CompletedQuestDetailView(
+                quest: quest,
+                proofs: state.progress.recentProof,
+                attachmentURL: attachmentURL
+            )
+        }
     }
 }
 
 private struct QuestDayRow: View {
     let quest: Quest
     let viewToday: () -> Void
+    let openCompletedQuest: () -> Void
 
     var body: some View {
+        Group {
+            if quest.status == .completed {
+                Button(action: openCompletedQuest) {
+                    rowContent
+                }
+                .buttonStyle(.plain)
+            } else {
+                rowContent
+            }
+        }
+        .opacity(quest.status == .locked ? 0.72 : 1)
+        .accessibilityHint(quest.status == .completed ? "Opens completed quest details" : "")
+    }
+
+    private var rowContent: some View {
         Card {
             HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(quest.status.color.opacity(0.18))
-                    Text("\(quest.day)")
-                        .font(.headline.weight(.black))
-                        .foregroundStyle(quest.status.color)
-                }
-                .frame(width: 46, height: 46)
+                dayBadge
 
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(quest.title)
-                            .font(.headline)
-                            .foregroundStyle(Color.openLARPInk)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Spacer()
-
-                        Text(quest.status.label)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(quest.status.color)
-                    }
+                    titleRow
 
                     Text(quest.gap.title)
                         .font(.subheadline)
@@ -109,7 +122,11 @@ private struct QuestDayRow: View {
 
                         Spacer()
 
-                        if quest.status == .available || quest.status == .inProgress {
+                        if quest.status == .completed {
+                            Label("Details", systemImage: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Color.openLARPGreen)
+                        } else if quest.status == .available || quest.status == .inProgress {
                             Button("View Today", action: viewToday)
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(Color.openLARPGreen)
@@ -118,6 +135,31 @@ private struct QuestDayRow: View {
                 }
             }
         }
-        .opacity(quest.status == .locked ? 0.72 : 1)
+    }
+
+    private var dayBadge: some View {
+        ZStack {
+            Circle()
+                .fill(quest.status.color.opacity(0.18))
+            Text("\(quest.day)")
+                .font(.headline.weight(.black))
+                .foregroundStyle(quest.status.color)
+        }
+        .frame(width: 46, height: 46)
+    }
+
+    private var titleRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(quest.title)
+                .font(.headline)
+                .foregroundStyle(Color.openLARPInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
+
+            Text(quest.status.label)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(quest.status.color)
+        }
     }
 }

@@ -359,6 +359,32 @@ struct ProofArchiveContent: Equatable {
     }
 }
 
+struct CompletedQuestDetailContent: Equatable {
+    var dayText: String
+    var statusText: String
+    var title: String
+    var objectiveText: String
+    var stepTexts: [String]
+    var proofRequiredText: String
+    var gapText: String
+    var xpRewardText: String
+    var savedProof: ProofRecord?
+    var noProofMessage: String
+
+    init(quest: Quest, proofs: [ProofRecord]) {
+        dayText = "Day \(quest.day)"
+        statusText = quest.status.label
+        title = quest.title
+        objectiveText = quest.purpose
+        stepTexts = quest.steps
+        proofRequiredText = quest.proofRequired
+        gapText = quest.gap.title
+        xpRewardText = "\(quest.xpReward) XP"
+        savedProof = proofs.first { $0.questID == quest.id }
+        noProofMessage = "No proof receipt saved for this completed quest."
+    }
+}
+
 struct ReadinessMetrics: Codable, Equatable {
     var overall: Int
     var proofStrength: Int
