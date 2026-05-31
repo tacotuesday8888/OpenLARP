@@ -85,7 +85,8 @@ enum OpenLARPEngine {
         _ result: QualityCheckResult,
         proof: ProofSubmission,
         in state: OpenLARPState,
-        now: Date = Date()
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
     ) throws -> OpenLARPState {
         guard let quest = state.currentQuest else {
             throw OpenLARPError.noCurrentQuest
@@ -93,7 +94,6 @@ enum OpenLARPEngine {
 
         var next = state
         setQuestStatus(quest.id, to: .completed, in: &next)
-        unlockNextQuest(after: quest.id, in: &next)
 
         next.progress.xp += result.xpEarned
         next.progress.streakCount = max(1, next.progress.streakCount + 1)
@@ -114,6 +114,39 @@ enum OpenLARPEngine {
             quality: result
         )
         next.progress.recentProof.insert(record, at: 0)
+        recordDailyCompletion(
+            quest: quest,
+            result: result,
+            now: now,
+            calendar: calendar,
+            in: &next
+        )
+        next.updatedAt = now
+        return next
+    }
+
+    static func refreshDailyAvailability(
+        in state: OpenLARPState,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> OpenLARPState {
+        guard let completedAt = state.dailyCadence.completedAt else {
+            return state
+        }
+
+        var next = state
+
+        if calendar.isDate(completedAt, inSameDayAs: now) {
+            if let nextQuestID = next.dailyCadence.nextQuestID {
+                setQuestStatus(nextQuestID, to: .locked, in: &next)
+            }
+            return next
+        }
+
+        if let nextQuestID = next.dailyCadence.nextQuestID {
+            setQuestStatus(nextQuestID, to: .available, in: &next)
+        }
+        next.dailyCadence = .empty
         next.updatedAt = now
         return next
     }
@@ -289,11 +322,48 @@ enum OpenLARPEngine {
         state.plan[index].status = status
     }
 
-    private static func unlockNextQuest(after id: UUID, in state: inout OpenLARPState) {
-        guard let completedIndex = state.plan.firstIndex(where: { $0.id == id }) else { return }
+    private static func nextQuestID(after id: UUID, in state: OpenLARPState) -> UUID? {
+        guard let completedIndex = state.plan.firstIndex(where: { $0.id == id }) else { return nil }
         let nextIndex = completedIndex + 1
-        guard state.plan.indices.contains(nextIndex), state.plan[nextIndex].status == .locked else { return }
-        state.plan[nextIndex].status = .available
+        guard state.plan.indices.contains(nextIndex) else { return nil }
+        return state.plan[nextIndex].id
+    }
+
+    private static func lockFutureAvailableQuests(after id: UUID, in state: inout OpenLARPState) {
+        guard let completedIndex = state.plan.firstIndex(where: { $0.id == id }) else { return }
+        let firstFutureIndex = completedIndex + 1
+        guard state.plan.indices.contains(firstFutureIndex) else { return }
+
+        for index in firstFutureIndex..<state.plan.endIndex where state.plan[index].status == .available {
+            state.plan[index].status = .locked
+        }
+    }
+
+    private static func recordDailyCompletion(
+        quest: Quest,
+        result: QualityCheckResult,
+        now: Date,
+        calendar: Calendar,
+        in state: inout OpenLARPState
+    ) {
+        let nextQuestID = nextQuestID(after: quest.id, in: state)
+        lockFutureAvailableQuests(after: quest.id, in: &state)
+
+        state.dailyCadence = DailyCadenceState(
+            lastCompletedQuestID: quest.id,
+            completedQuestTitle: quest.title,
+            completedAt: now,
+            resultLabel: result.label,
+            xpEarned: result.xpEarned,
+            streakCountAfterCompletion: state.progress.streakCount,
+            nextQuestID: nextQuestID,
+            nextUnlockDate: nextQuestID == nil ? nil : nextLocalDay(after: now, calendar: calendar)
+        )
+    }
+
+    private static func nextLocalDay(after date: Date, calendar: Calendar) -> Date {
+        let startOfToday = calendar.startOfDay(for: date)
+        return calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? date.addingTimeInterval(86_400)
     }
 
     private static func updatedReadiness(_ readiness: ReadinessMetrics, delta: Int) -> ReadinessMetrics {

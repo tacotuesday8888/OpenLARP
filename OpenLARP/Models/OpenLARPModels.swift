@@ -425,6 +425,61 @@ struct QuestPreviewContent: Equatable {
     }
 }
 
+struct TodayCompletionContent: Equatable {
+    var completedQuestTitle: String
+    var resultSummary: String
+    var xpText: String
+    var streakText: String
+    var proofRecord: ProofRecord?
+    var nextQuestTitle: String?
+    var nextQuestObjectiveText: String?
+    var nextQuestMetaText: String?
+    var nextQuestStatusText: String
+    var unlockMessage: String
+
+    init?(
+        state: OpenLARPState,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) {
+        guard let completedAt = state.dailyCadence.completedAt,
+              calendar.isDate(completedAt, inSameDayAs: now)
+        else {
+            return nil
+        }
+
+        let completedQuest = state.dailyCadence.lastCompletedQuestID.flatMap { questID in
+            state.plan.first { $0.id == questID }
+        }
+        let proof = state.dailyCadence.lastCompletedQuestID.flatMap { questID in
+            state.progress.recentProof.first { $0.questID == questID }
+        }
+
+        completedQuestTitle = state.dailyCadence.completedQuestTitle ?? completedQuest?.title ?? "Today's quest"
+        resultSummary = state.dailyCadence.resultLabel ?? proof?.quality?.label ?? "Quest complete"
+        xpText = "+\(state.dailyCadence.xpEarned ?? proof?.quality?.xpEarned ?? 0) XP"
+
+        let streakCount = state.dailyCadence.streakCountAfterCompletion ?? state.progress.streakCount
+        streakText = streakCount == 1 ? "1-day streak" : "\(streakCount)-day streak"
+        proofRecord = proof
+
+        if let nextQuestID = state.dailyCadence.nextQuestID,
+           let nextQuest = state.plan.first(where: { $0.id == nextQuestID }) {
+            nextQuestTitle = nextQuest.title
+            nextQuestObjectiveText = nextQuest.purpose
+            nextQuestMetaText = "\(nextQuest.timeEstimate), \(nextQuest.difficulty), +\(nextQuest.xpReward) XP"
+            nextQuestStatusText = "Locked until tomorrow"
+            unlockMessage = "Your next quest unlocks tomorrow."
+        } else {
+            nextQuestTitle = nil
+            nextQuestObjectiveText = nil
+            nextQuestMetaText = nil
+            nextQuestStatusText = "Track complete"
+            unlockMessage = "You finished the local seven-day track."
+        }
+    }
+}
+
 struct ReadinessMetrics: Codable, Equatable {
     var overall: Int
     var proofStrength: Int
@@ -471,12 +526,35 @@ struct ProgressState: Codable, Equatable {
     )
 }
 
+struct DailyCadenceState: Codable, Equatable {
+    var lastCompletedQuestID: UUID?
+    var completedQuestTitle: String?
+    var completedAt: Date?
+    var resultLabel: String?
+    var xpEarned: Int?
+    var streakCountAfterCompletion: Int?
+    var nextQuestID: UUID?
+    var nextUnlockDate: Date?
+
+    static let empty = DailyCadenceState(
+        lastCompletedQuestID: nil,
+        completedQuestTitle: nil,
+        completedAt: nil,
+        resultLabel: nil,
+        xpEarned: nil,
+        streakCountAfterCompletion: nil,
+        nextQuestID: nil,
+        nextUnlockDate: nil
+    )
+}
+
 struct OpenLARPState: Codable, Equatable {
     var goal: CareerGoal?
     var diagnostic: CookedDiagnostic?
     var plan: [Quest]
     var progress: ProgressState
     var updatedAt: Date
+    var dailyCadence: DailyCadenceState = .empty
 
     static let empty = OpenLARPState(
         goal: nil,
@@ -491,7 +569,41 @@ struct OpenLARPState: Codable, Equatable {
     }
 
     var currentQuest: Quest? {
-        plan.first { $0.status == .inProgress } ?? plan.first { $0.status == .available }
+        if dailyCadence.completedAt != nil {
+            return nil
+        }
+        return plan.first { $0.status == .inProgress } ?? plan.first { $0.status == .available }
+    }
+}
+
+extension OpenLARPState {
+    private enum CodingKeys: String, CodingKey {
+        case goal
+        case diagnostic
+        case plan
+        case progress
+        case updatedAt
+        case dailyCadence
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
+        diagnostic = try container.decodeIfPresent(CookedDiagnostic.self, forKey: .diagnostic)
+        plan = try container.decode([Quest].self, forKey: .plan)
+        progress = try container.decode(ProgressState.self, forKey: .progress)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        dailyCadence = try container.decodeIfPresent(DailyCadenceState.self, forKey: .dailyCadence) ?? .empty
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(goal, forKey: .goal)
+        try container.encodeIfPresent(diagnostic, forKey: .diagnostic)
+        try container.encode(plan, forKey: .plan)
+        try container.encode(progress, forKey: .progress)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(dailyCadence, forKey: .dailyCadence)
     }
 }
 

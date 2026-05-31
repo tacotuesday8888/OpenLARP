@@ -44,6 +44,12 @@ struct AppRootView: View {
             }
         }
         .tint(.openLARPGreen)
+        .onAppear {
+            store.refreshDailyAvailability()
+        }
+        .onChange(of: selectedTab) {
+            store.refreshDailyAvailability()
+        }
     }
 
     @ViewBuilder

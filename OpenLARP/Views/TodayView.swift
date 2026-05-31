@@ -4,6 +4,7 @@ import SwiftUI
 struct TodayView: View {
     let store: OpenLARPStore
     @State private var showingAgent = false
+    @State private var selectedProof: ProofRecord?
 
     var body: some View {
         ScrollView {
@@ -33,6 +34,14 @@ struct TodayView: View {
             NavigationStack {
                 AgentChatView(store: store)
             }
+        }
+        .sheet(item: $selectedProof) { proof in
+            ProofDetailView(proof: proof) { attachment in
+                store.localURL(for: attachment)
+            }
+        }
+        .onAppear {
+            store.refreshDailyAvailability()
         }
         .alert(
             "OpenLARP",
@@ -130,7 +139,17 @@ struct TodayView: View {
 
     @ViewBuilder
     private var questCard: some View {
-        if let quest = store.state.currentQuest {
+        if let completion = TodayCompletionContent(state: store.state) {
+            DoneForTodayCard(
+                content: completion,
+                attachmentURL: { attachment in
+                    store.localURL(for: attachment)
+                },
+                openProof: { proof in
+                    selectedProof = proof
+                }
+            )
+        } else if let quest = store.state.currentQuest {
             Card {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
@@ -261,6 +280,89 @@ struct TodayView: View {
                     StatPill(value: "\(store.state.progress.completedQuestCount)", label: "quests")
                     StatPill(value: "\(store.state.progress.badges.count)", label: "badges")
                 }
+            }
+        }
+    }
+}
+
+private struct DoneForTodayCard: View {
+    let content: TodayCompletionContent
+    let attachmentURL: (ProofAttachment) -> URL
+    let openProof: (ProofRecord) -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Done for today", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPGreen)
+
+                Text(content.completedQuestTitle)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(Color.openLARPInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(content.resultSummary)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Pill(title: content.xpText, systemImage: "bolt.fill", color: .openLARPYellow)
+                    Pill(title: content.streakText, systemImage: "flame.fill", color: .openLARPCoral)
+                }
+
+                if let proofRecord = content.proofRecord {
+                    Button {
+                        openProof(proofRecord)
+                    } label: {
+                        ProofReceiptRow(
+                            proof: proofRecord,
+                            showsMetadata: true,
+                            attachmentURL: attachmentURL
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("Tomorrow preview")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.openLARPGreen)
+                        .textCase(.uppercase)
+
+                    if let nextQuestTitle = content.nextQuestTitle {
+                        Text(nextQuestTitle)
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPInk)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if let nextQuestObjectiveText = content.nextQuestObjectiveText {
+                            Text(nextQuestObjectiveText)
+                                .font(.subheadline)
+                                .foregroundStyle(Color.openLARPSoftInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if let nextQuestMetaText = content.nextQuestMetaText {
+                            Text(nextQuestMetaText)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.openLARPSoftInk)
+                        }
+                    } else {
+                        Text(content.nextQuestStatusText)
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPInk)
+                    }
+
+                    Label(content.unlockMessage, systemImage: content.nextQuestTitle == nil ? "checkmark.seal.fill" : "lock.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.openLARPCoral)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .background(Color.openLARPBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
     }
