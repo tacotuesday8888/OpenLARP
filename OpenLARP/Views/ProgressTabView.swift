@@ -4,6 +4,7 @@ struct ProgressTabView: View {
     let state: OpenLARPState
     let attachmentURL: (ProofAttachment) -> URL
     let improveWeakestArea: () -> Void
+    @State private var selectedProof: ProofRecord?
 
     var body: some View {
         ScrollView {
@@ -45,6 +46,9 @@ struct ProgressTabView: View {
         .background(Color.openLARPBackground)
         .navigationTitle("Progress")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selectedProof) { proof in
+            ProofDetailView(proof: proof, attachmentURL: attachmentURL)
+        }
     }
 
     private var readinessCard: some View {
@@ -114,36 +118,15 @@ struct ProgressTabView: View {
                         .foregroundStyle(Color.openLARPSoftInk)
                 } else {
                     ForEach(state.progress.recentProof.prefix(4)) { proof in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(proof.questTitle)
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(Color.openLARPInk)
-                            Text(proof.quality?.label ?? proof.kind.label)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle((proof.quality?.isAccepted ?? false) ? Color.openLARPGreen : Color.openLARPCoral)
-                            if !proof.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text(proof.text)
-                                    .font(.caption)
-                                    .foregroundStyle(Color.openLARPSoftInk)
-                                    .lineLimit(3)
-                            }
-                            if !proof.link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Label(proof.link, systemImage: "link")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.openLARPGreen)
-                                    .lineLimit(1)
-                            }
-                            if !proof.attachments.isEmpty {
-                                Text(proof.attachmentSummary)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.openLARPSoftInk)
-                                ProofAttachmentStrip(
-                                    attachments: proof.attachments,
-                                    attachmentURL: attachmentURL
-                                )
-                            }
+                        Button {
+                            selectedProof = proof
+                        } label: {
+                            ProofReceiptRow(
+                                proof: proof,
+                                attachmentURL: attachmentURL
+                            )
                         }
-                        .padding(.vertical, 6)
+                        .buttonStyle(.plain)
                     }
                 }
             }

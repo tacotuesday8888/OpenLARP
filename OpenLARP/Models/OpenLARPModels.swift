@@ -316,6 +316,35 @@ struct ProofRecord: Codable, Equatable, Identifiable {
     }
 }
 
+struct ProofDetailContent: Equatable {
+    var questTitle: String
+    var proofType: String
+    var submittedAt: Date
+    var qualityLabel: String
+    var xpText: String
+    var reason: String
+    var improvement: String
+    var proofText: String?
+    var proofLinkText: String?
+    var proofURL: URL?
+
+    init(proof: ProofRecord) {
+        let trimmedText = proof.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLink = proof.link.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        questTitle = proof.questTitle
+        proofType = proof.kind.label
+        submittedAt = proof.submittedAt
+        qualityLabel = proof.quality?.label ?? proof.kind.label
+        xpText = "\(proof.quality?.xpEarned ?? 0) XP"
+        reason = proof.quality?.reason ?? "No quality check is attached to this receipt yet."
+        improvement = proof.quality?.improvement ?? "Submit stronger proof on the next quest to get sharper feedback."
+        proofText = trimmedText.isEmpty ? nil : trimmedText
+        proofLinkText = trimmedLink.isEmpty ? nil : trimmedLink
+        proofURL = trimmedLink.hasPrefix("http://") || trimmedLink.hasPrefix("https://") ? URL(string: trimmedLink) : nil
+    }
+}
+
 struct ReadinessMetrics: Codable, Equatable {
     var overall: Int
     var proofStrength: Int
