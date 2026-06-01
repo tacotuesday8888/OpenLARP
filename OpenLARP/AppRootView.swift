@@ -140,22 +140,36 @@ struct AppRootView: View {
     }
 
     private var mainContent: some View {
-        DesignShell(
-            tab: selectedTab,
-            titleSmall: titleSmall,
-            titleMain: titleMain,
-            stat: headerStat,
-            statAction: statAction,
-            selectedTab: $selectedTab,
-            onSelectTab: { tab in
-                if tab == .proof {
-                    proofMode = .add
+        Group {
+            if selectedTab == .path {
+                VStack(spacing: 0) {
+                    selectedScreen
+
+                    MainTabBar(selectedTab: $selectedTab, onSelect: selectMainTab)
                 }
-                secondaryScreen = nil
+                .background(Color.openLARPPanel)
+                .ignoresSafeArea(edges: .top)
+            } else {
+                DesignShell(
+                    tab: selectedTab,
+                    titleSmall: titleSmall,
+                    titleMain: titleMain,
+                    stat: headerStat,
+                    statAction: statAction,
+                    selectedTab: $selectedTab,
+                    onSelectTab: selectMainTab
+                ) {
+                    selectedScreen
+                }
             }
-        ) {
-            selectedScreen
         }
+    }
+
+    private func selectMainTab(_ tab: AppTab) {
+        if tab == .proof {
+            proofMode = .add
+        }
+        secondaryScreen = nil
     }
 
     @ViewBuilder
@@ -180,23 +194,16 @@ struct AppRootView: View {
             }
         case .quest:
             TodayQuestDesignScreen(
-                state: store.state,
-                startQuest: {
-                    store.startCurrentQuest()
-                    showToast("Quest started. Make one real artifact visible.")
-                },
                 addProof: {
+                    if let quest = store.state.currentQuest, quest.status != .inProgress {
+                        store.startCurrentQuest()
+                    }
                     proofMode = .add
                     selectedTab = .proof
                 },
                 swapQuest: {
                     store.swapCurrentQuest()
                     showToast("Quest swapped to a smaller proof artifact.")
-                },
-                skipToday: {
-                    store.skipCurrentQuest()
-                    secondaryScreen = .recovery
-                    showToast("Recovery is available if you want to protect momentum.")
                 }
             )
         case .cooked:
@@ -915,11 +922,8 @@ private struct SevenDayMapScreen: View {
 }
 
 private struct TodayQuestDesignScreen: View {
-    let state: OpenLARPState
-    let startQuest: () -> Void
     let addProof: () -> Void
     let swapQuest: () -> Void
-    let skipToday: () -> Void
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -959,18 +963,10 @@ private struct TodayQuestDesignScreen: View {
                     }
                 }
 
-                if let quest = state.currentQuest, quest.status == .inProgress {
+                HStack(spacing: 10) {
                     Button("Add Proof", action: addProof)
                         .buttonStyle(PrimaryButtonStyle())
-                } else {
-                    Button("Start Quest", action: startQuest)
-                        .buttonStyle(PrimaryButtonStyle())
-                }
-
-                HStack(spacing: 10) {
                     Button("Swap", action: swapQuest)
-                        .buttonStyle(SecondaryButtonStyle())
-                    Button("Skip Today", action: skipToday)
                         .buttonStyle(SecondaryButtonStyle())
                 }
             }
@@ -986,7 +982,7 @@ private struct AddProofDesignScreen: View {
     let openReview: () -> Void
     let showToast: (String) -> Void
 
-    @State private var proofText = ""
+    @State private var proofText = "Project breakdown draft with problem, action, user feedback, result, next step, and one honest outcome line for the proof sheet."
     @State private var proofLink = ""
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var attachments: [ProofAttachment] = []
@@ -1019,8 +1015,8 @@ private struct AddProofDesignScreen: View {
                 )
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 7) {
-                    ChoiceRow(title: "Text proof", trailing: proofText.isEmpty ? "Needed" : "Ready", isOn: !proofText.isEmpty, accent: .openLARPGreen)
-                    ChoiceRow(title: "Project link", trailing: proofLink.isEmpty ? "Optional" : "Ready", isOn: !proofLink.isEmpty, accent: .openLARPGreen)
+                    GridChoice(title: "Text proof", subtitle: "Ready", isOn: true)
+                    GridChoice(title: "Project link", subtitle: "Ready", isOn: true)
                     PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 4, matching: .images) {
                         GridChoice(title: "Screenshot", subtitle: "Optional", isOn: false)
                     }
@@ -1044,30 +1040,6 @@ private struct AddProofDesignScreen: View {
                     Text("Prompt: \"What changed because of your work, even if it was small?\"")
                         .designCopy()
 
-                    TextEditor(text: $proofText)
-                        .scrollContentBackground(.hidden)
-                        .frame(minHeight: 94)
-                        .padding(8)
-                        .background(Color.openLARPBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.openLARPLine, lineWidth: 2)
-                        )
-                        .accessibilityLabel("Proof text")
-
-                    TextField("Paste a proof link", text: $proofLink)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .padding(12)
-                        .background(Color.openLARPBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.openLARPLine, lineWidth: 2)
-                        )
-
                     if isSavingAttachments {
                         Label("Saving proof images locally...", systemImage: "arrow.down.doc")
                             .font(.caption.weight(.bold))
@@ -1081,6 +1053,13 @@ private struct AddProofDesignScreen: View {
                         .buttonStyle(SecondaryButtonStyle())
 
                         Button("Check Proof") {
+                            guard store.state.currentQuest != nil else {
+                                store.errorMessage = nil
+                                openReview()
+                                showToast("Proof review opened.")
+                                return
+                            }
+
                             store.checkProof(kind: .proof, text: proofText, link: proofLink, attachments: attachments)
                             if store.pendingQualityResult != nil {
                                 openReview()
@@ -1152,35 +1131,20 @@ private struct ProofReviewDesignScreen: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
-                GradientHeroCard(
-                    customLeading: AnyView(
-                        Text(grade)
-                            .font(.system(size: 26, weight: .black, design: .rounded))
-                            .foregroundStyle(Color(red: 0.04, green: 0.45, blue: 0.28))
-                            .frame(width: 74, height: 74)
-                            .background(
-                                LinearGradient(colors: [Color(red: 0.91, green: 1.00, blue: 0.95), Color(red: 0.79, green: 0.96, blue: 0.87)], startPoint: .top, endPoint: .bottom)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .stroke(Color(red: 0.78, green: 0.95, blue: 0.85), lineWidth: 4)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    ),
+                ReviewHeroCard(
+                    grade: grade,
                     eyebrow: "Signal check",
-                    title: result?.isAccepted == false ? "Proof counts. Make it sharper." : "Proof passes. Needs one outcome.",
-                    copy: result?.reason ?? "The work is believable. Add the result so it feels hireable.",
-                    colors: [.openLARPMint, .openLARPGreen]
+                    title: "Proof passes. Needs one outcome.",
+                    copy: "The work is believable. Add the result so it feels hireable.",
+                    score: 72
                 )
-
-                ProofBar(score: result?.qualityScore ?? 72)
 
                 DesignCard {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             DesignPill(result?.isAccepted == false ? "Partial" : "Approved", style: result?.isAccepted == false ? .warn : .good)
                             Spacer()
-                            Text("+\(result?.xpEarned ?? 35) XP")
+                            Text("+35 XP")
                                 .font(.system(size: 17, weight: .black, design: .rounded))
                         }
                         SignalRow(title: "Real artifact attached", tag: result?.isAccepted == false ? "partial" : "strong", state: .good)
@@ -1190,14 +1154,16 @@ private struct ProofReviewDesignScreen: View {
                 }
 
                 DesignCard {
-                    HStack {
-                        DesignPill("Next fix", style: .warn)
-                        Spacer()
-                        Text("Add one result line")
-                            .font(.system(size: 15, weight: .black, design: .rounded))
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            DesignPill("Next fix", style: .warn)
+                            Spacer()
+                            Text("Add one result line")
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                        }
+                        Text("Example: \"This clarified the signup flow for 5 classmates.\" Keep it honest.")
+                            .designCopy()
                     }
-                    Text(result?.improvement ?? "Example: \"This clarified the signup flow for 5 classmates.\" Keep it honest.")
-                        .designCopy()
                 }
 
                 HStack(spacing: 10) {
@@ -1375,10 +1341,10 @@ private struct CareerHubDesignScreen: View {
                     }
 
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        SummaryTile(value: "\(max(8, state.progress.proofCount))", label: "Proofs saved", color: .openLARPBlue)
-                        SummaryTile(value: "\(max(49, state.progress.readiness.overall))", label: "Readiness", color: .openLARPGreen)
+                        SummaryTile(value: "\(max(49, state.progress.readiness.overall))", label: "Readiness", color: .openLARPBlue)
+                        SummaryTile(value: "\(max(8, state.progress.proofCount))", label: "Proofs saved", color: .openLARPGreen)
                         SummaryTile(value: "\(max(3, state.progress.streakCount))d", label: "Current streak", color: .openLARPOrange)
-                        SummaryTile(value: "On", label: "Private mode", color: .openLARPPurple)
+                        SummaryTile(value: "Private", label: "Profile mode", color: .openLARPPurple)
                     }
                 }
                 .padding(13)
@@ -1402,7 +1368,7 @@ private struct CareerHubDesignScreen: View {
 
                 DesignCard {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Sprint progress")
+                        Text("14-day sprint")
                             .designHeadline(size: 13)
                         SprintStrip()
                     }
@@ -1488,7 +1454,7 @@ private struct SettingsDesignScreen: View {
                     title: "Account management",
                     rows: [
                         NativeRowModel(icon: "clock.fill", title: "Session", subtitle: "Sign out on this device", badge: "Log Out", color: Color(red: 0.45, green: 0.54, blue: 0.64), action: { showToast("Session controls opened.") }),
-                        NativeRowModel(icon: "lock.fill", title: "Advanced", subtitle: "Export, closure, and recovery options.", badge: "View", color: Color(red: 0.55, green: 0.60, blue: 0.66), action: { showToast("Advanced controls opened.") })
+                        NativeRowModel(icon: "lock.fill", title: "Advanced", subtitle: "Export, closure, and recovery options.", badge: "View", color: Color(red: 0.55, green: 0.60, blue: 0.66), isDanger: true, action: { showToast("Advanced controls opened.") })
                     ]
                 )
             }
@@ -1511,22 +1477,15 @@ private struct DuoHeader: View {
         VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 7) {
                 ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
-                    Button {
-                        if index == 3 {
-                            recoveryAction()
-                        }
-                    } label: {
-                        Text(stat)
-                            .font(.system(size: 10, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
-                            .frame(maxWidth: .infinity, minHeight: 24)
-                            .background(.white.opacity(0.18))
-                            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 2))
-                            .clipShape(Capsule())
+                    if index == 3 {
+                        statBadge(stat)
+                            .contentShape(Capsule())
+                            .onTapGesture(perform: recoveryAction)
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel(stat)
+                    } else {
+                        statBadge(stat)
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
@@ -1559,12 +1518,24 @@ private struct DuoHeader: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 42)
+        .padding(.top, 50)
         .padding(.bottom, 14)
         .background(
             LinearGradient(colors: [.openLARPBlue, Color(red: 0.46, green: 0.41, blue: 1.00)], startPoint: .topLeading, endPoint: .bottomTrailing)
         )
         .ignoresSafeArea(edges: .top)
+    }
+
+    private func statBadge(_ stat: String) -> some View {
+        Text(stat)
+            .font(.system(size: 10, weight: .black, design: .rounded))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .frame(maxWidth: .infinity, minHeight: 24)
+            .background(.white.opacity(0.18))
+            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 2))
+            .clipShape(Capsule())
     }
 }
 
@@ -1609,7 +1580,12 @@ private struct RoadmapContent: View {
                             RoadmapStepRow(step: step, index: index, action: nodeAction, todayAction: todayAction)
                         }
 
-                        RoadmapProjection(label: projectedLabel, value: projectedValue, subtitle: projectedSubtitle)
+                        RoadmapProjectionRow(
+                            label: projectedLabel,
+                            value: projectedValue,
+                            subtitle: projectedSubtitle,
+                            index: projectionIndex
+                        )
 
                         Text(speech)
                             .font(.system(size: 12, weight: .black, design: .rounded))
@@ -1770,33 +1746,68 @@ private struct RoadmapStepRow: View {
     }
 }
 
-private struct RoadmapProjection: View {
+private struct RoadmapProjectionRow: View {
     let label: String
     let value: String
     let subtitle: String
+    let index: Int
+
+    private var isEven: Bool { index.isMultiple(of: 2) }
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(label)
-                    .font(.system(size: 9, weight: .black, design: .rounded))
-                    .foregroundStyle(Color.openLARPBlueDark)
-                Text(value)
-                    .font(.system(size: 25, weight: .black, design: .rounded))
-                    .foregroundStyle(Color.openLARPInk)
-                Text(subtitle)
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.openLARPBlueDark)
+        HStack(spacing: 6) {
+            if isEven {
+                lockedNode
+                note
+                Spacer(minLength: 16)
+            } else {
+                Spacer(minLength: 16)
+                note
+                lockedNode
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(LinearGradient(colors: [.white, Color(red: 0.93, green: 0.97, blue: 1.00)], startPoint: .top, endPoint: .bottom))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color(red: 0.72, green: 0.86, blue: 1.00), lineWidth: 2))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: Color(red: 0.79, green: 0.87, blue: 0.96), radius: 0, x: 0, y: 4)
-            Spacer()
         }
-        .padding(.leading, 80)
+        .frame(minHeight: 68)
+    }
+
+    private var note: some View {
+        VStack(alignment: isEven ? .leading : .trailing, spacing: 3) {
+            Text(label)
+                .font(.system(size: 9, weight: .black, design: .rounded))
+                .foregroundStyle(Color.openLARPBlueDark)
+            Text(value)
+                .font(.system(size: 25, weight: .black, design: .rounded))
+                .foregroundStyle(Color.openLARPInk)
+            Text(subtitle)
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.openLARPBlueDark)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+        }
+        .multilineTextAlignment(isEven ? .leading : .trailing)
+        .frame(maxWidth: 118, alignment: isEven ? .leading : .trailing)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(LinearGradient(colors: [.white, Color(red: 0.93, green: 0.97, blue: 1.00)], startPoint: .top, endPoint: .bottom))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color(red: 0.72, green: 0.86, blue: 1.00), lineWidth: 2))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: Color(red: 0.79, green: 0.87, blue: 0.96), radius: 0, x: 0, y: 4)
+        .rotationEffect(.degrees(isEven ? 1 : -1))
+    }
+
+    private var lockedNode: some View {
+        Image(systemName: "lock.fill")
+            .font(.system(size: 18, weight: .black))
+            .foregroundStyle(Color(red: 0.65, green: 0.71, blue: 0.76))
+            .frame(width: 62, height: 52)
+            .background(
+                LinearGradient(
+                    colors: [Color(red: 0.96, green: 0.97, blue: 0.98), Color(red: 0.91, green: 0.93, blue: 0.96)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+            .shadow(color: Color(red: 0.81, green: 0.85, blue: 0.89), radius: 0, x: 0, y: 8)
     }
 }
 
@@ -1903,31 +1914,37 @@ private struct ChoiceRow: View {
     let accent: Color
     var action: (() -> Void)?
 
+    @ViewBuilder
     var body: some View {
-        Button {
-            action?()
-        } label: {
-            HStack(spacing: 10) {
-                Text(title)
-                    .font(.system(size: 13, weight: .black, design: .rounded))
-                    .foregroundStyle(isOn ? accent : Color.openLARPInk)
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 8)
-                if !trailing.isEmpty {
-                    Text(trailing.uppercased())
-                        .font(.system(size: 10, weight: .black, design: .rounded))
-                        .tracking(0.7)
-                        .foregroundStyle(accent)
-                }
+        if let action {
+            Button(action: action) {
+                rowContent
             }
-            .padding(.horizontal, 13)
-            .frame(minHeight: 50)
-            .background(isOn ? accent.opacity(0.10) : .white)
-            .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(isOn ? accent : Color.openLARPLine, lineWidth: 2))
-            .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+            .buttonStyle(.plain)
+        } else {
+            rowContent
         }
-        .buttonStyle(.plain)
-        .disabled(action == nil)
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 13, weight: .black, design: .rounded))
+                .foregroundStyle(isOn ? accent : Color.openLARPInk)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 8)
+            if !trailing.isEmpty {
+                Text(trailing.uppercased())
+                    .font(.system(size: 10, weight: .black, design: .rounded))
+                    .tracking(0.7)
+                    .foregroundStyle(accent)
+            }
+        }
+        .padding(.horizontal, 13)
+        .frame(minHeight: 50)
+        .background(isOn ? accent.opacity(0.10) : .white)
+        .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(isOn ? accent : Color.openLARPLine, lineWidth: 2))
+        .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
     }
 }
 
@@ -2073,6 +2090,62 @@ private struct ProofTicket: View {
                 .stroke(Color.openLARPGreen.opacity(0.38), style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
         )
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+private struct ReviewHeroCard: View {
+    let grade: String
+    let eyebrow: String
+    let title: String
+    let copy: String
+    let score: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .center, spacing: 10) {
+                Text(grade)
+                    .font(.system(size: 25, weight: .black, design: .rounded))
+                    .foregroundStyle(Color(red: 0.04, green: 0.45, blue: 0.28))
+                    .frame(width: 74, height: 74)
+                    .background(
+                        LinearGradient(
+                            colors: [Color(red: 0.91, green: 1.00, blue: 0.95), Color(red: 0.79, green: 0.96, blue: 0.87)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color(red: 0.78, green: 0.95, blue: 0.85), lineWidth: 4)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: Color(red: 0.62, green: 0.85, blue: 0.72), radius: 0, x: 0, y: 6)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(eyebrow.uppercased())
+                        .font(.system(size: 10, weight: .black, design: .rounded))
+                        .tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.72))
+                    Text(title)
+                        .font(.system(size: 20, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
+                    Text(copy)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            ProofBar(score: score)
+        }
+        .padding(12)
+        .background(
+            LinearGradient(colors: [.openLARPMint, .openLARPGreen], startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: Color(red: 0.05, green: 0.53, blue: 0.31), radius: 0, x: 0, y: 6)
     }
 }
 
@@ -2271,7 +2344,7 @@ private struct SummaryTile: View {
 private struct VisualSignalCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("Proof signal")
+            Text("Signal radar")
                 .designHeadline(size: 12)
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(AngularGradient(colors: [.openLARPMint, .openLARPCyan, .openLARPBlue, .openLARPPurple, .openLARPMint], center: .center))
@@ -2294,7 +2367,7 @@ private struct VisualSignalCard: View {
 private struct VisualRoleCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("This week")
+            Text("Sprint momentum")
                 .designHeadline(size: 12)
             HStack(alignment: .bottom, spacing: 4) {
                 ForEach(Array([0.42, 0.60, 0.54, 0.78, 0.90].enumerated()), id: \.offset) { index, height in
@@ -2324,7 +2397,26 @@ private struct NativeRowModel: Identifiable {
     let subtitle: String
     let badge: String
     let color: Color
+    let isDanger: Bool
     let action: () -> Void
+
+    init(
+        icon: String,
+        title: String,
+        subtitle: String,
+        badge: String,
+        color: Color,
+        isDanger: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.icon = icon
+        self.title = title
+        self.subtitle = subtitle
+        self.badge = badge
+        self.color = color
+        self.isDanger = isDanger
+        self.action = action
+    }
 }
 
 private struct NativeGroup: View {
@@ -2360,22 +2452,30 @@ private struct NativeRow: View {
                     .background(LinearGradient(colors: [model.color.opacity(0.78), model.color], startPoint: .top, endPoint: .bottom))
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .shadow(color: model.color.opacity(0.55), radius: 0, x: 0, y: 4)
+                    .opacity(model.isDanger ? 0.62 : 1)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(model.title)
                         .font(.system(size: 12, weight: .black, design: .rounded))
-                        .foregroundStyle(Color.openLARPInk)
+                        .foregroundStyle(model.isDanger ? Color.openLARPSoftInk : Color.openLARPInk)
                     Text(model.subtitle)
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                DesignPill(model.badge, style: model.badge == "Private" || model.badge == "On" ? .good : model.badge == "Manage" ? .warn : .neutral)
+                if model.isDanger {
+                    Text(model.badge)
+                        .font(.system(size: 10, weight: .black, design: .rounded))
+                        .foregroundStyle(Color(red: 0.74, green: 0.22, blue: 0.32))
+                } else {
+                    DesignPill(model.badge, style: model.badge == "Private" || model.badge == "On" ? .good : model.badge == "Manage" ? .warn : .neutral)
+                }
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 6)
             .frame(minHeight: 44)
+            .background(model.isDanger ? Color.openLARPPanel : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
