@@ -11,10 +11,22 @@ struct ProofArchiveView: View {
         ProofArchiveContent(proofs: proofs)
     }
 
+    private var heroStat: String {
+        let count = content.receipts.count
+        return count == 1 ? "1 proof" : "\(count) proofs"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    OpenLARPHeroCard(
+                        feature: .proof,
+                        eyebrow: "Proof",
+                        title: "Evidence bank",
+                        subtitle: "Saved receipts from completed quests, newest first.",
+                        stat: heroStat
+                    )
                     headerCard
                     archiveContent
                 }
@@ -39,10 +51,8 @@ struct ProofArchiveView: View {
 
     private var headerCard: some View {
         Card {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("All proof receipts")
-                    .font(.title3.weight(.black))
-                    .foregroundStyle(Color.openLARPInk)
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(feature: .proof, eyebrow: "Archive", title: "All proof receipts")
 
                 Text(content.countText)
                     .font(.subheadline.weight(.semibold))

@@ -9,16 +9,13 @@ struct QuestMapView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Next 7 days")
-                        .font(.largeTitle.weight(.black))
-                        .foregroundStyle(Color.openLARPInk)
-
-                    Text(state.goal == nil ? "Set a goal first. The quest map appears after the cooked diagnostic." : "A short path keeps the goal visible without making the whole career feel impossible.")
-                        .font(.body)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                OpenLARPHeroCard(
+                    feature: .path,
+                    eyebrow: "Week",
+                    title: "Comeback Map",
+                    subtitle: state.goal == nil ? "Set a goal first. The quest map appears after the cooked diagnostic." : "A short proof path keeps the goal visible without making the whole career feel impossible.",
+                    stat: "\(state.progress.completedQuestCount)/7"
+                )
 
                 if state.plan.isEmpty {
                     Card {
@@ -36,17 +33,14 @@ struct QuestMapView: View {
                 } else {
                     Card {
                         VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Label("\(state.progress.streakCount)", systemImage: "flame.fill")
-                                    .font(.headline.weight(.bold))
-                                    .foregroundStyle(Color.openLARPCoral)
-                                Text("day streak")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.openLARPSoftInk)
-                                Spacer()
-                                Text("\(state.progress.completedQuestCount)/7 complete")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(Color.openLARPInk)
+                            SectionHeader(feature: .quest, eyebrow: "Proof Sprint", title: "Next 7 days")
+
+                            SprintStrip(completed: state.progress.completedQuestCount)
+
+                            HStack(spacing: 8) {
+                                SummaryTile(value: "\(state.progress.streakCount)", label: "Streak", color: .openLARPCoral)
+                                SummaryTile(value: "\(state.progress.completedQuestCount)/7", label: "Complete", color: .openLARPGreen)
+                                SummaryTile(value: "\(state.progress.xp)", label: "XP", color: .openLARPBlue)
                             }
 
                             ProgressView(value: Double(state.progress.completedQuestCount), total: 7)
@@ -170,13 +164,23 @@ private struct QuestDayRow: View {
 
     private var dayBadge: some View {
         ZStack {
-            Circle()
-                .fill(quest.status.color.opacity(0.18))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [quest.status.color.opacity(0.22), quest.status.color.opacity(0.10)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(quest.status.color.opacity(0.30), lineWidth: 2)
+                )
             Text("\(quest.day)")
                 .font(.headline.weight(.black))
                 .foregroundStyle(quest.status.color)
         }
-        .frame(width: 46, height: 46)
+        .frame(width: 48, height: 48)
     }
 
     private var titleRow: some View {
