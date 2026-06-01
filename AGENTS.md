@@ -32,27 +32,28 @@ If the docs disagree, ask which source should win before making broad changes.
 
 ## UI Direction
 
-Until the user explicitly asks for a UI polish pass, keep UI work simple, native, functional, and easy to replace.
+Treat UI and UX quality as important to the product, especially for public beta readiness.
 
 Prioritize:
 
 - Correct flows
 - Clear state
-- Reusable SwiftUI structure
-- Readable layout
-- Simple components
+- Reusable SwiftUI components
+- Polished, readable layouts
+- Clear interaction states
+- Consistent visual hierarchy
 - Centralized styling
+- Accessibility and responsive behavior
 
 Avoid:
 
-- Heavy animations
-- Complex custom visual systems
 - Deeply nested generated UI
-- Fancy visual effects
-- Final branding decisions
-- ShipSwift components unless they clearly support the current task
+- Visual polish that makes product logic harder to maintain
+- One-off styling that should be a shared component or token
+- Fancy effects that distract from the user workflow
+- ShipSwift components unless they clearly support the current task and fit the app architecture
 
-The app may later receive a dedicated designer-led UI pass. Build UI so that pass is easy, not so the current UI looks final.
+When improving UI, preserve clean state flow and architecture. A designer-led UI pass may happen at any time, so keep visual systems easy to evolve rather than version-specific.
 
 ## Product Guardrails
 
