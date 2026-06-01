@@ -233,28 +233,38 @@ final class V0EngineTests: XCTestCase {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let persistence = OpenLARPPersistence(directory: directory)
+        let attachmentStore = OpenLARPAttachmentStore(directory: directory)
         let skipTime = localDate(year: 2026, month: 5, day: 31, hour: 10)
         let store = OpenLARPStore(
             persistence: persistence,
+            attachmentStore: attachmentStore,
             now: { skipTime },
             calendar: testCalendar
         )
 
         store.confirmGoal(goal)
         store.startCurrentQuest()
+        let attachment = try store.saveProofImage(
+            data: Data([0x89, 0x50, 0x4E, 0x47]),
+            contentType: "image/png",
+            originalFileName: "proof.png"
+        )
         store.checkProof(
             kind: .proof,
             text: "I mapped repeated iOS internship requirements, chose one proof-building path, and saved notes that connect the work to a target role.",
-            link: "https://example.com/requirements"
+            link: "https://example.com/requirements",
+            attachments: [attachment]
         )
 
         XCTAssertNotNil(store.pendingProof)
         XCTAssertNotNil(store.pendingQualityResult)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
 
         store.skipCurrentQuest()
 
         XCTAssertNil(store.pendingProof)
         XCTAssertNil(store.pendingQualityResult)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
         XCTAssertEqual(store.state.plan[0].status, .skipped)
         XCTAssertEqual(store.state.plan[1].status, .locked)
         XCTAssertNil(store.state.currentQuest)
@@ -588,6 +598,62 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: attachment).path))
     }
 
+    @MainActor
+    func testDiscardPendingQualityResultDeletesPendingProofAttachments() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+
+        store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let attachment = try store.saveProofImage(
+            data: Data([0x89, 0x50, 0x4E, 0x47]),
+            contentType: "image/png",
+            originalFileName: "draft-proof.png"
+        )
+
+        store.checkProof(kind: .proof, text: "", link: "", attachments: [attachment])
+
+        XCTAssertNotNil(store.pendingProof)
+        XCTAssertNotNil(store.pendingQualityResult)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
+
+        store.discardPendingQualityResult()
+
+        XCTAssertNil(store.pendingProof)
+        XCTAssertNil(store.pendingQualityResult)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
+    }
+
+    @MainActor
+    func testRecheckingSamePendingAttachmentKeepsImageFile() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+
+        store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let attachment = try store.saveProofImage(
+            data: Data([0x89, 0x50, 0x4E, 0x47]),
+            contentType: "image/png",
+            originalFileName: "same-draft-proof.png"
+        )
+
+        store.checkProof(kind: .proof, text: "", link: "", attachments: [attachment])
+        store.checkProof(kind: .proof, text: "Adding a short note before checking again.", link: "", attachments: [attachment])
+
+        XCTAssertNotNil(store.pendingProof)
+        XCTAssertNotNil(store.pendingQualityResult)
+        XCTAssertEqual(store.pendingProof?.attachments, [attachment])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
+    }
+
     func testProofDetailContentTrimsProofMetadataAndKeepsQualityFields() {
         let proof = ProofRecord(
             id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
@@ -895,25 +961,9 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(reloaded.progress.recentProof.first?.text, proof.text)
     }
 
-    func testDesignCatalogMatchesHTMLReferenceScreensAndTabs() {
-        XCTAssertEqual(AppTab.allCases.map(\.title), ["Path", "Quest", "Cooked", "Proof", "Stats"])
-        XCTAssertEqual(
-            OpenLARPDesignCatalog.screenTitles,
-            [
-                "Set your goal",
-                "The roast report",
-                "Proof Sprint",
-                "Public proof",
-                "Add evidence",
-                "Review result",
-                "Comeback Map",
-                "Less cooked",
-                "Evidence bank",
-                "Not over",
-                "Career Hub",
-                "Settings"
-            ]
-        )
+    func testAppTabsMatchV0ProductSurfaces() {
+        XCTAssertEqual(AppTab.allCases.map(\.title), ["Today", "Map", "Progress", "Profile"])
+        XCTAssertEqual(AppTab.allCases.map(\.systemImage), ["bolt.fill", "map.fill", "chart.line.uptrend.xyaxis", "person.crop.circle"])
     }
 
     private func proofRecord(

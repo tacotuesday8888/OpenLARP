@@ -10,16 +10,13 @@ struct ProgressTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Progress")
-                        .font(.largeTitle.weight(.black))
-                        .foregroundStyle(Color.openLARPInk)
-
-                    Text("The serious layer under the cooked joke: proof, consistency, and readiness.")
-                        .font(.body)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                OpenLARPHeroCard(
+                    feature: .stats,
+                    eyebrow: "Stats",
+                    title: "Less cooked",
+                    subtitle: "The serious layer under the joke: proof, consistency, and readiness.",
+                    stat: "\(state.progress.readiness.overall)%"
+                )
 
                 if state.needsGoalSetup {
                     Card {
@@ -61,16 +58,17 @@ struct ProgressTabView: View {
     private var readinessCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Goal readiness")
-                        .font(.headline)
-                        .foregroundStyle(Color.openLARPInk)
+                SectionHeader(feature: .stats, eyebrow: "Signal radar", title: "Goal readiness")
 
-                    Spacer()
+                HStack(alignment: .center, spacing: 14) {
+                    ReadinessRings(value: state.progress.readiness.overall)
 
-                    Text("\(state.progress.readiness.overall)%")
-                        .font(.title3.weight(.black))
-                        .foregroundStyle(Color.openLARPGreen)
+                    VStack(spacing: 8) {
+                        SummaryTile(value: label(for: state.progress.readiness.proofStrength), label: "Proof", color: .openLARPCoral)
+                        SummaryTile(value: label(for: state.progress.readiness.confidence), label: "Confidence", color: .openLARPYellow)
+                        SummaryTile(value: label(for: state.progress.readiness.consistency), label: "Consistency", color: .openLARPGreen)
+                    }
+                    .frame(maxWidth: 142)
                 }
 
                 ReadinessRow(title: "Proof strength", value: state.progress.readiness.proofStrength, color: .openLARPCoral)
@@ -87,26 +85,27 @@ struct ProgressTabView: View {
         }
     }
 
+    private func label(for value: Int) -> String {
+        switch value {
+        case ..<35: "Weak"
+        case 35..<55: "Building"
+        case 55..<75: "Credible"
+        default: "Strong"
+        }
+    }
+
     private var xpCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Sprint XP")
-                        .font(.headline)
-                        .foregroundStyle(Color.openLARPInk)
-                    Spacer()
-                    Text("\(state.progress.xp) / \(state.progress.xpGoal)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.openLARPSoftInk)
-                }
+                SectionHeader(feature: .quest, eyebrow: "Sprint momentum", title: "Sprint XP")
 
                 ProgressView(value: Double(state.progress.xp), total: Double(state.progress.xpGoal))
                     .tint(.openLARPGreen)
 
-                HStack {
-                    ProgressStat(value: "\(state.progress.completedQuestCount)", label: "quests")
-                    ProgressStat(value: "\(state.progress.proofCount)", label: "proof")
-                    ProgressStat(value: "\(state.progress.streakCount)", label: "streak")
+                HStack(spacing: 8) {
+                    SummaryTile(value: "\(state.progress.completedQuestCount)", label: "Quests", color: .openLARPPurple)
+                    SummaryTile(value: "\(state.progress.proofCount)", label: "Proof", color: .openLARPGreen)
+                    SummaryTile(value: "\(state.progress.streakCount)", label: "Streak", color: .openLARPCoral)
                 }
 
                 if let recovery = MissedDayRecoveryContent(state: state) {
@@ -127,9 +126,7 @@ struct ProgressTabView: View {
     private var proofCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Recent proof")
-                    .font(.headline)
-                    .foregroundStyle(Color.openLARPInk)
+                SectionHeader(feature: .proof, eyebrow: "Evidence bank", title: "Recent proof")
 
                 Button {
                     showingProofArchive = true
@@ -162,9 +159,7 @@ struct ProgressTabView: View {
     private var badgeCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Badges")
-                    .font(.headline)
-                    .foregroundStyle(Color.openLARPInk)
+                SectionHeader(feature: .proof, eyebrow: "Proof wins", title: "Badges")
 
                 if state.progress.badges.isEmpty {
                     Text("Badges unlock from real progress, not from opening the app.")
@@ -216,25 +211,5 @@ private struct ReadinessRow: View {
         case 55..<75: "Credible"
         default: "Strong"
         }
-    }
-}
-
-private struct ProgressStat: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text(value)
-                .font(.headline.weight(.black))
-                .foregroundStyle(Color.openLARPInk)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(Color.openLARPSoftInk)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(Color.openLARPBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

@@ -73,35 +73,24 @@ struct TodayView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("What should I do today?")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Color.openLARPGreen)
-                        .textCase(.uppercase)
+            OpenLARPHeroCard(
+                feature: .quest,
+                eyebrow: "Proof Sprint",
+                title: store.state.goal?.targetRole ?? "Today quest",
+                subtitle: "One concrete action that creates real proof for the target role.",
+                stat: "\(store.state.progress.streakCount) streak"
+            )
 
-                    Text(store.state.goal?.targetRole ?? "Career goal")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(Color.openLARPInk)
-                        .fixedSize(horizontal: false, vertical: true)
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    SprintStrip(completed: store.state.progress.completedQuestCount)
+
+                    HStack(spacing: 8) {
+                        SummaryTile(value: "\(store.state.progress.xp)", label: "XP", color: .openLARPBlue)
+                        SummaryTile(value: "\(store.state.progress.proofCount)", label: "Proof", color: .openLARPGreen)
+                        SummaryTile(value: store.state.goal?.timeline ?? "Sprint", label: "Timeline", color: .openLARPCoral)
+                    }
                 }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    Label("\(store.state.progress.streakCount)", systemImage: "flame.fill")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(Color.openLARPCoral)
-
-                    Text("day streak")
-                        .font(.caption)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                }
-            }
-
-            HStack {
-                Pill(title: store.state.goal?.timeline ?? "14-day sprint", systemImage: "clock", color: .openLARPCoral)
-                Pill(title: "\(store.state.progress.proofCount) proof items", systemImage: "checkmark.seal", color: .openLARPGreen)
             }
         }
     }
@@ -113,12 +102,10 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Am I Cooked?")
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(Color.openLARPInk)
+                            SectionHeader(feature: .cooked, eyebrow: "Am I Cooked?", title: "The roast report")
 
                             Text(diagnostic.label)
-                                .font(.largeTitle.weight(.black))
+                                .font(.system(size: 34, weight: .black, design: .rounded))
                                 .foregroundStyle(Color.openLARPCoral)
                         }
 
@@ -171,6 +158,8 @@ struct TodayView: View {
         } else if let quest = store.state.currentQuest {
             Card {
                 VStack(alignment: .leading, spacing: 16) {
+                    SectionHeader(feature: .quest, eyebrow: "Public proof", title: "Today quest")
+
                     HStack {
                         Pill(title: quest.timeEstimate, systemImage: "timer", color: .openLARPGreen)
                         Pill(title: "+\(quest.xpReward) XP", systemImage: "bolt.fill", color: .openLARPYellow)
@@ -293,26 +282,22 @@ struct TodayView: View {
     private var progressStrip: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Goal readiness")
-                        .font(.headline)
-                        .foregroundStyle(Color.openLARPInk)
+                SectionHeader(feature: .stats, eyebrow: "Less cooked", title: "Goal readiness")
 
+                HStack(alignment: .center, spacing: 14) {
+                    ReadinessRings(value: store.state.progress.readiness.overall)
                     Spacer()
 
-                    Text("\(store.state.progress.readiness.overall)%")
-                        .font(.headline.weight(.black))
-                        .foregroundStyle(Color.openLARPGreen)
+                    VStack(spacing: 8) {
+                        SummaryTile(value: "\(store.state.progress.xp)", label: "XP", color: .openLARPBlue)
+                        SummaryTile(value: "\(store.state.progress.completedQuestCount)", label: "Quests", color: .openLARPPurple)
+                        SummaryTile(value: "\(store.state.progress.badges.count)", label: "Badges", color: .openLARPOrange)
+                    }
+                    .frame(maxWidth: 138)
                 }
 
                 ProgressView(value: Double(store.state.progress.readiness.overall), total: 100)
                     .tint(.openLARPGreen)
-
-                HStack {
-                    StatPill(value: "\(store.state.progress.xp)", label: "XP")
-                    StatPill(value: "\(store.state.progress.completedQuestCount)", label: "quests")
-                    StatPill(value: "\(store.state.progress.badges.count)", label: "badges")
-                }
             }
         }
     }
@@ -551,16 +536,13 @@ private struct GoalSetupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("OpenLARP")
-                    .font(.largeTitle.weight(.black))
-                    .foregroundStyle(Color.openLARPInk)
-
-                Text("Set one honest target. The app will tell you how cooked you are, then give you one quest that creates real proof.")
-                    .font(.body)
-                    .foregroundStyle(Color.openLARPSoftInk)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            OpenLARPHeroCard(
+                feature: .path,
+                eyebrow: "Setup",
+                title: "Set your goal",
+                subtitle: "Pick one honest target. OpenLARP will diagnose the gap and build the first proof sprint locally.",
+                stat: "1/4"
+            )
 
             Card {
                 VStack(alignment: .leading, spacing: 14) {
@@ -661,9 +643,7 @@ private struct ProofComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Submit proof")
-                .font(.headline)
-                .foregroundStyle(Color.openLARPInk)
+            SectionHeader(feature: .proof, eyebrow: "Public proof", title: "Add evidence")
 
             Picker("Proof type", selection: $kind) {
                 ForEach(ProofKind.allCases) { proofKind in
@@ -790,9 +770,11 @@ private struct QualityResultCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(result.label, systemImage: result.isAccepted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .font(.headline)
-                .foregroundStyle(result.isAccepted ? Color.openLARPGreen : Color.openLARPCoral)
+            SectionHeader(
+                feature: result.isAccepted ? .proof : .cooked,
+                eyebrow: "Review result",
+                title: result.label
+            )
 
             Text(result.reason)
                 .font(.subheadline)
@@ -845,25 +827,5 @@ private struct ScoreRing: View {
                 .foregroundStyle(Color.openLARPInk)
         }
         .frame(width: 82, height: 82)
-    }
-}
-
-private struct StatPill: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text(value)
-                .font(.headline.weight(.black))
-                .foregroundStyle(Color.openLARPInk)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(Color.openLARPSoftInk)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(Color.openLARPBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
