@@ -45,6 +45,7 @@ final class OpenLARPStore {
     }
 
     func confirmGoal(_ goal: CareerGoal) {
+        deletePendingProofAttachments()
         state = OpenLARPEngine.confirmGoal(goal, now: now())
         pendingProof = nil
         pendingQualityResult = nil
@@ -52,6 +53,7 @@ final class OpenLARPStore {
     }
 
     func resetGoal() {
+        deletePendingProofAttachments()
         state = OpenLARPEngine.resetGoal(now: now())
         pendingProof = nil
         pendingQualityResult = nil
@@ -73,6 +75,7 @@ final class OpenLARPStore {
                 now: now(),
                 calendar: calendar
             )
+            deletePendingProofAttachments()
             pendingProof = nil
             pendingQualityResult = nil
             errorMessage = nil
@@ -97,6 +100,7 @@ final class OpenLARPStore {
         do {
             let proof = ProofSubmission(kind: kind, text: text, link: link, attachments: attachments)
             let result = try OpenLARPEngine.checkProof(proof, in: state)
+            deletePendingProofAttachments(excluding: proof.attachments)
             pendingProof = proof
             pendingQualityResult = result
             errorMessage = nil
@@ -125,6 +129,7 @@ final class OpenLARPStore {
     }
 
     func discardPendingQualityResult() {
+        deletePendingProofAttachments()
         pendingProof = nil
         pendingQualityResult = nil
     }
@@ -184,6 +189,19 @@ final class OpenLARPStore {
             try persistence.save(state)
         } catch {
             errorMessage = "Local progress could not be saved."
+        }
+    }
+
+    private func deletePendingProofAttachments(excluding retainedAttachments: [ProofAttachment] = []) {
+        guard let pendingProof else { return }
+        let retainedAttachmentIDs = Set(retainedAttachments.map(\.id))
+
+        for attachment in pendingProof.attachments where !retainedAttachmentIDs.contains(attachment.id) {
+            do {
+                try attachmentStore.delete(attachment)
+            } catch {
+                errorMessage = "Some local draft proof images could not be removed."
+            }
         }
     }
 }

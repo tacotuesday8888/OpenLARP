@@ -4,25 +4,33 @@ This roadmap is for building OpenLARP from the current SwiftUI starter shell int
 
 ## Current Baseline
 
+OpenLARP is now past the starter-shell baseline. The current app has a local-first V0 loop that is suitable for public beta hardening, but not yet for a service-backed App Store launch.
+
 OpenLARP currently has:
 
 - A private GitHub repository
-- A clean initial commit
-- A native SwiftUI starter app
-- Static sample data
-- Planning and architecture docs
-- A passing unsigned iOS build check
+- A native SwiftUI iOS app shell with Today, Map, Progress, and Profile tabs
+- Local goal setup
+- Deterministic local "Am I Cooked?" diagnostic logic
+- Local seven-day quest generation
+- Local quest start, proof/self-report, mock quality check, XP, streak, badge, and readiness rules
+- JSON persistence in the app documents directory
+- Local text/link proof and app-private screenshot/photo attachment storage
+- Proof receipts, proof detail, proof archive, completed quest detail, and map preview screens
+- Daily cadence, intentional skip-today, and missed-day recovery behavior
+- XCTest coverage for the core local behavior
+- A passing simulator test suite and unsigned iOS build check as the main local validation gates
 
 OpenLARP does not yet have:
 
-- Real app state
-- Real onboarding
 - Real AI calls
-- Backend/auth
-- Persistence
-- Proof uploads
-- Subscriptions
+- Backend/auth or cross-device sync
+- Cloud proof uploads
+- Push notifications
+- Subscriptions/paywalls
+- Production analytics
 - CI
+- TestFlight/App Store release setup
 
 ## Phase 0: Foundation
 
@@ -60,6 +68,8 @@ Deliverable:
 
 Goal: make the app feel real before the engine is real.
 
+Status: largely complete for the local-first V0. The active app shell now uses the state-driven local loop instead of static sample screens.
+
 Work:
 
 - Replace the current static shell with the chosen visual direction
@@ -83,6 +93,8 @@ Success criteria:
 
 Goal: make the mocked app logic coherent before adding cloud services.
 
+Status: largely complete for local beta validation. The app has local state models, deterministic engine rules, JSON persistence, proof receipts, local proof attachments, daily cadence, skip, missed-day recovery, and XCTest coverage.
+
 Work:
 
 - Add app state models
@@ -103,6 +115,8 @@ Success criteria:
 ## Phase 4: AI Integration
 
 Goal: connect AI to narrow, controlled V0 jobs.
+
+Status: not started. Current diagnostic, quest, proof check, and progress behavior is deterministic local/mock logic.
 
 Work:
 
