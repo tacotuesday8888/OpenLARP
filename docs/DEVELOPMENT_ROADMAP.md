@@ -116,15 +116,16 @@ Success criteria:
 
 Goal: connect AI to narrow, controlled V0 jobs.
 
-Status: not started. Current diagnostic, quest, proof check, and progress behavior is deterministic local/mock logic.
+Status: architecture defined in `docs/BACKEND_AI_ARCHITECTURE.md`. Current diagnostic, quest, proof check, and progress behavior is still deterministic local/mock logic.
 
 Work:
 
-- Define strict request/response schemas
-- Add cooked diagnostic generation
-- Add daily quest generation
-- Add proof quality check
-- Add progress summary generation
+- Implement Firebase/Genkit foundation from `docs/BACKEND_AI_ARCHITECTURE.md`
+- Define Genkit/Zod schemas that match the documented strict JSON contracts
+- Add cooked diagnostic generation behind a callable Cloud Function
+- Add daily quest generation behind a callable Cloud Function
+- Add proof quality check behind a callable Cloud Function
+- Add progress summary generation behind a callable Cloud Function
 - Add safety rules against fake claims
 - Add fallback states when AI fails
 
@@ -138,11 +139,15 @@ Success criteria:
 
 Goal: make V0 usable across sessions/devices.
 
+Status: architecture defined in `docs/BACKEND_AI_ARCHITECTURE.md`; implementation not started.
+
 Work:
 
-- Choose backend/auth stack
-- Add user accounts
-- Store goals, quests, proof records, streaks, and progress
+- Use Firebase Auth, Firestore, Firebase Storage, Cloud Functions for Firebase, Firebase Analytics, and Genkit
+- Use separate dev/prod Firebase projects
+- Add anonymous Auth first, then Sign in with Apple account linking before cross-device restore
+- Store goals, diagnostics, quests, proof records, progress, streaks, and badges in user-owned Firestore paths
+- Store proof attachments in private user-owned Firebase Storage paths
 - Add privacy/memory controls
 - Add basic request logging and rate limits
 

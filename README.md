@@ -84,6 +84,7 @@ The current app remains quest-first. The Agent Helper is local/mock support for 
 
 - `docs/PRODUCT_ROADMAP.md`
 - `docs/AGENT_ARCHITECTURE_ROADMAP.md`
+- `docs/BACKEND_AI_ARCHITECTURE.md`
 - `docs/FOUNDER_DECISIONS.md`
 - `docs/IOS_PRODUCT_ARCHITECTURE.md`
 - `docs/UX_FEATURE_PROMPT.md`
