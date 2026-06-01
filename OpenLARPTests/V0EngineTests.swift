@@ -895,6 +895,27 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(reloaded.progress.recentProof.first?.text, proof.text)
     }
 
+    func testDesignCatalogMatchesHTMLReferenceScreensAndTabs() {
+        XCTAssertEqual(AppTab.allCases.map(\.title), ["Path", "Quest", "Cooked", "Proof", "Stats"])
+        XCTAssertEqual(
+            OpenLARPDesignCatalog.screenTitles,
+            [
+                "Set your goal",
+                "The roast report",
+                "Proof Sprint",
+                "Public proof",
+                "Add evidence",
+                "Review result",
+                "Comeback Map",
+                "Less cooked",
+                "Evidence bank",
+                "Not over",
+                "Career Hub",
+                "Settings"
+            ]
+        )
+    }
+
     private func proofRecord(
         id: UUID,
         questID: UUID = UUID(),

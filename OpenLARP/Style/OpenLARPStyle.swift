@@ -1,15 +1,24 @@
 import SwiftUI
 
 extension Color {
-    static let openLARPBackground = Color(red: 0.97, green: 0.98, blue: 0.95)
-    static let openLARPInk = Color(red: 0.10, green: 0.12, blue: 0.11)
-    static let openLARPSoftInk = Color(red: 0.35, green: 0.38, blue: 0.35)
-    static let openLARPGreen = Color(red: 0.16, green: 0.62, blue: 0.34)
-    static let openLARPCoral = Color(red: 0.91, green: 0.32, blue: 0.23)
-    static let openLARPYellow = Color(red: 0.95, green: 0.72, blue: 0.20)
-    static let openLARPRed = Color(red: 0.76, green: 0.18, blue: 0.22)
-    static let openLARPGray = Color(red: 0.67, green: 0.69, blue: 0.66)
-    static let openLARPPanel = Color.white
+    static let openLARPBackground = Color(red: 0.95, green: 0.97, blue: 0.98)
+    static let openLARPPanel = Color(red: 0.98, green: 0.99, blue: 1.00)
+    static let openLARPPaper = Color.white
+    static let openLARPInk = Color(red: 0.06, green: 0.13, blue: 0.20)
+    static let openLARPSoftInk = Color(red: 0.40, green: 0.46, blue: 0.55)
+    static let openLARPLine = Color(red: 0.86, green: 0.91, blue: 0.96)
+    static let openLARPBlue = Color(red: 0.07, green: 0.46, blue: 1.00)
+    static let openLARPBlueDark = Color(red: 0.03, green: 0.36, blue: 0.85)
+    static let openLARPCyan = Color(red: 0.20, green: 0.79, blue: 1.00)
+    static let openLARPGreen = Color(red: 0.11, green: 0.75, blue: 0.46)
+    static let openLARPMint = Color(red: 0.13, green: 0.83, blue: 0.63)
+    static let openLARPCoral = Color(red: 1.00, green: 0.31, blue: 0.43)
+    static let openLARPYellow = Color(red: 1.00, green: 0.77, blue: 0.23)
+    static let openLARPOrange = Color(red: 1.00, green: 0.54, blue: 0.24)
+    static let openLARPPurple = Color(red: 0.46, green: 0.41, blue: 1.00)
+    static let openLARPPink = Color(red: 1.00, green: 0.37, blue: 0.62)
+    static let openLARPRed = Color(red: 1.00, green: 0.31, blue: 0.43)
+    static let openLARPGray = Color(red: 0.54, green: 0.60, blue: 0.67)
 }
 
 struct Card<Content: View>: View {
@@ -22,9 +31,13 @@ struct Card<Content: View>: View {
     var body: some View {
         content
             .padding(18)
-            .background(Color.openLARPPanel)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .shadow(color: .black.opacity(0.06), radius: 12, x: 0, y: 6)
+            .background(Color.openLARPPaper)
+            .overlay(
+                RoundedRectangle(cornerRadius: 23, style: .continuous)
+                    .stroke(Color.openLARPLine, lineWidth: 2)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+            .shadow(color: Color(red: 0.79, green: 0.85, blue: 0.91), radius: 0, x: 0, y: 5)
     }
 }
 
@@ -35,7 +48,7 @@ struct Pill: View {
 
     var body: some View {
         Label(title, systemImage: systemImage)
-            .font(.caption.weight(.semibold))
+            .font(.caption.weight(.black))
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -47,23 +60,27 @@ struct Pill: View {
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
+            .font(.system(size: 15, weight: .black, design: .rounded))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(configuration.isPressed ? Color.openLARPGreen.opacity(0.75) : Color.openLARPGreen)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.vertical, 15)
+            .background(configuration.isPressed ? Color.openLARPBlueDark : Color.openLARPBlue)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: Color(red: 0.02, green: 0.27, blue: 0.66), radius: 0, x: 0, y: configuration.isPressed ? 2 : 6)
+            .offset(y: configuration.isPressed ? 4 : 0)
     }
 }
 
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
-            .foregroundStyle(Color.openLARPInk)
+            .font(.system(size: 15, weight: .black, design: .rounded))
+            .foregroundStyle(Color.openLARPBlueDark)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(configuration.isPressed ? Color.openLARPYellow.opacity(0.35) : Color.openLARPYellow.opacity(0.22))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(configuration.isPressed ? Color(red: 0.82, green: 0.90, blue: 0.98) : Color(red: 0.92, green: 0.96, blue: 1.00))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: Color(red: 0.79, green: 0.85, blue: 0.91), radius: 0, x: 0, y: configuration.isPressed ? 2 : 5)
+            .offset(y: configuration.isPressed ? 3 : 0)
     }
 }
