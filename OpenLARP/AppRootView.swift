@@ -73,6 +73,73 @@ enum OpenLARPDesignCatalog {
     ]
 }
 
+private enum FeatureMarkKind {
+    case path
+    case quest
+    case cooked
+    case proof
+    case stats
+    case recovery
+    case me
+    case settings
+
+    var icon: String {
+        switch self {
+        case .path: "map.fill"
+        case .quest: "bolt.fill"
+        case .cooked: "flame.fill"
+        case .proof: "doc.fill"
+        case .stats: "chart.bar.fill"
+        case .recovery: "shield.fill"
+        case .me: "briefcase.fill"
+        case .settings: "gearshape.fill"
+        }
+    }
+
+    var colors: [Color] {
+        switch self {
+        case .path:
+            [Color.openLARPCyan, Color.openLARPBlue]
+        case .quest:
+            [Color(red: 0.61, green: 0.55, blue: 1.00), Color.openLARPPurple]
+        case .cooked:
+            [Color(red: 1.00, green: 0.56, blue: 0.71), Color.openLARPCoral]
+        case .proof:
+            [Color.openLARPMint, Color.openLARPGreen]
+        case .stats:
+            [Color.openLARPYellow, Color.openLARPOrange]
+        case .recovery:
+            [Color(red: 0.55, green: 0.63, blue: 0.72), Color(red: 0.15, green: 0.23, blue: 0.35)]
+        case .me, .settings:
+            [Color(red: 0.37, green: 0.46, blue: 0.59), Color(red: 0.08, green: 0.15, blue: 0.24)]
+        }
+    }
+
+    var shadow: Color {
+        switch self {
+        case .path: Color.openLARPBlueDark
+        case .quest: Color(red: 0.32, green: 0.26, blue: 0.79)
+        case .cooked: Color(red: 0.72, green: 0.13, blue: 0.28)
+        case .proof: Color(red: 0.05, green: 0.53, blue: 0.31)
+        case .stats: Color(red: 0.71, green: 0.33, blue: 0.09)
+        case .recovery: Color(red: 0.08, green: 0.15, blue: 0.24)
+        case .me, .settings: Color(red: 0.04, green: 0.06, blue: 0.12)
+        }
+    }
+}
+
+private extension AppTab {
+    var featureMarkKind: FeatureMarkKind {
+        switch self {
+        case .path: .path
+        case .quest: .quest
+        case .cooked: .cooked
+        case .proof: .proof
+        case .stats: .stats
+        }
+    }
+}
+
 private enum PathMode {
     case sprint
     case sevenDay
@@ -276,7 +343,7 @@ struct AppRootView: View {
                 titleSmall: "Recovery",
                 titleMain: "Not over",
                 stat: "1 freeze",
-                mark: "shield.fill",
+                mark: .recovery,
                 selectedTab: $selectedTab,
                 closeToMain: { secondaryScreen = nil }
             ) {
@@ -297,7 +364,7 @@ struct AppRootView: View {
                 titleSmall: "Me",
                 titleMain: "Career Hub",
                 stat: "L3",
-                mark: "briefcase.fill",
+                mark: .me,
                 selectedTab: $selectedTab,
                 closeToMain: { secondaryScreen = nil }
             ) {
@@ -321,7 +388,7 @@ struct AppRootView: View {
                 titleSmall: "Me",
                 titleMain: "Settings",
                 stat: "Account",
-                mark: "gearshape.fill",
+                mark: .settings,
                 selectedTab: $selectedTab,
                 closeToMain: { secondaryScreen = nil }
             ) {
@@ -458,7 +525,7 @@ private struct DesignShell<Content: View>: View {
         VStack(spacing: 0) {
             TopBar(
                 colors: tab.headerColors,
-                icon: tab.systemImage,
+                mark: tab.featureMarkKind,
                 titleSmall: titleSmall,
                 titleMain: titleMain,
                 stat: stat,
@@ -478,7 +545,8 @@ private struct SecondaryDesignShell<Content: View>: View {
     let titleSmall: String
     let titleMain: String
     let stat: String
-    let mark: String
+    let mark: FeatureMarkKind
+    let colors: [Color]
     @Binding var selectedTab: AppTab
     let closeToMain: () -> Void
     let content: Content
@@ -487,7 +555,8 @@ private struct SecondaryDesignShell<Content: View>: View {
         titleSmall: String,
         titleMain: String,
         stat: String,
-        mark: String,
+        mark: FeatureMarkKind,
+        colors: [Color] = [Color(red: 0.15, green: 0.25, blue: 0.39), Color(red: 0.08, green: 0.15, blue: 0.24)],
         selectedTab: Binding<AppTab>,
         closeToMain: @escaping () -> Void,
         @ViewBuilder content: () -> Content
@@ -496,6 +565,7 @@ private struct SecondaryDesignShell<Content: View>: View {
         self.titleMain = titleMain
         self.stat = stat
         self.mark = mark
+        self.colors = colors
         _selectedTab = selectedTab
         self.closeToMain = closeToMain
         self.content = content()
@@ -504,8 +574,8 @@ private struct SecondaryDesignShell<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             TopBar(
-                colors: [Color(red: 0.15, green: 0.25, blue: 0.39), Color(red: 0.08, green: 0.15, blue: 0.24)],
-                icon: mark,
+                colors: colors,
+                mark: mark,
                 titleSmall: titleSmall,
                 titleMain: titleMain,
                 stat: stat
@@ -522,7 +592,7 @@ private struct SecondaryDesignShell<Content: View>: View {
 
 private struct TopBar: View {
     let colors: [Color]
-    let icon: String
+    let mark: FeatureMarkKind
     let titleSmall: String
     let titleMain: String
     let stat: String
@@ -530,10 +600,7 @@ private struct TopBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 24, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
+            FeatureMarkView(kind: mark, size: 38)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(titleSmall.uppercased())
@@ -679,6 +746,28 @@ private struct SecondaryTabBar: View {
     }
 }
 
+private struct FeatureMarkView: View {
+    let kind: FeatureMarkKind
+    var size: CGFloat = 38
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: kind.colors, startPoint: .top, endPoint: .bottom)
+            Circle()
+                .fill(.white.opacity(0.30))
+                .frame(width: size * 0.46, height: size * 0.46)
+                .offset(x: size * 0.38, y: -size * 0.38)
+            Image(systemName: kind.icon)
+                .font(.system(size: size * 0.50, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+        }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size >= 38 ? 15 : 13, style: .continuous))
+            .shadow(color: kind.shadow.opacity(0.72), radius: 0, x: 0, y: size >= 38 ? 5 : 4)
+            .accessibilityHidden(true)
+    }
+}
+
 private struct GoalSetupDesignScreen: View {
     let store: OpenLARPStore
     let completed: () -> Void
@@ -695,7 +784,7 @@ private struct GoalSetupDesignScreen: View {
         VStack(spacing: 0) {
             TopBar(
                 colors: [.openLARPBlue, .openLARPBlue],
-                icon: "map.fill",
+                mark: .path,
                 titleSmall: "Setup",
                 titleMain: "Set your goal",
                 stat: "1/4"
@@ -760,8 +849,7 @@ private struct CookedDiagnosticDesignScreen: View {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack(spacing: 10) {
-                        Image(systemName: "flame.fill")
-                            .foregroundStyle(Color.openLARPCoral)
+                        FeatureMarkView(kind: .cooked, size: 34)
                         Text("Diagnostic".uppercased())
                             .font(.system(size: 13, weight: .black, design: .rounded))
                             .tracking(1.2)
@@ -814,9 +902,7 @@ private struct CookedDiagnosticDesignScreen: View {
 
                 DesignCard {
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "flame.fill")
-                            .foregroundStyle(Color.openLARPCoral)
-                            .font(.system(size: 24, weight: .black))
+                        FeatureMarkView(kind: .cooked, size: 34)
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 DesignPill("Verdict", style: .bad)
@@ -857,7 +943,7 @@ private struct SprintPathScreen: View {
                 stats: ["PD", "12d", "\(max(580, state.progress.xp)) XP", "5 HP"],
                 title: "Proof Sprint",
                 subtitle: "Beat the cooked score with public evidence.",
-                icon: "map.fill",
+                mark: .path,
                 menuAction: showSevenDayMap,
                 recoveryAction: openRecovery
             )
@@ -895,7 +981,7 @@ private struct SevenDayMapScreen: View {
                 stats: ["W1", "3d", "\(max(615, state.progress.xp)) XP", "56 goal"],
                 title: "Comeback Map",
                 subtitle: "Seven days to turn proof weak into usable.",
-                icon: "map.fill",
+                mark: .path,
                 menuAction: showSprintPath,
                 recoveryAction: openRecovery
             )
@@ -930,6 +1016,7 @@ private struct TodayQuestDesignScreen: View {
             VStack(alignment: .leading, spacing: 12) {
                 GradientHeroCard(
                     icon: "bolt.fill",
+                    mark: .quest,
                     eyebrow: nil,
                     title: "Post a 150-word project breakdown.",
                     copy: "Goal: make a real artifact visible without pretending it is bigger than it is.",
@@ -948,8 +1035,7 @@ private struct TodayQuestDesignScreen: View {
 
                 DesignCard {
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "bolt.fill")
-                            .featureIcon(color: .openLARPPurple)
+                        FeatureMarkView(kind: .quest, size: 34)
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 DesignPill("Difficulty", style: .warn)
@@ -994,8 +1080,7 @@ private struct AddProofDesignScreen: View {
                 DesignCard {
                     VStack(alignment: .leading, spacing: 9) {
                         HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: "doc.fill")
-                                .featureIcon(color: .openLARPGreen)
+                            FeatureMarkView(kind: .proof, size: 34)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Evidence pack")
                                     .eyebrow(color: .openLARPGreen)
@@ -1031,8 +1116,7 @@ private struct AddProofDesignScreen: View {
 
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 8) {
-                        Image(systemName: "doc.fill")
-                            .featureIcon(color: .openLARPGreen, size: 24)
+                        FeatureMarkView(kind: .proof, size: 30)
                         Text("Proof sheet")
                             .eyebrow(color: .openLARPGreen)
                     }
@@ -1189,8 +1273,7 @@ private struct StatsDesignScreen: View {
                 DesignCard {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            Image(systemName: "chart.bar.fill")
-                                .featureIcon(color: .openLARPOrange)
+                            FeatureMarkView(kind: .stats, size: 34)
                             Text("Readiness")
                                 .eyebrow(color: .openLARPOrange)
                         }
@@ -1206,8 +1289,7 @@ private struct StatsDesignScreen: View {
                 DesignCard {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
-                            Image(systemName: "chart.bar.fill")
-                                .featureIcon(color: .openLARPOrange)
+                            FeatureMarkView(kind: .stats, size: 34)
                             Text("Activity heatmap")
                                 .eyebrow(color: .openLARPOrange)
                         }
@@ -1239,6 +1321,7 @@ private struct EvidenceBankDesignScreen: View {
             VStack(alignment: .leading, spacing: 12) {
                 GradientHeroCard(
                     icon: "doc.fill",
+                    mark: .proof,
                     eyebrow: "Vault",
                     title: "Proof beats profile polish.",
                     copy: "Everything here came from a quest: links, screenshots, notes, and outcomes.",
@@ -1274,6 +1357,7 @@ private struct RecoveryDesignScreen: View {
         VStack(alignment: .leading, spacing: 12) {
             GradientHeroCard(
                 icon: "shield.fill",
+                mark: .recovery,
                 eyebrow: "Missed day",
                 title: "Your chain is dented, not dead.",
                 copy: "Do a 7-minute recovery quest to protect the streak.",
@@ -1283,8 +1367,7 @@ private struct RecoveryDesignScreen: View {
             DesignCard {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .top, spacing: 9) {
-                        Image(systemName: "shield.fill")
-                            .featureIcon(color: Color(red: 0.27, green: 0.36, blue: 0.46))
+                        FeatureMarkView(kind: .recovery, size: 34)
                         VStack(alignment: .leading, spacing: 6) {
                             DesignPill("Recovery quest", style: .warn)
                             Text("Find 3 repeated skill gaps")
@@ -1469,7 +1552,7 @@ private struct DuoHeader: View {
     let stats: [String]
     let title: String
     let subtitle: String
-    let icon: String
+    let mark: FeatureMarkKind
     let menuAction: () -> Void
     let recoveryAction: () -> Void
 
@@ -1490,9 +1573,7 @@ private struct DuoHeader: View {
             }
 
             HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 26, weight: .black))
-                    .foregroundStyle(.white)
+                FeatureMarkView(kind: mark, size: 38)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
                         .font(.system(size: 29, weight: .black, design: .rounded))
@@ -1515,6 +1596,7 @@ private struct DuoHeader: View {
                         .shadow(color: Color(red: 0.00, green: 0.28, blue: 0.75).opacity(0.4), radius: 0, x: 0, y: 6)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(title == "Proof Sprint" ? "Show 7-Day Map" : "Show Proof Sprint")
             }
         }
         .padding(.horizontal, 16)
@@ -1827,14 +1909,16 @@ private struct WindingPath: Shape {
 
 private struct GradientHeroCard: View {
     var icon: String?
+    var mark: FeatureMarkKind?
     var customLeading: AnyView?
     let eyebrow: String?
     let title: String
     let copy: String
     let colors: [Color]
 
-    init(icon: String?, eyebrow: String?, title: String, copy: String, colors: [Color]) {
+    init(icon: String?, mark: FeatureMarkKind? = nil, eyebrow: String?, title: String, copy: String, colors: [Color]) {
         self.icon = icon
+        self.mark = mark
         self.customLeading = nil
         self.eyebrow = eyebrow
         self.title = title
@@ -1844,6 +1928,7 @@ private struct GradientHeroCard: View {
 
     init(customLeading: AnyView, eyebrow: String?, title: String, copy: String, colors: [Color]) {
         self.icon = nil
+        self.mark = nil
         self.customLeading = customLeading
         self.eyebrow = eyebrow
         self.title = title
@@ -1855,6 +1940,8 @@ private struct GradientHeroCard: View {
         HStack(alignment: .top, spacing: 12) {
             if let customLeading {
                 customLeading
+            } else if let mark {
+                FeatureMarkView(kind: mark, size: 34)
             } else if let icon {
                 Image(systemName: icon)
                     .font(.system(size: 26, weight: .black))
@@ -2214,6 +2301,7 @@ private struct MetricMeter: View {
                 HStack {
                     Text(title)
                         .font(.system(size: 15, weight: .black, design: .rounded))
+                        .foregroundStyle(Color.openLARPInk)
                     Spacer()
                     DesignPill(tag, style: tag == "Weak" ? .warn : .good)
                 }
@@ -2568,12 +2656,6 @@ private extension View {
             .tracking(1.0)
             .textCase(.uppercase)
             .foregroundStyle(color)
-    }
-
-    func featureIcon(color: Color, size: CGFloat = 28) -> some View {
-        font(.system(size: size, weight: .black))
-            .foregroundStyle(color)
-            .frame(width: size + 4, height: size + 4)
     }
 
     func settingsLabel() -> some View {
