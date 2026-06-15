@@ -57,6 +57,7 @@ final class OpenLARPStore {
     func confirmGoal(_ goal: CareerGoal) async {
         guard !isGoalSetupRunning else { return }
         let previousPrivacy = state.userProfile?.privacy
+        let previousOutcomeLog = state.outcomeLog
         let requestedAt = now()
         isGoalSetupRunning = true
         defer { isGoalSetupRunning = false }
@@ -89,6 +90,8 @@ final class OpenLARPStore {
         if let previousPrivacy {
             state.userProfile?.privacy = previousPrivacy
         }
+        state.outcomeLog = previousOutcomeLog
+        state.agentBrief = AgentBriefFactory.makeBrief(for: state, generatedAt: requestedAt)
         pendingProof = nil
         pendingQualityResult = nil
         clearPersistedProofDraft()
@@ -102,9 +105,11 @@ final class OpenLARPStore {
         }
         var existingProfile = state.userProfile
         existingProfile?.updatedAt = now()
+        let existingOutcomeLog = state.outcomeLog
         deletePendingProofAttachments()
         state = OpenLARPEngine.resetGoal(now: now())
         state.userProfile = existingProfile
+        state.outcomeLog = existingOutcomeLog
         pendingProof = nil
         pendingQualityResult = nil
         clearPersistedProofDraft()
@@ -224,6 +229,55 @@ final class OpenLARPStore {
         profile.updatedAt = now()
         state.userProfile = profile
         state.updatedAt = now()
+        save()
+    }
+
+    func logOutcome(
+        kind: CareerOutcomeKind,
+        title: String,
+        organizationName: String = "",
+        note: String = "",
+        occurredAt: Date,
+        isPrivate: Bool = true
+    ) {
+        guard !state.needsGoalSetup else {
+            errorMessage = "Set a career goal before logging outcomes."
+            return
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            errorMessage = "Add a short outcome title before saving."
+            return
+        }
+        let timestamp = now()
+        guard occurredAt <= timestamp else {
+            errorMessage = "Choose today or a past date for the outcome."
+            return
+        }
+
+        let relatedQuestID = state.currentQuest?.id ?? state.dailyCadence.lastCompletedQuestID
+        let relatedProofID = relatedQuestID.flatMap { questID in
+            state.progress.recentProof.first { $0.questID == questID }?.id
+        } ?? state.progress.recentProof.first?.id
+        let targetRole = state.targetRoles.first
+        let targetRoleTitle = state.goal?.targetRole ?? targetRole?.title ?? "Career goal"
+        let outcome = CareerOutcomeRecord(
+            kind: kind,
+            title: trimmedTitle,
+            organizationName: organizationName.trimmingCharacters(in: .whitespacesAndNewlines),
+            note: note.trimmingCharacters(in: .whitespacesAndNewlines),
+            occurredAt: occurredAt,
+            createdAt: timestamp,
+            targetRoleID: targetRole?.id,
+            targetRoleTitle: targetRoleTitle,
+            relatedQuestID: relatedQuestID,
+            relatedProofID: relatedProofID,
+            isPrivate: isPrivate
+        )
+
+        state = OpenLARPEngine.logOutcome(outcome, in: state, now: timestamp)
+        errorMessage = nil
         save()
     }
 

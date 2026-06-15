@@ -133,6 +133,7 @@ enum ReadinessSnapshotSource: String, Codable {
     case initialBaseline
     case proofClaim
     case agentScan
+    case outcomeLog
 }
 
 struct ReadinessSnapshot: Codable, Equatable, Identifiable {
@@ -147,6 +148,7 @@ struct ReadinessSnapshot: Codable, Equatable, Identifiable {
     var networkStrength: Int
     var relatedQuestID: UUID?
     var relatedProofID: UUID?
+    var relatedOutcomeID: UUID?
     var createdAt: Date
 
     init(
@@ -156,6 +158,7 @@ struct ReadinessSnapshot: Codable, Equatable, Identifiable {
         metrics: ReadinessMetrics,
         relatedQuestID: UUID? = nil,
         relatedProofID: UUID? = nil,
+        relatedOutcomeID: UUID? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -169,7 +172,41 @@ struct ReadinessSnapshot: Codable, Equatable, Identifiable {
         self.networkStrength = metrics.networkStrength
         self.relatedQuestID = relatedQuestID
         self.relatedProofID = relatedProofID
+        self.relatedOutcomeID = relatedOutcomeID
         self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case source
+        case reason
+        case overall
+        case proofStrength
+        case confidence
+        case consistency
+        case skillProof
+        case networkStrength
+        case relatedQuestID
+        case relatedProofID
+        case relatedOutcomeID
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        source = try container.decode(ReadinessSnapshotSource.self, forKey: .source)
+        reason = try container.decode(String.self, forKey: .reason)
+        overall = try container.decode(Int.self, forKey: .overall)
+        proofStrength = try container.decode(Int.self, forKey: .proofStrength)
+        confidence = try container.decode(Int.self, forKey: .confidence)
+        consistency = try container.decode(Int.self, forKey: .consistency)
+        skillProof = try container.decode(Int.self, forKey: .skillProof)
+        networkStrength = try container.decode(Int.self, forKey: .networkStrength)
+        relatedQuestID = try container.decodeIfPresent(UUID.self, forKey: .relatedQuestID)
+        relatedProofID = try container.decodeIfPresent(UUID.self, forKey: .relatedProofID)
+        relatedOutcomeID = try container.decodeIfPresent(UUID.self, forKey: .relatedOutcomeID)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 }
 
@@ -288,6 +325,7 @@ enum AgentActivityType: String, Codable {
     case questGeneration
     case proofEvaluation
     case readinessUpdate
+    case outcomeLogged
     case opportunityScan
     case briefGeneration
 }
@@ -450,6 +488,8 @@ enum AgentBriefFactory {
         let opportunities = rankingService.rank(sampleOpportunities(for: targetRole), for: targetRole)
         let proofCount = state.progress.proofCount
         let proofText = proofCount == 1 ? "1 proof receipt" : "\(proofCount) proof receipts"
+        let outcomeCount = state.outcomeLog.count
+        let outcomeText = outcomeCount == 1 ? "1 career outcome" : "\(outcomeCount) career outcomes"
         let currentQuest = state.currentQuest ?? state.plan.first { $0.status == .locked }
 
         var activities: [AgentActivity] = [
@@ -465,7 +505,7 @@ enum AgentBriefFactory {
                 type: .briefGeneration,
                 status: .completed,
                 title: "Updated career brief",
-                summary: "Combined target role, readiness, current quest, and \(proofText).",
+                summary: "Combined target role, readiness, current quest, \(proofText), and \(outcomeText).",
                 relatedEntityIDs: currentQuest.map { [$0.id] } ?? [],
                 createdAt: generatedAt
             )
@@ -497,6 +537,20 @@ enum AgentBriefFactory {
             )
         }
 
+        if let latestOutcome = OutcomeLogContent(outcomes: state.outcomeLog).outcomes.first {
+            activities.insert(
+                AgentActivity(
+                    type: .outcomeLogged,
+                    status: .completed,
+                    title: "Logged latest outcome",
+                    summary: latestOutcome.kind.activitySummary(for: latestOutcome),
+                    relatedEntityIDs: [latestOutcome.id],
+                    createdAt: latestOutcome.createdAt
+                ),
+                at: 0
+            )
+        }
+
         let nextSteps = [
             AgentNextStep(
                 title: "Do today's proof quest",
@@ -517,7 +571,7 @@ enum AgentBriefFactory {
         return AgentBrief(
             id: UUID(),
             title: "Career agent brief",
-            summary: "For \(targetRole.title), readiness is \(state.progress.readiness.overall)%. The agent sees \(proofText) and \(opportunities.count) ranked next moves.",
+            summary: "For \(targetRole.title), readiness is \(state.progress.readiness.overall)%. The agent sees \(proofText), \(outcomeText), and \(opportunities.count) ranked next moves.",
             generatedAt: generatedAt,
             providerRoute: .genkitBackend,
             targetRoleID: targetRole.id,

@@ -1127,6 +1127,219 @@ final class V0EngineTests: XCTestCase {
         XCTAssertTrue(brief.nextSteps.contains { $0.title == "Do today's proof quest" })
     }
 
+    func testLoggingOutcomeAddsPrivateRecordWithoutInflatingProofQuestOrStreakCounts() throws {
+        let outcomeTime = Date(timeIntervalSince1970: 12_500)
+        let outcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!,
+            kind: .applied,
+            title: "Applied to campus iOS internship",
+            organizationName: "Example Labs",
+            note: "Submitted a truthful application using the SwiftUI proof artifact.",
+            occurredAt: outcomeTime,
+            createdAt: outcomeTime,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        let initial = OpenLARPEngine.confirmGoal(goal, now: outcomeTime)
+
+        let state = OpenLARPEngine.logOutcome(outcome, in: initial, now: outcomeTime)
+
+        XCTAssertEqual(state.outcomeLog.count, 1)
+        XCTAssertEqual(state.outcomeLog.first, outcome)
+        XCTAssertEqual(state.progress.proofCount, initial.progress.proofCount)
+        XCTAssertEqual(state.progress.completedQuestCount, initial.progress.completedQuestCount)
+        XCTAssertEqual(state.progress.streakCount, initial.progress.streakCount)
+        XCTAssertGreaterThan(state.progress.xp, initial.progress.xp)
+        XCTAssertEqual(state.progress.readiness.applicationExecution, initial.progress.readiness.applicationExecution + 4)
+        XCTAssertEqual(state.progress.readinessHistory.last?.source, .outcomeLog)
+        XCTAssertEqual(state.progress.readinessHistory.last?.relatedOutcomeID, outcome.id)
+        XCTAssertEqual(state.agentBrief.activities.first?.type, .outcomeLogged)
+        XCTAssertTrue(state.agentBrief.summary.contains("1 career outcome"))
+    }
+
+    func testLoggingSameOutcomeIDTwiceDoesNotDoubleCountProgress() {
+        let outcomeTime = Date(timeIntervalSince1970: 12_550)
+        let outcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "CDCDCDCD-CDCD-CDCD-CDCD-CDCDCDCDCDCD")!,
+            kind: .interview,
+            title: "Scheduled recruiter screen",
+            organizationName: "Example Labs",
+            note: "Same backend event replayed twice.",
+            occurredAt: outcomeTime,
+            createdAt: outcomeTime,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        let initial = OpenLARPEngine.confirmGoal(goal, now: outcomeTime)
+
+        let once = OpenLARPEngine.logOutcome(outcome, in: initial, now: outcomeTime)
+        let twice = OpenLARPEngine.logOutcome(outcome, in: once, now: outcomeTime.addingTimeInterval(60))
+
+        XCTAssertEqual(twice.outcomeLog.count, 1)
+        XCTAssertEqual(twice.progress.xp, once.progress.xp)
+        XCTAssertEqual(twice.progress.readiness, once.progress.readiness)
+        XCTAssertEqual(twice.progress.readinessHistory.count, once.progress.readinessHistory.count)
+        XCTAssertEqual(twice.progress.badges, once.progress.badges)
+    }
+
+    func testRejectionOutcomeDoesNotPretendReadinessImproved() {
+        let outcomeTime = Date(timeIntervalSince1970: 12_700)
+        let outcome = CareerOutcomeRecord(
+            kind: .rejection,
+            title: "Rejected after product intern screen",
+            organizationName: "Example Labs",
+            note: "Rejected after the first screen; need stronger product proof.",
+            occurredAt: outcomeTime,
+            createdAt: outcomeTime,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        let initial = OpenLARPEngine.confirmGoal(goal, now: outcomeTime)
+
+        let state = OpenLARPEngine.logOutcome(outcome, in: initial, now: outcomeTime)
+
+        XCTAssertEqual(state.progress.readiness.overall, initial.progress.readiness.overall)
+        XCTAssertEqual(state.progress.proofCount, initial.progress.proofCount)
+        XCTAssertEqual(state.progress.streakCount, initial.progress.streakCount)
+        XCTAssertFalse(state.progress.badges.contains(.firstOutcome))
+        XCTAssertEqual(state.outcomeLog.first?.kind.recoveryPrompt, "Turn the rejection into one recovery quest instead of treating it as proof of failure.")
+    }
+
+    func testChangedGoalOutcomeIsContextOnlyUntilFreshDiagnostic() {
+        let outcomeTime = Date(timeIntervalSince1970: 12_750)
+        let outcome = CareerOutcomeRecord(
+            kind: .changedGoal,
+            title: "Considering AI product roles instead",
+            organizationName: "",
+            note: "The plan should not become more ready until a new diagnostic runs.",
+            occurredAt: outcomeTime,
+            createdAt: outcomeTime,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        let initial = OpenLARPEngine.confirmGoal(goal, now: outcomeTime)
+
+        let state = OpenLARPEngine.logOutcome(outcome, in: initial, now: outcomeTime)
+
+        XCTAssertEqual(state.outcomeLog.first?.kind, .changedGoal)
+        XCTAssertEqual(state.progress.xp, initial.progress.xp)
+        XCTAssertEqual(state.progress.readiness, initial.progress.readiness)
+        XCTAssertEqual(state.progress.readinessHistory.count, initial.progress.readinessHistory.count)
+        XCTAssertFalse(state.progress.badges.contains(.firstOutcome))
+    }
+
+    @MainActor
+    func testStorePersistsOutcomeLogAcrossReloadAndGoalReset() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+        let outcomeTime = Date(timeIntervalSince1970: 12_900)
+
+        await store.confirmGoal(goal)
+        store.logOutcome(
+            kind: .interview,
+            title: "Scheduled first iOS internship screen",
+            organizationName: "Example Labs",
+            note: "Recruiter confirmed a 20-minute screen.",
+            occurredAt: outcomeTime,
+            isPrivate: true
+        )
+
+        let reloaded = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+        XCTAssertEqual(reloaded.state.outcomeLog.count, 1)
+        XCTAssertEqual(reloaded.state.outcomeLog.first?.kind, .interview)
+        XCTAssertEqual(reloaded.state.outcomeLog.first?.targetRoleTitle, goal.targetRole)
+        XCTAssertEqual(reloaded.state.outcomeLog.first?.targetRoleID, reloaded.state.targetRoles.first?.id)
+
+        reloaded.resetGoal()
+
+        XCTAssertTrue(reloaded.state.needsGoalSetup)
+        XCTAssertEqual(reloaded.state.outcomeLog.count, 1)
+        XCTAssertEqual(reloaded.state.outcomeLog.first?.title, "Scheduled first iOS internship screen")
+    }
+
+    @MainActor
+    func testStoreRejectsFutureOutcomeDatesBeforeSaving() async {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = Date(timeIntervalSince1970: 13_000)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { now }
+        )
+
+        await store.confirmGoal(goal)
+        store.logOutcome(
+            kind: .offer,
+            title: "Future offer",
+            organizationName: "Example Labs",
+            note: "This date is not allowed yet.",
+            occurredAt: now.addingTimeInterval(86_400),
+            isPrivate: true
+        )
+
+        XCTAssertTrue(store.state.outcomeLog.isEmpty)
+        XCTAssertEqual(store.errorMessage, "Choose today or a past date for the outcome.")
+    }
+
+    func testOutcomeLogContentSortsNewestFirstAndReportsEmptyState() {
+        let older = CareerOutcomeRecord(
+            id: UUID(uuidString: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")!,
+            kind: .applied,
+            title: "Applied to first role",
+            organizationName: "Example Labs",
+            note: "",
+            occurredAt: Date(timeIntervalSince1970: 10),
+            createdAt: Date(timeIntervalSince1970: 10),
+            targetRoleTitle: "iOS internship",
+            isPrivate: true
+        )
+        let newer = CareerOutcomeRecord(
+            id: UUID(uuidString: "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE")!,
+            kind: .offer,
+            title: "Received internship offer",
+            organizationName: "Example Labs",
+            note: "Offer received after proof sprint.",
+            occurredAt: Date(timeIntervalSince1970: 20),
+            createdAt: Date(timeIntervalSince1970: 20),
+            targetRoleTitle: "iOS internship",
+            isPrivate: true
+        )
+
+        let content = OutcomeLogContent(outcomes: [older, newer])
+        let empty = OutcomeLogContent(outcomes: [])
+
+        XCTAssertEqual(content.outcomes.map(\.id), [newer.id, older.id])
+        XCTAssertEqual(content.countText, "2 career outcomes")
+        XCTAssertEqual(content.latestSummary, "Offer: Received internship offer")
+        XCTAssertEqual(empty.emptyMessage, "Log real outcomes here: applied, interview, rejection, offer, or changed goal.")
+    }
+
+    func testOlderPersistedStateDecodesWithEmptyOutcomeLog() throws {
+        let state = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 13_100))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(state)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "outcomeLog")
+        let oldData = try JSONSerialization.data(withJSONObject: object)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode(OpenLARPState.self, from: oldData)
+
+        XCTAssertEqual(decoded.schemaVersion, 4)
+        XCTAssertTrue(decoded.outcomeLog.isEmpty)
+    }
+
     @MainActor
     func testV0AIWorkflowContractsExposeOnlyNarrowV0Jobs() async throws {
         XCTAssertEqual(V0AIWorkflowKind.allCases, [

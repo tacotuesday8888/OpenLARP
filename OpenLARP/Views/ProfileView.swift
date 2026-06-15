@@ -5,6 +5,7 @@ struct ProfileView: View {
     @State private var showingResetConfirmation = false
     @State private var selectedProof: ProofRecord?
     @State private var showingProofArchive = false
+    @State private var showingOutcomeLog = false
 
     var body: some View {
         ScrollView {
@@ -20,6 +21,7 @@ struct ProfileView: View {
                 careerSummaryCard
                 accountProfileCard
                 activeGoalCard
+                recentOutcomesCard
                 streakCard
                 privacyCard
                 badgeCard
@@ -40,6 +42,18 @@ struct ProfileView: View {
         .sheet(isPresented: $showingProofArchive) {
             ProofArchiveView(proofs: store.state.progress.recentProof) { attachment in
                 store.localURL(for: attachment)
+            }
+        }
+        .sheet(isPresented: $showingOutcomeLog) {
+            OutcomeLogSheet { kind, title, organizationName, note, occurredAt, isPrivate in
+                store.logOutcome(
+                    kind: kind,
+                    title: title,
+                    organizationName: organizationName,
+                    note: note,
+                    occurredAt: occurredAt,
+                    isPrivate: isPrivate
+                )
             }
         }
         .confirmationDialog(
@@ -93,6 +107,24 @@ struct ProfileView: View {
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recentOutcomesCard: some View {
+        if !store.state.outcomeLog.isEmpty {
+            OutcomeLogCard(
+                content: OutcomeLogContent(outcomes: store.state.outcomeLog),
+                feature: .profile,
+                eyebrow: "Private history",
+                title: "Recent outcomes",
+                recentLimit: 2,
+                availability: store.state.needsGoalSetup
+                    ? .readOnly("Set a new career goal before logging more outcomes. Existing outcomes stay saved as private history.")
+                    : .available
+            ) {
+                showingOutcomeLog = true
             }
         }
     }

@@ -1,11 +1,32 @@
 import SwiftUI
 
+typealias OutcomeLogSaveAction = (CareerOutcomeKind, String, String, String, Date, Bool) -> Void
+
+enum OutcomeLogAvailability {
+    case available
+    case readOnly(String)
+}
+
 struct ProgressTabView: View {
     let state: OpenLARPState
     let attachmentURL: (ProofAttachment) -> URL
     let improveWeakestArea: () -> Void
+    let logOutcome: OutcomeLogSaveAction
     @State private var selectedProof: ProofRecord?
     @State private var showingProofArchive = false
+    @State private var showingOutcomeLog = false
+
+    init(
+        state: OpenLARPState,
+        attachmentURL: @escaping (ProofAttachment) -> URL,
+        improveWeakestArea: @escaping () -> Void,
+        logOutcome: @escaping OutcomeLogSaveAction = { _, _, _, _, _, _ in }
+    ) {
+        self.state = state
+        self.attachmentURL = attachmentURL
+        self.improveWeakestArea = improveWeakestArea
+        self.logOutcome = logOutcome
+    }
 
     var body: some View {
         ScrollView {
@@ -35,6 +56,7 @@ struct ProgressTabView: View {
                     readinessCard
                     readinessHistoryCard
                     xpCard
+                    outcomeLogCard
                     proofCard
                     badgeCard
                 }
@@ -53,6 +75,9 @@ struct ProgressTabView: View {
                 proofs: state.progress.recentProof,
                 attachmentURL: attachmentURL
             )
+        }
+        .sheet(isPresented: $showingOutcomeLog) {
+            OutcomeLogSheet(save: logOutcome)
         }
     }
 
@@ -199,6 +224,18 @@ struct ProgressTabView: View {
         }
     }
 
+    private var outcomeLogCard: some View {
+        OutcomeLogCard(
+            content: OutcomeLogContent(outcomes: state.outcomeLog),
+            feature: .stats,
+            eyebrow: "Career history",
+            title: "Outcome log",
+            recentLimit: 3
+        ) {
+            showingOutcomeLog = true
+        }
+    }
+
     private var badgeCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
@@ -224,6 +261,211 @@ struct ProgressTabView: View {
                 }
             }
         }
+    }
+}
+
+struct OutcomeLogCard: View {
+    let content: OutcomeLogContent
+    let feature: OpenLARPFeature
+    let eyebrow: String
+    let title: String
+    let recentLimit: Int
+    var availability: OutcomeLogAvailability = .available
+    let logOutcome: () -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(feature: feature, eyebrow: eyebrow, title: title)
+
+                HStack(spacing: 8) {
+                    Pill(title: content.countText, systemImage: "flag.fill", color: .openLARPPurple)
+
+                    if let latestSummary = content.latestSummary {
+                        Text(latestSummary)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.82)
+                    }
+                }
+
+                switch availability {
+                case .available:
+                    Button {
+                        logOutcome()
+                    } label: {
+                        Label("Log Outcome", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                case .readOnly(let message):
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if content.outcomes.isEmpty {
+                    Text(content.emptyMessage)
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(content.outcomes.prefix(recentLimit)) { outcome in
+                        OutcomeRecordRow(outcome: outcome)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct OutcomeRecordRow: View {
+    let outcome: CareerOutcomeRecord
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: outcome.kind.systemImage)
+                .font(.system(size: 15, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Color.openLARPPurple)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(outcome.displayTitle)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color.openLARPInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: 8)
+
+                    Text(outcome.occurredAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .lineLimit(1)
+                }
+
+                Text(metadataText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !trimmedNote.isEmpty {
+                    Text(trimmedNote)
+                        .font(.caption)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text(outcome.kind.recoveryPrompt)
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPPurple)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(Color.openLARPBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var metadataText: String {
+        var parts = [outcome.kind.label]
+        if let organizationText = outcome.organizationText {
+            parts.append(organizationText)
+        }
+        parts.append(outcome.isPrivate ? "Private" : "Marked safe to share later")
+        return parts.joined(separator: " - ")
+    }
+
+    private var trimmedNote: String {
+        outcome.note.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct OutcomeLogSheet: View {
+    let save: OutcomeLogSaveAction
+    @Environment(\.dismiss) private var dismiss
+    @State private var kind: CareerOutcomeKind = .applied
+    @State private var title = ""
+    @State private var organizationName = ""
+    @State private var note = ""
+    @State private var occurredAt = Date()
+    @State private var isPrivate = true
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Type", selection: $kind) {
+                        ForEach(CareerOutcomeKind.allCases) { outcomeKind in
+                            Label(outcomeKind.label, systemImage: outcomeKind.systemImage)
+                                .tag(outcomeKind)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    TextField("Outcome title", text: $title)
+                        .textInputAutocapitalization(.sentences)
+
+                    TextField("Organization optional", text: $organizationName)
+                        .textInputAutocapitalization(.words)
+
+                    TextField("Note optional", text: $note, axis: .vertical)
+                        .lineLimit(3, reservesSpace: true)
+
+                    DatePicker(
+                        "Occurred",
+                        selection: $occurredAt,
+                        in: ...Date(),
+                        displayedComponents: .date
+                    )
+                } header: {
+                    Text("Outcome")
+                } footer: {
+                    Text(kind.recoveryPrompt)
+                }
+
+                Section {
+                    Toggle(isOn: $isPrivate) {
+                        Label("Keep Private", systemImage: "lock.fill")
+                    }
+                    .tint(.openLARPBlue)
+                } footer: {
+                    Text("This saves to local career history on this device. It is not uploaded, posted, or shown on a public profile.")
+                }
+            }
+            .navigationTitle("Log Outcome")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save(
+                            kind,
+                            title,
+                            organizationName,
+                            note,
+                            occurredAt,
+                            isPrivate
+                        )
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
