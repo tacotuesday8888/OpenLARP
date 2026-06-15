@@ -84,7 +84,7 @@ struct CareerUserPrivacySettings: Codable, Equatable {
 
     static let localDefault = CareerUserPrivacySettings(
         memoryMode: .localOnly,
-        shareWins: true,
+        shareWins: false,
         requireApprovalForExternalActions: true
     )
 }

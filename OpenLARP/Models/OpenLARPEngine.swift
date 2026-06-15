@@ -4,9 +4,19 @@ enum OpenLARPEngine {
     static func confirmGoal(_ goal: CareerGoal, now: Date = Date()) -> OpenLARPState {
         let diagnostic = makeDiagnostic(for: goal)
         let plan = makeSevenDayPlan(for: goal)
+        return confirmGoal(goal, diagnostic: diagnostic, plan: plan, now: now)
+    }
+
+    static func confirmGoal(
+        _ goal: CareerGoal,
+        diagnostic: CookedDiagnostic,
+        plan: [Quest],
+        now: Date = Date()
+    ) -> OpenLARPState {
         let profile = AgentBriefFactory.makeProfile(for: goal, now: now)
         let targetRole = AgentBriefFactory.makeTargetRole(for: goal, now: now)
         var progress = ProgressState.empty
+        progress.readiness = initialReadiness(from: diagnostic)
         progress.badges = [.firstGoal]
         progress.readinessHistory = [
             ReadinessSnapshot(
@@ -22,7 +32,7 @@ enum OpenLARPEngine {
             goal: goal,
             targetRoles: [targetRole],
             diagnostic: diagnostic,
-            plan: plan,
+            plan: validatedInitialPlan(plan) ?? makeSevenDayPlan(for: goal),
             progress: progress,
             updatedAt: now
         )
@@ -87,6 +97,10 @@ enum OpenLARPEngine {
             throw OpenLARPError.noCurrentQuest
         }
 
+        return try checkProof(proof, for: quest)
+    }
+
+    static func checkProof(_ proof: ProofSubmission, for quest: Quest) throws -> QualityCheckResult {
         let trimmedText = proof.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLink = proof.link.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasAttachment = !proof.attachments.isEmpty
@@ -254,6 +268,29 @@ enum OpenLARPEngine {
         return state
     }
 
+    static func validatedInitialPlan(_ plan: [Quest]) -> [Quest]? {
+        guard !plan.isEmpty else { return nil }
+
+        var seenIDs = Set<UUID>()
+        var sanitized: [Quest] = []
+
+        for (index, quest) in plan.enumerated() {
+            guard seenIDs.insert(quest.id).inserted else { return nil }
+            guard !quest.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            guard !quest.purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            guard !quest.proofRequired.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+
+            var next = quest
+            next.day = index + 1
+            next.timeEstimateMinutes = max(5, min(next.timeEstimateMinutes, 90))
+            next.xpReward = max(25, min(next.xpReward, 180))
+            next.status = index == 0 ? .available : .locked
+            sanitized.append(next)
+        }
+
+        return sanitized
+    }
+
     static func swappedCurrentQuest(in state: OpenLARPState, now: Date = Date()) throws -> OpenLARPState {
         guard let currentQuest = state.currentQuest else {
             throw OpenLARPError.noCurrentQuest
@@ -287,6 +324,30 @@ enum OpenLARPEngine {
             fastestFix: "Turn one target-role requirement into a small artifact you can show or explain.",
             readinessBaseline: ReadinessMetrics.baseline.overall
         )
+    }
+
+    private static func initialReadiness(from diagnostic: CookedDiagnostic) -> ReadinessMetrics {
+        let baseline = ReadinessMetrics.baseline
+        let overall = clampedReadinessScore(diagnostic.readinessBaseline)
+        let offset = overall - baseline.overall
+
+        return ReadinessMetrics(
+            overall: overall,
+            targetClarity: clampedReadinessScore(baseline.targetClarity + offset / 2),
+            proofStrength: clampedReadinessScore(baseline.proofStrength + offset),
+            confidence: clampedReadinessScore(baseline.confidence + offset / 2),
+            consistency: clampedReadinessScore(baseline.consistency + offset / 3),
+            skillProof: clampedReadinessScore(baseline.skillProof + offset),
+            experienceProof: clampedReadinessScore(baseline.experienceProof + offset),
+            profileCredibility: clampedReadinessScore(baseline.profileCredibility + offset / 2),
+            networkStrength: clampedReadinessScore(baseline.networkStrength + offset / 3),
+            interviewReadiness: clampedReadinessScore(baseline.interviewReadiness + offset / 3),
+            applicationExecution: clampedReadinessScore(baseline.applicationExecution + offset / 3)
+        )
+    }
+
+    private static func clampedReadinessScore(_ score: Int) -> Int {
+        max(0, min(score, 100))
     }
 
     private static func strongestSignal(for goal: CareerGoal) -> String {

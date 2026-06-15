@@ -803,9 +803,11 @@ struct OpenLARPState: Codable, Equatable {
     var dailyCadence: DailyCadenceState = .empty
     var missedDayRecovery: MissedDayRecoveryState = .empty
     var skippedToday: SkippedTodayState = .empty
+    var proofDraft: ProofSubmission?
+    var proofDraftQualityResult: QualityCheckResult?
 
     init(
-        schemaVersion: Int = 2,
+        schemaVersion: Int = 3,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
         targetRoles: [TargetRole] = [],
@@ -816,7 +818,9 @@ struct OpenLARPState: Codable, Equatable {
         updatedAt: Date,
         dailyCadence: DailyCadenceState = .empty,
         missedDayRecovery: MissedDayRecoveryState = .empty,
-        skippedToday: SkippedTodayState = .empty
+        skippedToday: SkippedTodayState = .empty,
+        proofDraft: ProofSubmission? = nil,
+        proofDraftQualityResult: QualityCheckResult? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.userProfile = userProfile
@@ -830,10 +834,12 @@ struct OpenLARPState: Codable, Equatable {
         self.dailyCadence = dailyCadence
         self.missedDayRecovery = missedDayRecovery
         self.skippedToday = skippedToday
+        self.proofDraft = proofDraft
+        self.proofDraftQualityResult = proofDraftQualityResult
     }
 
     static let empty = OpenLARPState(
-        schemaVersion: 2,
+        schemaVersion: 3,
         userProfile: nil,
         goal: nil,
         targetRoles: [],
@@ -870,6 +876,8 @@ extension OpenLARPState {
         case dailyCadence
         case missedDayRecovery
         case skippedToday
+        case proofDraft
+        case proofDraftQualityResult
     }
 
     init(from decoder: Decoder) throws {
@@ -886,6 +894,8 @@ extension OpenLARPState {
         dailyCadence = try container.decodeIfPresent(DailyCadenceState.self, forKey: .dailyCadence) ?? .empty
         missedDayRecovery = try container.decodeIfPresent(MissedDayRecoveryState.self, forKey: .missedDayRecovery) ?? .empty
         skippedToday = try container.decodeIfPresent(SkippedTodayState.self, forKey: .skippedToday) ?? .empty
+        proofDraft = try container.decodeIfPresent(ProofSubmission.self, forKey: .proofDraft)
+        proofDraftQualityResult = try container.decodeIfPresent(QualityCheckResult.self, forKey: .proofDraftQualityResult)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -902,6 +912,8 @@ extension OpenLARPState {
         try container.encode(dailyCadence, forKey: .dailyCadence)
         try container.encode(missedDayRecovery, forKey: .missedDayRecovery)
         try container.encode(skippedToday, forKey: .skippedToday)
+        try container.encodeIfPresent(proofDraft, forKey: .proofDraft)
+        try container.encodeIfPresent(proofDraftQualityResult, forKey: .proofDraftQualityResult)
     }
 }
 
@@ -910,6 +922,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
     case questNotAvailable
     case emptyProof
     case attachmentStorageFailed
+    case invalidQuestPlan
 
     var errorDescription: String? {
         switch self {
@@ -917,6 +930,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
         case .questNotAvailable: "This quest is not available yet."
         case .emptyProof: "Add a short proof note, link, photo, or screenshot before checking quality."
         case .attachmentStorageFailed: "That image could not be saved locally. Try another screenshot or photo."
+        case .invalidQuestPlan: "The generated plan was not usable, so OpenLARP switched to a local plan."
         }
     }
 }
