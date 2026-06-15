@@ -69,6 +69,16 @@ struct AppRootView: View {
                     },
                     improveWeakestArea: {
                         selectedTab = .today
+                    },
+                    logOutcome: { kind, title, organizationName, note, occurredAt, isPrivate in
+                        store.logOutcome(
+                            kind: kind,
+                            title: title,
+                            organizationName: organizationName,
+                            note: note,
+                            occurredAt: occurredAt,
+                            isPrivate: isPrivate
+                        )
                     }
                 )
             }

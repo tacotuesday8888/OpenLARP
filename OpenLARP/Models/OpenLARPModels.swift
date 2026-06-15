@@ -359,6 +359,134 @@ struct ProofArchiveContent: Equatable {
     }
 }
 
+enum CareerOutcomeKind: String, Codable, CaseIterable, Identifiable {
+    case applied
+    case interview
+    case rejection
+    case offer
+    case changedGoal
+    case other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .applied: "Applied"
+        case .interview: "Interview"
+        case .rejection: "Rejection"
+        case .offer: "Offer"
+        case .changedGoal: "Changed goal"
+        case .other: "Other"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .applied: "paperplane.fill"
+        case .interview: "person.wave.2.fill"
+        case .rejection: "arrow.counterclockwise.circle.fill"
+        case .offer: "checkmark.seal.fill"
+        case .changedGoal: "target"
+        case .other: "flag.fill"
+        }
+    }
+
+    var recoveryPrompt: String {
+        switch self {
+        case .applied:
+            "Save the application receipt and connect it to the proof you used."
+        case .interview:
+            "Turn the interview into one practice story while the details are fresh."
+        case .rejection:
+            "Turn the rejection into one recovery quest instead of treating it as proof of failure."
+        case .offer:
+            "Save the offer as a major outcome, then keep proof attached to the path that got you there."
+        case .changedGoal:
+            "Run a fresh diagnostic before changing the plan so the new goal has its own baseline."
+        case .other:
+            "Write what happened and what it changes about the next quest."
+        }
+    }
+
+    func activitySummary(for outcome: CareerOutcomeRecord) -> String {
+        let organization = outcome.organizationName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeText = organization.isEmpty ? "" : " at \(organization)"
+        return "\(label): \(outcome.displayTitle)\(placeText). \(recoveryPrompt)"
+    }
+}
+
+struct CareerOutcomeRecord: Codable, Equatable, Identifiable {
+    var id: UUID
+    var kind: CareerOutcomeKind
+    var title: String
+    var organizationName: String
+    var note: String
+    var occurredAt: Date
+    var createdAt: Date
+    var targetRoleID: UUID?
+    var targetRoleTitle: String
+    var relatedQuestID: UUID?
+    var relatedProofID: UUID?
+    var isPrivate: Bool
+
+    init(
+        id: UUID = UUID(),
+        kind: CareerOutcomeKind,
+        title: String,
+        organizationName: String = "",
+        note: String = "",
+        occurredAt: Date,
+        createdAt: Date = Date(),
+        targetRoleID: UUID? = nil,
+        targetRoleTitle: String,
+        relatedQuestID: UUID? = nil,
+        relatedProofID: UUID? = nil,
+        isPrivate: Bool = true
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.organizationName = organizationName
+        self.note = note
+        self.occurredAt = occurredAt
+        self.createdAt = createdAt
+        self.targetRoleID = targetRoleID
+        self.targetRoleTitle = targetRoleTitle
+        self.relatedQuestID = relatedQuestID
+        self.relatedProofID = relatedProofID
+        self.isPrivate = isPrivate
+    }
+
+    var displayTitle: String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? kind.label : trimmedTitle
+    }
+
+    var organizationText: String? {
+        let trimmed = organizationName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+struct OutcomeLogContent: Equatable {
+    var outcomes: [CareerOutcomeRecord]
+    var countText: String
+    var latestSummary: String?
+    var emptyMessage: String
+
+    init(outcomes: [CareerOutcomeRecord]) {
+        self.outcomes = outcomes.sorted { lhs, rhs in
+            if lhs.occurredAt == rhs.occurredAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+            return lhs.occurredAt > rhs.occurredAt
+        }
+        countText = self.outcomes.count == 1 ? "1 career outcome" : "\(self.outcomes.count) career outcomes"
+        latestSummary = self.outcomes.first.map { "\($0.kind.label): \($0.displayTitle)" }
+        emptyMessage = "Log real outcomes here: applied, interview, rejection, offer, or changed goal."
+    }
+}
+
 struct CompletedQuestDetailContent: Equatable {
     var dayText: String
     var statusText: String
@@ -659,6 +787,9 @@ enum Badge: String, Codable, CaseIterable, Identifiable {
     case strongProof = "Strong proof"
     case threeDayStreak = "3-day streak"
     case weeklyStreak = "7-day streak"
+    case firstOutcome = "First outcome logged"
+    case firstInterview = "First interview signal"
+    case firstOffer = "Offer signal"
 
     var id: String { rawValue }
 }
@@ -805,9 +936,10 @@ struct OpenLARPState: Codable, Equatable {
     var skippedToday: SkippedTodayState = .empty
     var proofDraft: ProofSubmission?
     var proofDraftQualityResult: QualityCheckResult?
+    var outcomeLog: [CareerOutcomeRecord]
 
     init(
-        schemaVersion: Int = 3,
+        schemaVersion: Int = 4,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
         targetRoles: [TargetRole] = [],
@@ -820,7 +952,8 @@ struct OpenLARPState: Codable, Equatable {
         missedDayRecovery: MissedDayRecoveryState = .empty,
         skippedToday: SkippedTodayState = .empty,
         proofDraft: ProofSubmission? = nil,
-        proofDraftQualityResult: QualityCheckResult? = nil
+        proofDraftQualityResult: QualityCheckResult? = nil,
+        outcomeLog: [CareerOutcomeRecord] = []
     ) {
         self.schemaVersion = schemaVersion
         self.userProfile = userProfile
@@ -836,10 +969,11 @@ struct OpenLARPState: Codable, Equatable {
         self.skippedToday = skippedToday
         self.proofDraft = proofDraft
         self.proofDraftQualityResult = proofDraftQualityResult
+        self.outcomeLog = outcomeLog
     }
 
     static let empty = OpenLARPState(
-        schemaVersion: 3,
+        schemaVersion: 4,
         userProfile: nil,
         goal: nil,
         targetRoles: [],
@@ -878,11 +1012,13 @@ extension OpenLARPState {
         case skippedToday
         case proofDraft
         case proofDraftQualityResult
+        case outcomeLog
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        _ = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        schemaVersion = 4
         userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
         goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
@@ -896,6 +1032,7 @@ extension OpenLARPState {
         skippedToday = try container.decodeIfPresent(SkippedTodayState.self, forKey: .skippedToday) ?? .empty
         proofDraft = try container.decodeIfPresent(ProofSubmission.self, forKey: .proofDraft)
         proofDraftQualityResult = try container.decodeIfPresent(QualityCheckResult.self, forKey: .proofDraftQualityResult)
+        outcomeLog = try container.decodeIfPresent([CareerOutcomeRecord].self, forKey: .outcomeLog) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -914,6 +1051,7 @@ extension OpenLARPState {
         try container.encode(skippedToday, forKey: .skippedToday)
         try container.encodeIfPresent(proofDraft, forKey: .proofDraft)
         try container.encodeIfPresent(proofDraftQualityResult, forKey: .proofDraftQualityResult)
+        try container.encode(outcomeLog, forKey: .outcomeLog)
     }
 }
 

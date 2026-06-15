@@ -202,6 +202,53 @@ enum OpenLARPEngine {
         return next
     }
 
+    static func logOutcome(
+        _ outcome: CareerOutcomeRecord,
+        in state: OpenLARPState,
+        now: Date = Date()
+    ) -> OpenLARPState {
+        var next = state
+        let isExistingOutcome = next.outcomeLog.contains { $0.id == outcome.id }
+        next.outcomeLog.removeAll { $0.id == outcome.id }
+        next.outcomeLog.insert(outcome, at: 0)
+        next.outcomeLog.sort { lhs, rhs in
+            if lhs.occurredAt == rhs.occurredAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+            return lhs.occurredAt > rhs.occurredAt
+        }
+
+        if isExistingOutcome {
+            next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
+            next.updatedAt = now
+            return next
+        }
+
+        let previousReadiness = next.progress.readiness
+        let impact = outcomeImpact(for: outcome.kind)
+        next.progress.xp += impact.xp
+        next.progress.readiness = updatedReadiness(next.progress.readiness, for: outcome.kind)
+        addOutcomeBadges(for: outcome.kind, progress: &next.progress)
+
+        if next.progress.readiness != previousReadiness {
+            next.progress.readinessHistory.append(
+                ReadinessSnapshot(
+                    source: .outcomeLog,
+                    reason: "\(outcome.kind.label): \(impact.reason)",
+                    metrics: next.progress.readiness,
+                    relatedQuestID: outcome.relatedQuestID,
+                    relatedProofID: outcome.relatedProofID,
+                    relatedOutcomeID: outcome.id,
+                    createdAt: now
+                )
+            )
+        }
+
+        next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
+        next.updatedAt = now
+        return next
+    }
+
     static func refreshDailyAvailability(
         in state: OpenLARPState,
         now: Date = Date(),
@@ -550,6 +597,88 @@ enum OpenLARPEngine {
         )
     }
 
+    private static func updatedReadiness(_ readiness: ReadinessMetrics, for outcomeKind: CareerOutcomeKind) -> ReadinessMetrics {
+        switch outcomeKind {
+        case .applied:
+            ReadinessMetrics(
+                overall: clampedReadinessScore(readiness.overall + 1),
+                targetClarity: readiness.targetClarity,
+                proofStrength: readiness.proofStrength,
+                confidence: clampedReadinessScore(readiness.confidence + 1),
+                consistency: clampedReadinessScore(readiness.consistency + 1),
+                skillProof: readiness.skillProof,
+                experienceProof: readiness.experienceProof,
+                profileCredibility: readiness.profileCredibility,
+                networkStrength: readiness.networkStrength,
+                interviewReadiness: readiness.interviewReadiness,
+                applicationExecution: clampedReadinessScore(readiness.applicationExecution + 4)
+            )
+        case .interview:
+            ReadinessMetrics(
+                overall: clampedReadinessScore(readiness.overall + 2),
+                targetClarity: readiness.targetClarity,
+                proofStrength: readiness.proofStrength,
+                confidence: clampedReadinessScore(readiness.confidence + 2),
+                consistency: clampedReadinessScore(readiness.consistency + 1),
+                skillProof: readiness.skillProof,
+                experienceProof: readiness.experienceProof,
+                profileCredibility: readiness.profileCredibility,
+                networkStrength: readiness.networkStrength,
+                interviewReadiness: clampedReadinessScore(readiness.interviewReadiness + 5),
+                applicationExecution: clampedReadinessScore(readiness.applicationExecution + 2)
+            )
+        case .rejection:
+            readiness
+        case .offer:
+            ReadinessMetrics(
+                overall: clampedReadinessScore(readiness.overall + 4),
+                targetClarity: readiness.targetClarity,
+                proofStrength: clampedReadinessScore(readiness.proofStrength + 3),
+                confidence: clampedReadinessScore(readiness.confidence + 4),
+                consistency: clampedReadinessScore(readiness.consistency + 2),
+                skillProof: clampedReadinessScore(readiness.skillProof + 2),
+                experienceProof: clampedReadinessScore(readiness.experienceProof + 3),
+                profileCredibility: readiness.profileCredibility,
+                networkStrength: readiness.networkStrength,
+                interviewReadiness: clampedReadinessScore(readiness.interviewReadiness + 5),
+                applicationExecution: clampedReadinessScore(readiness.applicationExecution + 5)
+            )
+        case .changedGoal:
+            readiness
+        case .other:
+            ReadinessMetrics(
+                overall: clampedReadinessScore(readiness.overall + 1),
+                targetClarity: readiness.targetClarity,
+                proofStrength: readiness.proofStrength,
+                confidence: clampedReadinessScore(readiness.confidence + 1),
+                consistency: readiness.consistency,
+                skillProof: readiness.skillProof,
+                experienceProof: readiness.experienceProof,
+                profileCredibility: readiness.profileCredibility,
+                networkStrength: readiness.networkStrength,
+                interviewReadiness: readiness.interviewReadiness,
+                applicationExecution: readiness.applicationExecution
+            )
+        }
+    }
+
+    private static func outcomeImpact(for kind: CareerOutcomeKind) -> (xp: Int, reason: String) {
+        switch kind {
+        case .applied:
+            (25, "Application activity logged without counting it as proof.")
+        case .interview:
+            (45, "Interview signal logged for follow-up practice.")
+        case .rejection:
+            (0, "Rejection logged as recovery context, not as proof of readiness.")
+        case .offer:
+            (80, "Major outcome logged for future proof and progress context.")
+        case .changedGoal:
+            (0, "Goal change logged as context only; a fresh diagnostic should create the new baseline.")
+        case .other:
+            (10, "Career event logged for future context.")
+        }
+    }
+
     private static func addBadges(for result: QualityCheckResult, progress: inout ProgressState) {
         if !progress.badges.contains(.firstProof) {
             progress.badges.append(.firstProof)
@@ -562,6 +691,20 @@ enum OpenLARPEngine {
         }
         if progress.streakCount >= 7, !progress.badges.contains(.weeklyStreak) {
             progress.badges.append(.weeklyStreak)
+        }
+    }
+
+    private static func addOutcomeBadges(for kind: CareerOutcomeKind, progress: inout ProgressState) {
+        guard kind != .rejection, kind != .changedGoal else { return }
+
+        if !progress.badges.contains(.firstOutcome) {
+            progress.badges.append(.firstOutcome)
+        }
+        if kind == .interview, !progress.badges.contains(.firstInterview) {
+            progress.badges.append(.firstInterview)
+        }
+        if kind == .offer, !progress.badges.contains(.firstOffer) {
+            progress.badges.append(.firstOffer)
         }
     }
 }

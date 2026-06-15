@@ -298,6 +298,7 @@ private struct AgentActivityRow: View {
         case .questGeneration: "bolt.fill"
         case .proofEvaluation: "checkmark.seal.fill"
         case .readinessUpdate: "chart.line.uptrend.xyaxis"
+        case .outcomeLogged: "flag.fill"
         case .opportunityScan: "magnifyingglass"
         case .briefGeneration: "doc.text.fill"
         }

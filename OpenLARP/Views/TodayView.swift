@@ -5,6 +5,8 @@ struct TodayView: View {
     let store: OpenLARPStore
     @State private var showingAgent = false
     @State private var showingSkipConfirmation = false
+    @State private var showingOutcomeLog = false
+    @State private var lastLoggedOutcomeCount = 0
     @State private var selectedProof: ProofRecord?
 
     var body: some View {
@@ -24,6 +26,8 @@ struct TodayView: View {
                         Label("Ask Agent about this quest", systemImage: "sparkles")
                     }
                     .buttonStyle(SecondaryButtonStyle())
+
+                    logOutcomeAction
                 }
             }
             .padding(20)
@@ -42,6 +46,18 @@ struct TodayView: View {
                 store.localURL(for: attachment)
             }
         }
+        .sheet(isPresented: $showingOutcomeLog) {
+            OutcomeLogSheet { kind, title, organizationName, note, occurredAt, isPrivate in
+                store.logOutcome(
+                    kind: kind,
+                    title: title,
+                    organizationName: organizationName,
+                    note: note,
+                    occurredAt: occurredAt,
+                    isPrivate: isPrivate
+                )
+            }
+        }
         .confirmationDialog(
             "Skip today?",
             isPresented: $showingSkipConfirmation,
@@ -57,6 +73,7 @@ struct TodayView: View {
             Text("This resets the active streak to 0, keeps your earlier XP and proof receipts, and locks the next quest until tomorrow.")
         }
         .onAppear {
+            lastLoggedOutcomeCount = store.state.outcomeLog.count
             store.refreshDailyAvailability()
         }
         .alert(
@@ -258,6 +275,46 @@ struct TodayView: View {
         .buttonStyle(SecondaryButtonStyle())
         .disabled(store.isProofChecking)
         .opacity(store.isProofChecking ? 0.45 : 1)
+    }
+
+    private var logOutcomeAction: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showingOutcomeLog = true
+            } label: {
+                Label("Log Outcome", systemImage: "flag.fill")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+
+            Text("Save applications, interviews, rejections, offers, or changed goals as private local career history.")
+                .font(.caption)
+                .foregroundStyle(Color.openLARPSoftInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if didSaveOutcome, let latestOutcome = OutcomeLogContent(outcomes: store.state.outcomeLog).outcomes.first {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(Color.openLARPGreen)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Latest outcome saved")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color.openLARPInk)
+                        Text(latestOutcome.displayTitle)
+                            .font(.caption)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(10)
+                .background(Color.openLARPGreen.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private var didSaveOutcome: Bool {
+        store.state.outcomeLog.count > lastLoggedOutcomeCount
     }
 
     private func questSteps(_ steps: [String]) -> some View {
