@@ -29,6 +29,42 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.progress.readiness.overall, 42)
     }
 
+    func testGoalSetupUsesDiagnosticReadinessBaseline() {
+        let now = Date(timeIntervalSince1970: 16_000)
+        let diagnostic = CookedDiagnostic(
+            score: 71,
+            label: "Less Cooked",
+            mainGap: "Proof is improving, but still thin.",
+            strongestSignal: "A shipped class project.",
+            fastestFix: "Turn the project into a reusable proof artifact.",
+            readinessBaseline: 67
+        )
+        let quest = Quest(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            day: 4,
+            title: "Create a proof artifact",
+            purpose: "Show one target-role skill with evidence.",
+            timeEstimateMinutes: 120,
+            proofRequired: "Add the artifact link or screenshot.",
+            xpReward: 500,
+            status: .completed
+        )
+
+        let state = OpenLARPEngine.confirmGoal(
+            goal,
+            diagnostic: diagnostic,
+            plan: [quest],
+            now: now
+        )
+
+        XCTAssertEqual(state.progress.readiness.overall, 67)
+        XCTAssertEqual(state.progress.readinessHistory.first?.overall, 67)
+        XCTAssertEqual(state.plan.first?.status, .available)
+        XCTAssertEqual(state.plan.first?.day, 1)
+        XCTAssertEqual(state.plan.first?.xpReward, 180)
+        XCTAssertEqual(state.plan.first?.timeEstimateMinutes, 90)
+    }
+
     func testStrongProofAwardsFullXPStreakReadinessAndBadges() throws {
         var state = OpenLARPEngine.confirmGoal(goal)
         state = try OpenLARPEngine.startCurrentQuest(in: state)
@@ -229,7 +265,7 @@ final class V0EngineTests: XCTestCase {
     }
 
     @MainActor
-    func testStoreSkipInProgressQuestClearsPendingProofAndQualityResult() throws {
+    func testStoreSkipInProgressQuestClearsPendingProofAndQualityResult() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let persistence = OpenLARPPersistence(directory: directory)
@@ -242,14 +278,14 @@ final class V0EngineTests: XCTestCase {
             calendar: testCalendar
         )
 
-        store.confirmGoal(goal)
+        await store.confirmGoal(goal)
         store.startCurrentQuest()
         let attachment = try store.saveProofImage(
             data: Data([0x89, 0x50, 0x4E, 0x47]),
             contentType: "image/png",
             originalFileName: "proof.png"
         )
-        store.checkProof(
+        await store.checkProof(
             kind: .proof,
             text: "I mapped repeated iOS internship requirements, chose one proof-building path, and saved notes that connect the work to a target role.",
             link: "https://example.com/requirements",
@@ -599,15 +635,17 @@ final class V0EngineTests: XCTestCase {
     }
 
     @MainActor
-    func testDiscardPendingQualityResultDeletesPendingProofAttachments() throws {
+    func testDiscardPendingQualityResultDeletesPendingProofAttachments() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let attachmentStore = OpenLARPAttachmentStore(directory: directory)
         let store = OpenLARPStore(
-            persistence: OpenLARPPersistence(directory: directory),
-            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+            persistence: persistence,
+            attachmentStore: attachmentStore
         )
 
-        store.confirmGoal(goal)
+        await store.confirmGoal(goal)
         store.startCurrentQuest()
         let attachment = try store.saveProofImage(
             data: Data([0x89, 0x50, 0x4E, 0x47]),
@@ -615,7 +653,7 @@ final class V0EngineTests: XCTestCase {
             originalFileName: "draft-proof.png"
         )
 
-        store.checkProof(kind: .proof, text: "", link: "", attachments: [attachment])
+        await store.checkProof(kind: .proof, text: "", link: "", attachments: [attachment])
 
         XCTAssertNotNil(store.pendingProof)
         XCTAssertNotNil(store.pendingQualityResult)
@@ -626,10 +664,20 @@ final class V0EngineTests: XCTestCase {
         XCTAssertNil(store.pendingProof)
         XCTAssertNil(store.pendingQualityResult)
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
+
+        let reloaded = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: attachmentStore
+        )
+
+        XCTAssertNil(reloaded.pendingProof)
+        XCTAssertNil(reloaded.pendingQualityResult)
+        XCTAssertNil(reloaded.state.proofDraft)
+        XCTAssertNil(reloaded.state.proofDraftQualityResult)
     }
 
     @MainActor
-    func testRecheckingSamePendingAttachmentKeepsImageFile() throws {
+    func testRecheckingSamePendingAttachmentKeepsImageFile() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = OpenLARPStore(
@@ -637,7 +685,7 @@ final class V0EngineTests: XCTestCase {
             attachmentStore: OpenLARPAttachmentStore(directory: directory)
         )
 
-        store.confirmGoal(goal)
+        await store.confirmGoal(goal)
         store.startCurrentQuest()
         let attachment = try store.saveProofImage(
             data: Data([0x89, 0x50, 0x4E, 0x47]),
@@ -645,8 +693,8 @@ final class V0EngineTests: XCTestCase {
             originalFileName: "same-draft-proof.png"
         )
 
-        store.checkProof(kind: .proof, text: "", link: "", attachments: [attachment])
-        store.checkProof(kind: .proof, text: "Adding a short note before checking again.", link: "", attachments: [attachment])
+        await store.checkProof(kind: .proof, text: "", link: "", attachments: [attachment])
+        await store.checkProof(kind: .proof, text: "Adding a short note before checking again.", link: "", attachments: [attachment])
 
         XCTAssertNotNil(store.pendingProof)
         XCTAssertNotNil(store.pendingQualityResult)
@@ -967,6 +1015,7 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.userProfile?.segment, .student)
         XCTAssertEqual(state.userProfile?.displayName, "Early-career candidate")
         XCTAssertEqual(state.userProfile?.privacy.memoryMode, .localOnly)
+        XCTAssertEqual(state.userProfile?.privacy.shareWins, false)
         XCTAssertEqual(state.targetRoles.first?.title, "iOS engineering internship")
         XCTAssertEqual(state.targetRoles.first?.seniority, .internship)
         XCTAssertEqual(state.targetRoles.first?.timeline, "30 days")
@@ -1078,6 +1127,275 @@ final class V0EngineTests: XCTestCase {
         XCTAssertTrue(brief.nextSteps.contains { $0.title == "Do today's proof quest" })
     }
 
+    @MainActor
+    func testV0AIWorkflowContractsExposeOnlyNarrowV0Jobs() async throws {
+        XCTAssertEqual(V0AIWorkflowKind.allCases, [
+            .cookedDiagnostic,
+            .questPlan,
+            .proofQualityCheck,
+            .progressSummary
+        ])
+
+        let service: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService()
+        let requestTime = Date(timeIntervalSince1970: 13_000)
+        let diagnostic = try await service.generateDiagnostic(
+            V0DiagnosticRequest(goal: goal, requestedAt: requestTime)
+        )
+        let plan = try await service.generateQuestPlan(
+            V0QuestPlanRequest(
+                goal: goal,
+                diagnostic: diagnostic.diagnostic,
+                requestedAt: requestTime
+            )
+        )
+
+        XCTAssertEqual(diagnostic.run.kind, .cookedDiagnostic)
+        XCTAssertEqual(diagnostic.run.providerRoute, .localMock)
+        XCTAssertEqual(diagnostic.diagnostic.label, "Medium Cooked")
+        XCTAssertEqual(plan.run.kind, .questPlan)
+        XCTAssertEqual(plan.quests.count, 7)
+        XCTAssertEqual(plan.quests.first?.status, .available)
+    }
+
+    func testV0AIWorkflowRequestUsesStructuredSafetyAndPrivacyContext() throws {
+        var state = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 14_000))
+        state.userProfile?.privacy.memoryMode = .off
+        state = try OpenLARPEngine.startCurrentQuest(in: state, now: Date(timeIntervalSince1970: 14_000))
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "I mapped the role requirements into a small artifact plan.",
+            submittedAt: Date(timeIntervalSince1970: 14_100)
+        )
+
+        let request = V0ProofReviewRequest(
+            state: state,
+            proof: proof,
+            requestedAt: Date(timeIntervalSince1970: 14_200)
+        )
+
+        XCTAssertEqual(request.schemaVersion, 1)
+        XCTAssertEqual(request.questID, state.currentQuest?.id)
+        XCTAssertEqual(request.targetRoleTitle, goal.targetRole)
+        XCTAssertEqual(request.privacy.memoryMode, .off)
+        XCTAssertFalse(request.allowsLongTermMemoryWrite)
+        XCTAssertTrue(request.safetyRules.hardBannedClaims.contains("fake employers"))
+        XCTAssertEqual(request.context.currentQuest?.id, state.currentQuest?.id)
+        XCTAssertEqual(request.context.progress.proofCount, state.progress.proofCount)
+        XCTAssertFalse(String(describing: request).contains("OpenLARPState"))
+        XCTAssertFalse(String(describing: request).contains("sk-"))
+        XCTAssertFalse(String(describing: request).localizedCaseInsensitiveContains("api key"))
+    }
+
+    @MainActor
+    func testV0AIWorkflowFallbackReturnsLocalMockOutputWhenPrimaryThrows() async throws {
+        let fallback = FallbackV0AIWorkflowService(
+            primary: ThrowingV0AIWorkflowService(),
+            fallback: LocalMockV0AIWorkflowService()
+        )
+        let response = try await fallback.generateDiagnostic(
+            V0DiagnosticRequest(
+                goal: goal,
+                requestedAt: Date(timeIntervalSince1970: 15_000)
+            )
+        )
+
+        XCTAssertEqual(response.diagnostic.label, "Medium Cooked")
+        XCTAssertEqual(response.run.providerRoute, .localMock)
+        XCTAssertTrue(response.run.usedFallback)
+        XCTAssertEqual(response.run.kind, .cookedDiagnostic)
+    }
+
+    @MainActor
+    func testStoreFallsBackToLocalPlanWhenWorkflowReturnsInvalidQuestPlan() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: InvalidPlanV0AIWorkflowService()
+        )
+
+        await store.confirmGoal(goal)
+
+        XCTAssertEqual(store.state.diagnostic?.label, "Medium Cooked")
+        XCTAssertEqual(store.state.progress.readiness.overall, 42)
+        XCTAssertEqual(store.state.plan.count, 7)
+        XCTAssertEqual(store.state.currentQuest?.status, .available)
+        XCTAssertEqual(store.errorMessage, "OpenLARP built a local plan on this device because the agent service was unavailable.")
+    }
+
+    @MainActor
+    func testStoreClearsStalePersistedDraftWhenNoQuestIsActive() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        var staleState = OpenLARPEngine.resetGoal(now: Date(timeIntervalSince1970: 16_500))
+        staleState.proofDraft = ProofSubmission(kind: .proof, text: "Stale draft", link: "https://example.com")
+        staleState.proofDraftQualityResult = QualityCheckResult(
+            isAccepted: false,
+            qualityScore: 45,
+            label: "Needs stronger proof",
+            reason: "Old draft",
+            improvement: "Add real evidence.",
+            xpEarned: 30,
+            readinessDelta: 1
+        )
+        try persistence.save(staleState)
+
+        _ = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+
+        let reloaded = try persistence.load()
+        XCTAssertNil(reloaded.proofDraft)
+        XCTAssertNil(reloaded.proofDraftQualityResult)
+    }
+
+    @MainActor
+    func testSkipCurrentQuestDoesNotRunWhileProofCheckIsInFlight() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let currentQuestID = store.state.currentQuest?.id
+        store.isProofChecking = true
+        store.skipCurrentQuest()
+
+        XCTAssertEqual(store.state.currentQuest?.id, currentQuestID)
+        XCTAssertEqual(store.state.currentQuest?.status, .inProgress)
+        XCTAssertEqual(store.errorMessage, "Wait for the proof check to finish before skipping today.")
+    }
+
+    @MainActor
+    func testImproveWeakProofKeepsDraftTextLinkKindAndCurrentQuest() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let attachmentStore = OpenLARPAttachmentStore(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: attachmentStore
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        await store.checkProof(
+            kind: .proof,
+            text: "Too thin",
+            link: "notaurl"
+        )
+
+        XCTAssertEqual(store.pendingQualityResult?.label, "Needs stronger proof")
+        store.improvePendingProofDraft()
+
+        XCTAssertEqual(store.pendingProof?.kind, .proof)
+        XCTAssertEqual(store.pendingProof?.text, "Too thin")
+        XCTAssertEqual(store.pendingProof?.link, "notaurl")
+        XCTAssertNil(store.pendingQualityResult)
+        XCTAssertEqual(store.state.currentQuest?.status, .inProgress)
+
+        let reloaded = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: attachmentStore
+        )
+
+        XCTAssertEqual(reloaded.pendingProof?.kind, .proof)
+        XCTAssertEqual(reloaded.pendingProof?.text, "Too thin")
+        XCTAssertEqual(reloaded.pendingProof?.link, "notaurl")
+        XCTAssertNil(reloaded.pendingQualityResult)
+        XCTAssertEqual(reloaded.state.currentQuest?.status, .inProgress)
+    }
+
+    @MainActor
+    func testImproveWeakProofKeepsDraftAttachmentsOnDisk() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let attachmentStore = OpenLARPAttachmentStore(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: attachmentStore
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let attachment = try store.saveProofImage(
+            data: Data([0x89, 0x50, 0x4E, 0x47]),
+            contentType: "image/png",
+            originalFileName: "weak-self-report.png"
+        )
+        await store.checkProof(
+            kind: .selfReport,
+            text: "I did something but need to make the evidence stronger.",
+            link: "",
+            attachments: [attachment]
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
+        store.improvePendingProofDraft()
+
+        XCTAssertEqual(store.pendingProof?.attachments, [attachment])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
+        XCTAssertNil(store.pendingQualityResult)
+
+        let reloaded = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: attachmentStore
+        )
+
+        XCTAssertEqual(reloaded.pendingProof?.attachments.first?.id, attachment.id)
+        XCTAssertEqual(reloaded.pendingProof?.attachments.first?.localRelativePath, attachment.localRelativePath)
+        XCTAssertEqual(reloaded.pendingProof?.attachments.first?.originalFileName, attachment.originalFileName)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reloaded.localURL(for: attachment).path))
+        XCTAssertNil(reloaded.pendingQualityResult)
+    }
+
+    @MainActor
+    func testStoreUpdatesProfilePrivacyAndPersistsAcrossReload() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+
+        await store.confirmGoal(goal)
+        store.updateProfilePrivacy(memoryMode: .off, shareWins: false)
+
+        XCTAssertEqual(store.state.userProfile?.privacy.memoryMode, .off)
+        XCTAssertEqual(store.state.userProfile?.privacy.shareWins, false)
+        XCTAssertEqual(store.state.userProfile?.privacy.requireApprovalForExternalActions, true)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.userProfile?.privacy.memoryMode, .off)
+        XCTAssertEqual(reloaded.userProfile?.privacy.shareWins, false)
+    }
+
+    @MainActor
+    func testResetGoalPreservesProfilePrivacyControls() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+
+        await store.confirmGoal(goal)
+        store.updateProfilePrivacy(memoryMode: .off, shareWins: false)
+        store.resetGoal()
+
+        XCTAssertTrue(store.state.needsGoalSetup)
+        XCTAssertEqual(store.state.userProfile?.privacy.memoryMode, .off)
+        XCTAssertEqual(store.state.userProfile?.privacy.shareWins, false)
+    }
+
     func testAppTabsMatchProductSurfaces() {
         XCTAssertEqual(AppTab.allCases.map(\.title), ["Today", "Map", "Progress", "Agent", "Profile"])
         XCTAssertEqual(AppTab.allCases.map(\.systemImage), ["bolt.fill", "map.fill", "chart.line.uptrend.xyaxis", "sparkles", "person.crop.circle"])
@@ -1137,4 +1455,65 @@ final class V0EngineTests: XCTestCase {
             hour: hour
         ))!
     }
+}
+
+private struct ThrowingV0AIWorkflowService: V0AIWorkflowServicing {
+    func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
+        throw TestWorkflowError.expectedFailure
+    }
+
+    func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
+        throw TestWorkflowError.expectedFailure
+    }
+
+    func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
+        throw TestWorkflowError.expectedFailure
+    }
+
+    func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse {
+        throw TestWorkflowError.expectedFailure
+    }
+}
+
+private struct InvalidPlanV0AIWorkflowService: V0AIWorkflowServicing {
+    func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
+        V0DiagnosticResponse(
+            run: V0AIWorkflowRun(
+                kind: .cookedDiagnostic,
+                providerRoute: .localMock,
+                requestedAt: request.requestedAt
+            ),
+            diagnostic: CookedDiagnostic(
+                score: 91,
+                label: "Backend Diagnostic",
+                mainGap: "Backend returned a diagnostic.",
+                strongestSignal: "A real proof signal.",
+                fastestFix: "Keep building proof.",
+                readinessBaseline: 64
+            )
+        )
+    }
+
+    func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
+        V0QuestPlanResponse(
+            run: V0AIWorkflowRun(
+                kind: .questPlan,
+                providerRoute: .localMock,
+                requestedAt: request.requestedAt
+            ),
+            quests: []
+        )
+    }
+
+    func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
+        try await LocalMockV0AIWorkflowService().reviewProof(request)
+    }
+
+    func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse {
+        try await LocalMockV0AIWorkflowService().summarizeProgress(request)
+    }
+}
+
+private enum TestWorkflowError: Error {
+    case expectedFailure
 }

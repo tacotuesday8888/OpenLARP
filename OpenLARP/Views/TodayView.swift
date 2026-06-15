@@ -48,7 +48,9 @@ struct TodayView: View {
             titleVisibility: .visible
         ) {
             Button("Skip Today", role: .destructive) {
-                store.skipCurrentQuest()
+                if !store.isProofChecking {
+                    store.skipCurrentQuest()
+                }
             }
             Button("Keep Working", role: .cancel) {}
         } message: {
@@ -159,7 +161,7 @@ struct TodayView: View {
         } else if let quest = store.state.currentQuest {
             Card {
                 VStack(alignment: .leading, spacing: 16) {
-                    SectionHeader(feature: .quest, eyebrow: "Public proof", title: "Today quest")
+                    SectionHeader(feature: .quest, eyebrow: "Private proof", title: "Today quest")
 
                     HStack {
                         Pill(title: quest.timeEstimate, systemImage: "timer", color: .openLARPGreen)
@@ -215,7 +217,7 @@ struct TodayView: View {
                         if let result = store.pendingQualityResult {
                             QualityResultCard(result: result, store: store)
                         } else {
-                            ProofComposer(store: store)
+                            ProofComposer(store: store, draft: store.pendingProof)
                         }
                         skipTodayButton
                     case .completed:
@@ -254,6 +256,8 @@ struct TodayView: View {
             Label("Skip Today", systemImage: "forward.end")
         }
         .buttonStyle(SecondaryButtonStyle())
+        .disabled(store.isProofChecking)
+        .opacity(store.isProofChecking ? 0.45 : 1)
     }
 
     private func questSteps(_ steps: [String]) -> some View {
@@ -657,13 +661,15 @@ private struct GoalSetupView: View {
                     confidence: Int(confidence),
                     biggestBlocker: biggestBlocker
                 )
-                store.confirmGoal(goal)
+                Task {
+                    await store.confirmGoal(goal)
+                }
             } label: {
-                Label("Check If I'm Cooked", systemImage: "flame.fill")
+                Label(store.isGoalSetupRunning ? "Checking Goal" : "Check If I'm Cooked", systemImage: "flame.fill")
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!canSubmit)
-            .opacity(canSubmit ? 1 : 0.5)
+            .disabled(!canSubmit || store.isGoalSetupRunning)
+            .opacity(canSubmit && !store.isGoalSetupRunning ? 1 : 0.5)
         }
     }
 }
@@ -683,9 +689,17 @@ private struct ProofComposer: View {
             !attachments.isEmpty
     }
 
+    init(store: OpenLARPStore, draft: ProofSubmission? = nil) {
+        self.store = store
+        _kind = State(initialValue: draft?.kind ?? .proof)
+        _text = State(initialValue: draft?.text ?? "")
+        _link = State(initialValue: draft?.link ?? "")
+        _attachments = State(initialValue: draft?.attachments ?? [])
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(feature: .proof, eyebrow: "Public proof", title: "Add evidence")
+            SectionHeader(feature: .proof, eyebrow: "Private proof", title: "Add evidence")
 
             Picker("Proof type", selection: $kind) {
                 ForEach(ProofKind.allCases) { proofKind in
@@ -758,15 +772,17 @@ private struct ProofComposer: View {
             }
 
             Button {
-                store.checkProof(kind: kind, text: text, link: link, attachments: kind == .proof ? attachments : [])
+                Task {
+                    await store.checkProof(kind: kind, text: text, link: link, attachments: kind == .proof ? attachments : [])
+                }
             } label: {
-                Label("Check My Proof", systemImage: "checkmark.seal.fill")
+                Label(store.isProofChecking ? "Checking Proof" : "Check My Proof", systemImage: "checkmark.seal.fill")
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!canSubmit || isSavingAttachments)
-            .opacity(canSubmit && !isSavingAttachments ? 1 : 0.5)
+            .disabled(!canSubmit || isSavingAttachments || store.isProofChecking)
+            .opacity(canSubmit && !isSavingAttachments && !store.isProofChecking ? 1 : 0.5)
 
-            Text(kind == .selfReport ? "Self-report keeps momentum, but earns less than real evidence." : "A link, screenshot note, or concrete artifact earns stronger progress.")
+            Text(kind == .selfReport ? "Self-report keeps momentum, but earns less than real evidence." : "Links, screenshots, notes, and artifacts are saved locally as private evidence.")
                 .font(.caption)
                 .foregroundStyle(Color.openLARPSoftInk)
         }
@@ -834,18 +850,25 @@ private struct QualityResultCard: View {
                 Pill(title: "\(result.qualityScore)/100", systemImage: "gauge", color: .openLARPCoral)
             }
 
-            Button {
-                store.claimPendingQualityResult()
-            } label: {
-                Label(result.isAccepted ? "Claim XP" : "Accept Lower XP", systemImage: "bolt.circle.fill")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-
-            if !result.isAccepted {
+            if result.isAccepted {
                 Button {
-                    store.discardPendingQualityResult()
+                    store.claimPendingQualityResult()
+                } label: {
+                    Label("Claim XP", systemImage: "bolt.circle.fill")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            } else {
+                Button {
+                    store.improvePendingProofDraft()
                 } label: {
                     Label("Improve Proof", systemImage: "pencil")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+
+                Button {
+                    store.claimPendingQualityResult()
+                } label: {
+                    Label("Accept Lower XP", systemImage: "bolt.circle.fill")
                 }
                 .buttonStyle(SecondaryButtonStyle())
             }

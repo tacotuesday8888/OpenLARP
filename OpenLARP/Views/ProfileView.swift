@@ -2,8 +2,6 @@ import SwiftUI
 
 struct ProfileView: View {
     let store: OpenLARPStore
-    @State private var memoryEnabled = true
-    @State private var shareWins = true
     @State private var showingResetConfirmation = false
     @State private var selectedProof: ProofRecord?
     @State private var showingProofArchive = false
@@ -146,23 +144,57 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: 14) {
                 SectionHeader(feature: .privacy, eyebrow: "Private by default", title: "Memory and sharing")
 
-                PrivacyToggleRow(
-                    title: "Long-term memory",
-                    detail: "Keep local context on this device.",
-                    isOn: $memoryEnabled
-                )
-                PrivacyToggleRow(
-                    title: "Shareable wins",
-                    detail: "Allow proof wins to be shared later.",
-                    isOn: $shareWins
-                )
+                if store.state.userProfile == nil {
+                    Text("Set a goal first to create local privacy controls for memory and sharing.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    PrivacyToggleRow(
+                        title: "Long-term memory",
+                        detail: "Keep local context on this device.",
+                        isOn: memoryBinding
+                    )
+                    PrivacyToggleRow(
+                        title: "Shareable wins",
+                        detail: "Allow proof wins to be shared later.",
+                        isOn: shareWinsBinding
+                    )
 
-                Text(memoryEnabled ? "Local memory is on for this device. Real cloud memory is not built yet." : "Memory is off for future sensitive chats on this device.")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.openLARPSoftInk)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(memoryEnabled ? "Local memory is on for this device. Real cloud memory is not built yet." : "Memory is off for future sensitive chats on this device.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Label("External actions always require approval.", systemImage: "hand.raised.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPCoral)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
+    }
+
+    private var memoryEnabled: Bool {
+        store.state.userProfile?.privacy.memoryMode != .off
+    }
+
+    private var memoryBinding: Binding<Bool> {
+        Binding(
+            get: { memoryEnabled },
+            set: { isOn in
+                store.updateProfilePrivacy(memoryMode: isOn ? .localOnly : .off)
+            }
+        )
+    }
+
+    private var shareWinsBinding: Binding<Bool> {
+        Binding(
+            get: { store.state.userProfile?.privacy.shareWins ?? false },
+            set: { isOn in
+                store.updateProfilePrivacy(shareWins: isOn)
+            }
+        )
     }
 
     @ViewBuilder
