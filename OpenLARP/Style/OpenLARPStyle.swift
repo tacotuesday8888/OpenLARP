@@ -92,6 +92,7 @@ enum OpenLARPFeature {
     case cooked
     case proof
     case stats
+    case agent
     case recovery
     case profile
     case privacy
@@ -103,6 +104,7 @@ enum OpenLARPFeature {
         case .cooked: "flame.fill"
         case .proof: "doc.fill"
         case .stats: "chart.bar.fill"
+        case .agent: "sparkles"
         case .recovery: "shield.fill"
         case .profile: "briefcase.fill"
         case .privacy: "lock.shield.fill"
@@ -121,6 +123,8 @@ enum OpenLARPFeature {
             [.openLARPMint, .openLARPGreen]
         case .stats:
             [.openLARPYellow, .openLARPOrange]
+        case .agent:
+            [.openLARPCyan, .openLARPPurple]
         case .recovery:
             [Color(red: 0.55, green: 0.63, blue: 0.72), Color(red: 0.15, green: 0.23, blue: 0.35)]
         case .profile, .privacy:
@@ -135,6 +139,7 @@ enum OpenLARPFeature {
         case .cooked: .openLARPCoral
         case .proof: .openLARPGreen
         case .stats: .openLARPOrange
+        case .agent: .openLARPPurple
         case .recovery: Color(red: 0.15, green: 0.23, blue: 0.35)
         case .profile, .privacy: Color(red: 0.08, green: 0.15, blue: 0.24)
         }
@@ -147,6 +152,7 @@ enum OpenLARPFeature {
         case .cooked: Color(red: 0.72, green: 0.13, blue: 0.28)
         case .proof: Color(red: 0.05, green: 0.53, blue: 0.31)
         case .stats: Color(red: 0.71, green: 0.33, blue: 0.09)
+        case .agent: Color(red: 0.22, green: 0.25, blue: 0.74)
         case .recovery: Color(red: 0.08, green: 0.15, blue: 0.24)
         case .profile, .privacy: Color(red: 0.04, green: 0.06, blue: 0.12)
         }

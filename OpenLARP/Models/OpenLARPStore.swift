@@ -6,6 +6,7 @@ import Observation
 final class OpenLARPStore {
     private let persistence: OpenLARPPersistence
     private let attachmentStore: OpenLARPAttachmentStore
+    private let agentService: CareerAgentBriefServicing
     private let now: () -> Date
     private let calendar: Calendar
 
@@ -13,15 +14,18 @@ final class OpenLARPStore {
     var pendingProof: ProofSubmission?
     var pendingQualityResult: QualityCheckResult?
     var errorMessage: String?
+    var isAgentScanning = false
 
     init(
         persistence: OpenLARPPersistence = .live,
         attachmentStore: OpenLARPAttachmentStore = .live,
+        agentService: CareerAgentBriefServicing = MockCareerAgentService(),
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .autoupdatingCurrent
     ) {
         self.persistence = persistence
         self.attachmentStore = attachmentStore
+        self.agentService = agentService
         self.now = now
         self.calendar = calendar
         do {
@@ -132,6 +136,22 @@ final class OpenLARPStore {
         deletePendingProofAttachments()
         pendingProof = nil
         pendingQualityResult = nil
+    }
+
+    func runAgentScan() async {
+        guard !state.needsGoalSetup else { return }
+        isAgentScanning = true
+        defer { isAgentScanning = false }
+
+        do {
+            let brief = try await agentService.generateBrief(for: state)
+            state.agentBrief = brief
+            state.updatedAt = now()
+            errorMessage = nil
+            save()
+        } catch {
+            errorMessage = "The local agent scan could not finish. Try again from the Agent tab."
+        }
     }
 
     func saveProofImage(

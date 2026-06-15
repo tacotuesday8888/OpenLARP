@@ -20,6 +20,7 @@ struct ProfileView: View {
                 )
 
                 careerSummaryCard
+                accountProfileCard
                 activeGoalCard
                 streakCard
                 privacyCard
@@ -73,6 +74,31 @@ struct ProfileView: View {
         }
     }
 
+    private var accountProfileCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(feature: .profile, eyebrow: "Account-ready", title: "User profile")
+
+                if let profile = store.state.userProfile {
+                    HStack(spacing: 8) {
+                        SummaryTile(value: profile.segment.rawValue, label: "Segment", color: .openLARPBlue)
+                        SummaryTile(value: "\(profile.minutesPerDay)m", label: "Daily", color: .openLARPGreen)
+                    }
+
+                    ProfileDetailRow(title: "Display name", value: profile.displayName)
+                    ProfileDetailRow(title: "Memory mode", value: profile.privacy.memoryMode.label)
+                    ProfileDetailRow(title: "Account sync", value: profile.accountID == nil ? "Not connected yet" : "Linked")
+                    ProfileDetailRow(title: "Profile ID", value: String(profile.id.uuidString.prefix(8)))
+                } else {
+                    Text("A local user profile is created after goal setup and can be linked to account sync later.")
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
     private var activeGoalCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
@@ -90,6 +116,11 @@ struct ProfileView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
+                        if let targetRole = store.state.targetRoles.first {
+                            ProfileDetailRow(title: "Role family", value: targetRole.roleFamily.rawValue)
+                            ProfileDetailRow(title: "Seniority", value: targetRole.seniority.rawValue)
+                            ProfileDetailRow(title: "Keywords", value: targetRole.keywords.joined(separator: ", "))
+                        }
                         ProfileDetailRow(title: "Background", value: goal.background.isEmpty ? "Not provided yet" : goal.background)
                         ProfileDetailRow(title: "Existing proof", value: goal.existingProof.isEmpty ? "Thin or not provided yet" : goal.existingProof)
                         ProfileDetailRow(title: "Biggest blocker", value: goal.biggestBlocker.isEmpty ? "Not provided yet" : goal.biggestBlocker)

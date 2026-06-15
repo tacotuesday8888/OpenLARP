@@ -33,6 +33,7 @@ struct ProgressTabView: View {
                     }
                 } else {
                     readinessCard
+                    readinessHistoryCard
                     xpCard
                     proofCard
                     badgeCard
@@ -72,6 +73,8 @@ struct ProgressTabView: View {
                 }
 
                 ReadinessRow(title: "Proof strength", value: state.progress.readiness.proofStrength, color: .openLARPCoral)
+                ReadinessRow(title: "Skill proof", value: state.progress.readiness.skillProof, color: .openLARPBlue)
+                ReadinessRow(title: "Network strength", value: state.progress.readiness.networkStrength, color: .openLARPPurple)
                 ReadinessRow(title: "Confidence", value: state.progress.readiness.confidence, color: .openLARPYellow)
                 ReadinessRow(title: "Consistency", value: state.progress.readiness.consistency, color: .openLARPGreen)
 
@@ -81,6 +84,46 @@ struct ProgressTabView: View {
                     Label("Improve Weakest Area", systemImage: "target")
                 }
                 .buttonStyle(SecondaryButtonStyle())
+            }
+        }
+    }
+
+    private var readinessHistoryCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(feature: .stats, eyebrow: "History", title: "Readiness timeline")
+
+                if state.progress.readinessHistory.isEmpty {
+                    Text("The first readiness baseline appears after goal setup. Proof claims add snapshots over time.")
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                } else {
+                    ForEach(state.progress.readinessHistory.reversed()) { snapshot in
+                        HStack(alignment: .top, spacing: 12) {
+                            Text("\(snapshot.overall)")
+                                .font(.headline.weight(.black))
+                                .foregroundStyle(Color.openLARPBlue)
+                                .frame(width: 44, height: 36)
+                                .background(Color.openLARPBlue.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(snapshot.reason)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(Color.openLARPInk)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Text("\(label(for: snapshot.proofStrength)) proof, \(label(for: snapshot.skillProof)) skill proof, \(label(for: snapshot.networkStrength)) network")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.openLARPSoftInk)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.openLARPBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
             }
         }
     }

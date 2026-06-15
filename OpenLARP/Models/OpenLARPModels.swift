@@ -572,16 +572,85 @@ struct MissedDayRecoveryContent: Equatable {
 
 struct ReadinessMetrics: Codable, Equatable {
     var overall: Int
+    var targetClarity: Int
     var proofStrength: Int
     var confidence: Int
     var consistency: Int
+    var skillProof: Int
+    var experienceProof: Int
+    var profileCredibility: Int
+    var networkStrength: Int
+    var interviewReadiness: Int
+    var applicationExecution: Int
 
     static let baseline = ReadinessMetrics(
         overall: 42,
+        targetClarity: 48,
         proofStrength: 42,
         confidence: 36,
-        consistency: 28
+        consistency: 28,
+        skillProof: 38,
+        experienceProof: 34,
+        profileCredibility: 36,
+        networkStrength: 31,
+        interviewReadiness: 29,
+        applicationExecution: 33
     )
+
+    init(
+        overall: Int,
+        targetClarity: Int = 48,
+        proofStrength: Int,
+        confidence: Int,
+        consistency: Int,
+        skillProof: Int = 38,
+        experienceProof: Int = 34,
+        profileCredibility: Int = 36,
+        networkStrength: Int = 31,
+        interviewReadiness: Int = 29,
+        applicationExecution: Int = 33
+    ) {
+        self.overall = overall
+        self.targetClarity = targetClarity
+        self.proofStrength = proofStrength
+        self.confidence = confidence
+        self.consistency = consistency
+        self.skillProof = skillProof
+        self.experienceProof = experienceProof
+        self.profileCredibility = profileCredibility
+        self.networkStrength = networkStrength
+        self.interviewReadiness = interviewReadiness
+        self.applicationExecution = applicationExecution
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case overall
+        case targetClarity
+        case proofStrength
+        case confidence
+        case consistency
+        case skillProof
+        case experienceProof
+        case profileCredibility
+        case networkStrength
+        case interviewReadiness
+        case applicationExecution
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        overall = try container.decode(Int.self, forKey: .overall)
+        targetClarity = try container.decodeIfPresent(Int.self, forKey: .targetClarity) ?? 48
+        proofStrength = try container.decode(Int.self, forKey: .proofStrength)
+        confidence = try container.decode(Int.self, forKey: .confidence)
+        consistency = try container.decode(Int.self, forKey: .consistency)
+        skillProof = try container.decodeIfPresent(Int.self, forKey: .skillProof) ?? 38
+        experienceProof = try container.decodeIfPresent(Int.self, forKey: .experienceProof) ?? 34
+        profileCredibility = try container.decodeIfPresent(Int.self, forKey: .profileCredibility) ?? 36
+        networkStrength = try container.decodeIfPresent(Int.self, forKey: .networkStrength) ?? 31
+        interviewReadiness = try container.decodeIfPresent(Int.self, forKey: .interviewReadiness) ?? 29
+        applicationExecution = try container.decodeIfPresent(Int.self, forKey: .applicationExecution) ?? 33
+    }
 }
 
 enum Badge: String, Codable, CaseIterable, Identifiable {
@@ -602,6 +671,7 @@ struct ProgressState: Codable, Equatable {
     var proofCount: Int
     var badges: [Badge]
     var readiness: ReadinessMetrics
+    var readinessHistory: [ReadinessSnapshot]
     var recentProof: [ProofRecord]
 
     static let empty = ProgressState(
@@ -612,8 +682,56 @@ struct ProgressState: Codable, Equatable {
         proofCount: 0,
         badges: [],
         readiness: .baseline,
+        readinessHistory: [],
         recentProof: []
     )
+
+    init(
+        xp: Int,
+        xpGoal: Int,
+        streakCount: Int,
+        completedQuestCount: Int,
+        proofCount: Int,
+        badges: [Badge],
+        readiness: ReadinessMetrics,
+        readinessHistory: [ReadinessSnapshot] = [],
+        recentProof: [ProofRecord]
+    ) {
+        self.xp = xp
+        self.xpGoal = xpGoal
+        self.streakCount = streakCount
+        self.completedQuestCount = completedQuestCount
+        self.proofCount = proofCount
+        self.badges = badges
+        self.readiness = readiness
+        self.readinessHistory = readinessHistory
+        self.recentProof = recentProof
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case xp
+        case xpGoal
+        case streakCount
+        case completedQuestCount
+        case proofCount
+        case badges
+        case readiness
+        case readinessHistory
+        case recentProof
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        xp = try container.decode(Int.self, forKey: .xp)
+        xpGoal = try container.decode(Int.self, forKey: .xpGoal)
+        streakCount = try container.decode(Int.self, forKey: .streakCount)
+        completedQuestCount = try container.decode(Int.self, forKey: .completedQuestCount)
+        proofCount = try container.decode(Int.self, forKey: .proofCount)
+        badges = try container.decode([Badge].self, forKey: .badges)
+        readiness = try container.decode(ReadinessMetrics.self, forKey: .readiness)
+        readinessHistory = try container.decodeIfPresent([ReadinessSnapshot].self, forKey: .readinessHistory) ?? []
+        recentProof = try container.decode([ProofRecord].self, forKey: .recentProof)
+    }
 }
 
 struct DailyCadenceState: Codable, Equatable {
@@ -673,20 +791,56 @@ struct SkippedTodayState: Codable, Equatable {
 }
 
 struct OpenLARPState: Codable, Equatable {
+    var schemaVersion: Int
+    var userProfile: CareerUserProfile?
     var goal: CareerGoal?
+    var targetRoles: [TargetRole]
     var diagnostic: CookedDiagnostic?
     var plan: [Quest]
     var progress: ProgressState
+    var agentBrief: AgentBrief
     var updatedAt: Date
     var dailyCadence: DailyCadenceState = .empty
     var missedDayRecovery: MissedDayRecoveryState = .empty
     var skippedToday: SkippedTodayState = .empty
 
+    init(
+        schemaVersion: Int = 2,
+        userProfile: CareerUserProfile? = nil,
+        goal: CareerGoal?,
+        targetRoles: [TargetRole] = [],
+        diagnostic: CookedDiagnostic?,
+        plan: [Quest],
+        progress: ProgressState,
+        agentBrief: AgentBrief = .empty,
+        updatedAt: Date,
+        dailyCadence: DailyCadenceState = .empty,
+        missedDayRecovery: MissedDayRecoveryState = .empty,
+        skippedToday: SkippedTodayState = .empty
+    ) {
+        self.schemaVersion = schemaVersion
+        self.userProfile = userProfile
+        self.goal = goal
+        self.targetRoles = targetRoles
+        self.diagnostic = diagnostic
+        self.plan = plan
+        self.progress = progress
+        self.agentBrief = agentBrief
+        self.updatedAt = updatedAt
+        self.dailyCadence = dailyCadence
+        self.missedDayRecovery = missedDayRecovery
+        self.skippedToday = skippedToday
+    }
+
     static let empty = OpenLARPState(
+        schemaVersion: 2,
+        userProfile: nil,
         goal: nil,
+        targetRoles: [],
         diagnostic: nil,
         plan: [],
         progress: .empty,
+        agentBrief: .empty,
         updatedAt: Date(timeIntervalSince1970: 0)
     )
 
@@ -704,10 +858,14 @@ struct OpenLARPState: Codable, Equatable {
 
 extension OpenLARPState {
     private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case userProfile
         case goal
+        case targetRoles
         case diagnostic
         case plan
         case progress
+        case agentBrief
         case updatedAt
         case dailyCadence
         case missedDayRecovery
@@ -716,10 +874,14 @@ extension OpenLARPState {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
         goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
+        targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
         diagnostic = try container.decodeIfPresent(CookedDiagnostic.self, forKey: .diagnostic)
         plan = try container.decode([Quest].self, forKey: .plan)
         progress = try container.decode(ProgressState.self, forKey: .progress)
+        agentBrief = try container.decodeIfPresent(AgentBrief.self, forKey: .agentBrief) ?? .empty
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         dailyCadence = try container.decodeIfPresent(DailyCadenceState.self, forKey: .dailyCadence) ?? .empty
         missedDayRecovery = try container.decodeIfPresent(MissedDayRecoveryState.self, forKey: .missedDayRecovery) ?? .empty
@@ -728,10 +890,14 @@ extension OpenLARPState {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encodeIfPresent(userProfile, forKey: .userProfile)
         try container.encodeIfPresent(goal, forKey: .goal)
+        try container.encode(targetRoles, forKey: .targetRoles)
         try container.encodeIfPresent(diagnostic, forKey: .diagnostic)
         try container.encode(plan, forKey: .plan)
         try container.encode(progress, forKey: .progress)
+        try container.encode(agentBrief, forKey: .agentBrief)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(dailyCadence, forKey: .dailyCadence)
         try container.encode(missedDayRecovery, forKey: .missedDayRecovery)

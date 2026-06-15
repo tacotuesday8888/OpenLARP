@@ -961,9 +961,126 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(reloaded.progress.recentProof.first?.text, proof.text)
     }
 
-    func testAppTabsMatchV0ProductSurfaces() {
-        XCTAssertEqual(AppTab.allCases.map(\.title), ["Today", "Map", "Progress", "Profile"])
-        XCTAssertEqual(AppTab.allCases.map(\.systemImage), ["bolt.fill", "map.fill", "chart.line.uptrend.xyaxis", "person.crop.circle"])
+    func testGoalSetupCreatesAccountReadyProfileTargetRoleAndAgentState() {
+        let state = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 10_000))
+
+        XCTAssertEqual(state.userProfile?.segment, .student)
+        XCTAssertEqual(state.userProfile?.displayName, "Early-career candidate")
+        XCTAssertEqual(state.userProfile?.privacy.memoryMode, .localOnly)
+        XCTAssertEqual(state.targetRoles.first?.title, "iOS engineering internship")
+        XCTAssertEqual(state.targetRoles.first?.seniority, .internship)
+        XCTAssertEqual(state.targetRoles.first?.timeline, "30 days")
+        XCTAssertEqual(state.progress.readiness.skillProof, 38)
+        XCTAssertEqual(state.progress.readiness.networkStrength, 31)
+        XCTAssertEqual(state.progress.readinessHistory.count, 1)
+        XCTAssertEqual(state.progress.readinessHistory.first?.reason, "Initial Am I Cooked baseline")
+        XCTAssertEqual(state.agentBrief.title, "Career agent brief")
+        XCTAssertEqual(state.agentBrief.opportunities.count, 3)
+        XCTAssertEqual(state.agentBrief.activities.first?.status, .completed)
+    }
+
+    func testClaimAddsProofToReadinessHistoryAndRefreshesAgentBrief() throws {
+        let claimTime = Date(timeIntervalSince1970: 11_000)
+        var state = OpenLARPEngine.confirmGoal(goal, now: claimTime)
+        state = try OpenLARPEngine.startCurrentQuest(in: state, now: claimTime)
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "I mapped three iOS internship requirements, grouped the repeated SwiftUI and testing signals, and saved the target-role proof plan.",
+            link: "https://example.com/ios-plan",
+            submittedAt: claimTime
+        )
+
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        state = try OpenLARPEngine.claim(
+            result,
+            proof: proof,
+            in: state,
+            now: claimTime,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(state.progress.readinessHistory.count, 2)
+        XCTAssertEqual(state.progress.readinessHistory.last?.relatedProofID, proof.id)
+        XCTAssertEqual(state.progress.readinessHistory.last?.overall, state.progress.readiness.overall)
+        XCTAssertEqual(state.agentBrief.activities.first?.type, .proofEvaluation)
+        XCTAssertEqual(state.agentBrief.activities.first?.status, .completed)
+        XCTAssertTrue(state.agentBrief.summary.contains("1 proof receipt"))
+    }
+
+    func testOpportunityRankingOrdersByFitUrgencyProofGapAndImpact() {
+        let targetRole = TargetRole(
+            title: "AI product manager internship",
+            seniority: .internship,
+            roleFamily: .product,
+            timeline: "21 days",
+            keywords: ["AI", "product", "prototype"]
+        )
+        let opportunities = [
+            OpportunityCard(
+                type: .course,
+                title: "Generic resume webinar",
+                sourceName: "Career Center",
+                fitScore: 50,
+                urgencyScore: 20,
+                missingProofScore: 20,
+                impactScore: 30,
+                whyItMatters: "General polish.",
+                missingProof: "Resume credibility",
+                recommendedAction: "Watch later."
+            ),
+            OpportunityCard(
+                type: .project,
+                title: "Ship an AI product teardown",
+                sourceName: "OpenLARP Agent",
+                fitScore: 92,
+                urgencyScore: 72,
+                missingProofScore: 88,
+                impactScore: 90,
+                whyItMatters: "Creates proof for AI product judgment.",
+                missingProof: "Product proof",
+                recommendedAction: "Build the one-page teardown."
+            ),
+            OpportunityCard(
+                type: .networking,
+                title: "Message a PM intern alum",
+                sourceName: "Approved network scan",
+                fitScore: 82,
+                urgencyScore: 86,
+                missingProofScore: 60,
+                impactScore: 76,
+                whyItMatters: "Near-term conversation with a relevant peer.",
+                missingProof: "Network signal",
+                recommendedAction: "Send one honest question."
+            )
+        ]
+
+        let ranked = LocalOpportunityRankingService().rank(opportunities, for: targetRole)
+
+        XCTAssertEqual(ranked.map(\.title), [
+            "Ship an AI product teardown",
+            "Message a PM intern alum",
+            "Generic resume webinar"
+        ])
+        XCTAssertEqual(ranked.map(\.rank), [1, 2, 3])
+        XCTAssertGreaterThan(ranked[0].compositeScore, ranked[1].compositeScore)
+    }
+
+    @MainActor
+    func testMockAgentServiceProducesBackendReadyBriefWithoutClientLLMCalls() async throws {
+        let state = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 12_000))
+        let service: CareerAgentBriefServicing = MockCareerAgentService()
+
+        let brief = try await service.generateBrief(for: state)
+
+        XCTAssertEqual(brief.providerRoute, .genkitBackend)
+        XCTAssertEqual(brief.opportunities.map(\.rank), [1, 2, 3])
+        XCTAssertTrue(brief.activities.contains { $0.type == .opportunityScan && $0.status == .completed })
+        XCTAssertTrue(brief.nextSteps.contains { $0.title == "Do today's proof quest" })
+    }
+
+    func testAppTabsMatchProductSurfaces() {
+        XCTAssertEqual(AppTab.allCases.map(\.title), ["Today", "Map", "Progress", "Agent", "Profile"])
+        XCTAssertEqual(AppTab.allCases.map(\.systemImage), ["bolt.fill", "map.fill", "chart.line.uptrend.xyaxis", "sparkles", "person.crop.circle"])
     }
 
     private func proofRecord(
