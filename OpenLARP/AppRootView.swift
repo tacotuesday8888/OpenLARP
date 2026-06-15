@@ -4,6 +4,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case today
     case map
     case progress
+    case agent
     case profile
 
     var id: String { rawValue }
@@ -13,6 +14,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .today: "Today"
         case .map: "Map"
         case .progress: "Progress"
+        case .agent: "Agent"
         case .profile: "Profile"
         }
     }
@@ -22,6 +24,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .today: "bolt.fill"
         case .map: "map.fill"
         case .progress: "chart.line.uptrend.xyaxis"
+        case .agent: "sparkles"
         case .profile: "person.crop.circle"
         }
     }
@@ -73,6 +76,14 @@ struct AppRootView: View {
                 Label(AppTab.progress.title, systemImage: AppTab.progress.systemImage)
             }
             .tag(AppTab.progress)
+
+            NavigationStack {
+                AgentDashboardView(store: store)
+            }
+            .tabItem {
+                Label(AppTab.agent.title, systemImage: AppTab.agent.systemImage)
+            }
+            .tag(AppTab.agent)
 
             NavigationStack {
                 ProfileView(store: store)

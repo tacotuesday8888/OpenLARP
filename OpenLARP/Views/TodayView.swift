@@ -17,6 +17,7 @@ struct TodayView: View {
                     diagnosticCard
                     questCard
                     progressStrip
+                    dailyAgentBrief
                     Button {
                         showingAgent = true
                     } label: {
@@ -298,6 +299,47 @@ struct TodayView: View {
 
                 ProgressView(value: Double(store.state.progress.readiness.overall), total: 100)
                     .tint(.openLARPGreen)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dailyAgentBrief: some View {
+        if !store.state.needsGoalSetup {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(feature: .agent, eyebrow: "Agent brief", title: "While you are away")
+
+                    Text(store.state.agentBrief.summary)
+                        .font(.body)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let opportunity = store.state.agentBrief.opportunities.first {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: opportunity.type.systemImage)
+                                .foregroundStyle(Color.openLARPPurple)
+                                .frame(width: 30, height: 30)
+                                .background(Color.openLARPPurple.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("#\(opportunity.rank) \(opportunity.title)")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(Color.openLARPInk)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Text(opportunity.recommendedAction)
+                                    .font(.caption)
+                                    .foregroundStyle(Color.openLARPSoftInk)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.openLARPBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
             }
         }
     }

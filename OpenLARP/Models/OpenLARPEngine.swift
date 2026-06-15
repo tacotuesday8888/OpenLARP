@@ -4,16 +4,30 @@ enum OpenLARPEngine {
     static func confirmGoal(_ goal: CareerGoal, now: Date = Date()) -> OpenLARPState {
         let diagnostic = makeDiagnostic(for: goal)
         let plan = makeSevenDayPlan(for: goal)
+        let profile = AgentBriefFactory.makeProfile(for: goal, now: now)
+        let targetRole = AgentBriefFactory.makeTargetRole(for: goal, now: now)
         var progress = ProgressState.empty
         progress.badges = [.firstGoal]
+        progress.readinessHistory = [
+            ReadinessSnapshot(
+                source: .initialBaseline,
+                reason: "Initial Am I Cooked baseline",
+                metrics: progress.readiness,
+                createdAt: now
+            )
+        ]
 
-        return OpenLARPState(
+        var state = OpenLARPState(
+            userProfile: profile,
             goal: goal,
+            targetRoles: [targetRole],
             diagnostic: diagnostic,
             plan: plan,
             progress: progress,
             updatedAt: now
         )
+        state.agentBrief = AgentBriefFactory.makeBrief(for: state, generatedAt: now)
+        return state
     }
 
     static func startCurrentQuest(in state: OpenLARPState, now: Date = Date()) throws -> OpenLARPState {
@@ -152,6 +166,16 @@ enum OpenLARPEngine {
             quality: result
         )
         next.progress.recentProof.insert(record, at: 0)
+        next.progress.readinessHistory.append(
+            ReadinessSnapshot(
+                source: .proofClaim,
+                reason: "\(result.label): \(quest.gap.title)",
+                metrics: next.progress.readiness,
+                relatedQuestID: quest.id,
+                relatedProofID: proof.id,
+                createdAt: now
+            )
+        )
         recordDailyCompletion(
             quest: quest,
             result: result,
@@ -159,6 +183,7 @@ enum OpenLARPEngine {
             calendar: calendar,
             in: &next
         )
+        next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
         next.updatedAt = now
         return next
     }
@@ -248,6 +273,7 @@ enum OpenLARPEngine {
             "Write what it proves and where it falls short."
         ]
         next.plan[index].status = .available
+        next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
         next.updatedAt = now
         return next
     }
@@ -450,9 +476,16 @@ enum OpenLARPEngine {
     private static func updatedReadiness(_ readiness: ReadinessMetrics, delta: Int) -> ReadinessMetrics {
         ReadinessMetrics(
             overall: min(100, readiness.overall + max(1, delta / 2)),
+            targetClarity: min(100, readiness.targetClarity + max(1, delta / 3)),
             proofStrength: min(100, readiness.proofStrength + delta),
             confidence: min(100, readiness.confidence + max(1, delta / 2)),
-            consistency: min(100, readiness.consistency + max(1, delta))
+            consistency: min(100, readiness.consistency + max(1, delta)),
+            skillProof: min(100, readiness.skillProof + max(1, delta - 1)),
+            experienceProof: min(100, readiness.experienceProof + max(1, delta / 2)),
+            profileCredibility: min(100, readiness.profileCredibility + max(1, delta / 2)),
+            networkStrength: min(100, readiness.networkStrength + (delta > 5 ? 2 : 1)),
+            interviewReadiness: min(100, readiness.interviewReadiness + max(1, delta / 3)),
+            applicationExecution: min(100, readiness.applicationExecution + max(1, delta / 3))
         )
     }
 
