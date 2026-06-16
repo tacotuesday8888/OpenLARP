@@ -1121,7 +1121,7 @@ final class V0EngineTests: XCTestCase {
 
         let brief = try await service.generateBrief(for: state)
 
-        XCTAssertEqual(brief.providerRoute, .genkitBackend)
+        XCTAssertEqual(brief.providerRoute, .localMock)
         XCTAssertEqual(brief.opportunities.map(\.rank), [1, 2, 3])
         XCTAssertTrue(brief.activities.contains { $0.type == .opportunityScan && $0.status == .completed })
         XCTAssertTrue(brief.nextSteps.contains { $0.title == "Do today's proof quest" })
@@ -1686,6 +1686,160 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(decoded.relatedProofID, outcome.relatedProofID?.uuidString)
         XCTAssertEqual(decoded.collectionPath, "users/user_123/outcomes")
         XCTAssertEqual(decoded.documentPath, "users/user_123/outcomes/\(outcome.id.uuidString)")
+    }
+
+    func testBackendSessionDefaultsToLocalOnlyUnauthenticatedState() {
+        let state = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 13_400))
+        let session = BackendUserSession.localOnly(for: state)
+
+        XCTAssertFalse(session.isAuthenticated)
+        XCTAssertEqual(session.authProvider, .localMock)
+        XCTAssertEqual(session.ownerUserID, "local_\(state.userProfile?.id.uuidString ?? "device")")
+        XCTAssertEqual(session.firestore.status, .notConnected)
+        XCTAssertEqual(session.storage.status, .notConnected)
+        XCTAssertEqual(session.functions.status, .notConnected)
+        XCTAssertEqual(session.cloudRun.status, .notConnected)
+        XCTAssertEqual(session.genkit.status, .localMock)
+        XCTAssertTrue(session.requiresUserApprovalForExternalActions)
+    }
+
+    func testCareerGraphSyncPreparationRequestBuildsBackendSafeSnapshotAndLocalMockPreparation() async throws {
+        let now = Date(timeIntervalSince1970: 13_500)
+        let attachment = ProofAttachment(
+            id: UUID(uuidString: "D1D1D1D1-D1D1-D1D1-D1D1-D1D1D1D1D1D1")!,
+            fileName: "proof-upload.png",
+            originalFileName: "private-proof-upload.png",
+            contentType: "image/png",
+            byteCount: 77_000,
+            createdAt: now,
+            localRelativePath: "ProofAttachments/private-device-path.png"
+        )
+        let proof = ProofRecord(
+            id: UUID(uuidString: "D2D2D2D2-D2D2-D2D2-D2D2-D2D2D2D2D2D2")!,
+            questID: UUID(uuidString: "D3D3D3D3-D3D3-D3D3-D3D3-D3D3D3D3D3D3")!,
+            questTitle: "Create one tiny proof artifact",
+            kind: .proof,
+            text: "I shipped a real SwiftUI proof artifact and saved the screenshot locally.",
+            link: "https://example.com/proof",
+            attachments: [attachment],
+            submittedAt: now,
+            quality: QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 88,
+                label: "Strong proof",
+                reason: "Real artifact",
+                improvement: "Tie it to one role requirement.",
+                xpEarned: 120,
+                readinessDelta: 7
+            )
+        )
+        var state = OpenLARPEngine.confirmGoal(goal, now: now)
+        state.progress.recentProof = [proof]
+        state.progress.proofCount = 1
+        state.userProfile?.privacy.memoryMode = .cloudReady
+        let session = BackendUserSession.localOnly(for: state)
+
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let result = try await LocalMockCareerGraphSyncService().prepareSync(request)
+
+        XCTAssertEqual(request.snapshot.ownerUserID, session.ownerUserID)
+        XCTAssertEqual(request.firestoreRootPath, "users/\(session.ownerUserID)")
+        XCTAssertFalse(request.snapshot.policy.allowsLongTermMemoryWrite)
+        XCTAssertEqual(request.integrationRoutes.map(\.kind), [
+            .firebaseAuth,
+            .firestore,
+            .firebaseStorage,
+            .cloudFunctions,
+            .cloudRun,
+            .genkit
+        ])
+        XCTAssertEqual(result.status, .preparedLocally)
+        XCTAssertFalse(result.didContactNetwork)
+        XCTAssertTrue(result.requiresAuthenticationToSync)
+        XCTAssertTrue(result.firestoreDocumentPaths.contains("users/\(session.ownerUserID)/proofRecords/\(proof.id.uuidString)"))
+        XCTAssertEqual(result.uploadIntents.map(\.storagePath), [
+            "users/\(session.ownerUserID)/proofAttachments/\(attachment.id.uuidString)"
+        ])
+
+        let encoded = try JSONEncoder().encode(request)
+        let json = String(decoding: encoded, as: UTF8.self)
+        XCTAssertFalse(json.contains("localRelativePath"))
+        XCTAssertFalse(json.contains("private-device-path"))
+        XCTAssertFalse(json.contains("sk-"))
+        XCTAssertFalse(json.localizedCaseInsensitiveContains("api key"))
+    }
+
+    func testCareerGraphSetupStatusContentShowsMissingSetupActions() {
+        let emptyContent = CareerGraphSetupStatusContent(
+            state: .empty,
+            session: BackendUserSession.localOnly(for: .empty)
+        )
+
+        XCTAssertEqual(emptyContent.nextActionTitle, "Set career goal")
+        XCTAssertEqual(emptyContent.rows.first { $0.title == "Goal" }?.value, "Missing")
+        XCTAssertEqual(emptyContent.rows.first { $0.title == "Account sync" }?.value, "Not connected")
+        XCTAssertEqual(emptyContent.rows.first { $0.title == "Proof upload" }?.value, "Local only")
+
+        let goalState = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 13_600))
+        let goalContent = CareerGraphSetupStatusContent(
+            state: goalState,
+            session: BackendUserSession.localOnly(for: goalState)
+        )
+
+        XCTAssertEqual(goalContent.nextActionTitle, "Add first proof")
+        XCTAssertEqual(goalContent.rows.first { $0.title == "Goal" }?.value, "Set")
+        XCTAssertEqual(goalContent.rows.first { $0.title == "Agent context" }?.value, "Local mock")
+    }
+
+    func testCareerGraphSetupStatusContentSummarizesConnectedEvidenceAndPrivacy() {
+        let now = Date(timeIntervalSince1970: 13_700)
+        let proof = proofRecord(
+            id: UUID(uuidString: "D4D4D4D4-D4D4-D4D4-D4D4-D4D4D4D4D4D4")!,
+            questTitle: "Create one tiny proof artifact",
+            submittedAt: now
+        )
+        let outcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "D5D5D5D5-D5D5-D5D5-D5D5-D5D5D5D5D5D5")!,
+            kind: .interview,
+            title: "Scheduled first recruiter screen",
+            organizationName: "Example Labs",
+            note: "Private notes should not show in setup status.",
+            occurredAt: now,
+            createdAt: now,
+            updatedAt: now,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        var state = OpenLARPEngine.confirmGoal(goal, now: now)
+        state.progress.recentProof = [proof]
+        state.progress.proofCount = 1
+        state.outcomeLog = [outcome]
+        state.userProfile?.privacy.memoryMode = .cloudReady
+        state.userProfile?.privacy.shareWins = true
+
+        let content = CareerGraphSetupStatusContent(
+            state: state,
+            session: BackendUserSession.localOnly(for: state)
+        )
+
+        XCTAssertEqual(content.summaryTitle, "Career Graph")
+        XCTAssertEqual(content.rows.first { $0.title == "Proof receipts" }?.value, "1 saved")
+        XCTAssertEqual(content.rows.first { $0.title == "Proof receipts" }?.detail, "Latest: Create one tiny proof artifact")
+        XCTAssertEqual(content.rows.first { $0.title == "Outcomes" }?.value, "1 logged")
+        XCTAssertEqual(content.rows.first { $0.title == "Outcomes" }?.detail, "Latest: Interview")
+        XCTAssertEqual(content.rows.first { $0.title == "Memory" }?.value, "Cloud-ready")
+        XCTAssertEqual(content.rows.first { $0.title == "Sharing" }?.value, "Allowed later")
+        XCTAssertEqual(content.nextActionTitle, "Connect account later")
+
+        let displayText = content.rows.flatMap { [$0.title, $0.value, $0.detail] }.joined(separator: " ")
+        XCTAssertFalse(displayText.contains(proof.id.uuidString))
+        XCTAssertFalse(displayText.contains(outcome.id.uuidString))
+        XCTAssertFalse(displayText.contains("Private notes"))
     }
 
     @MainActor

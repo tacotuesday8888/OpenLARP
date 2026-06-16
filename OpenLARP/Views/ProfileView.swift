@@ -20,6 +20,7 @@ struct ProfileView: View {
 
                 careerSummaryCard
                 accountProfileCard
+                careerGraphSetupStatusCard
                 activeGoalCard
                 recentOutcomesCard
                 streakCard
@@ -131,12 +132,48 @@ struct ProfileView: View {
                     ProfileDetailRow(title: "Display name", value: profile.displayName)
                     ProfileDetailRow(title: "Memory mode", value: profile.privacy.memoryMode.label)
                     ProfileDetailRow(title: "Account sync", value: profile.accountID == nil ? "Not connected yet" : "Linked")
-                    ProfileDetailRow(title: "Profile ID", value: String(profile.id.uuidString.prefix(8)))
+                    ProfileDetailRow(title: "Profile record", value: "Saved on this device")
                 } else {
                     Text("A local user profile is created after goal setup and can be linked to account sync later.")
                         .font(.body)
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var careerGraphSetupStatusCard: some View {
+        let content = CareerGraphSetupStatusContent(
+            state: store.state,
+            session: BackendUserSession.localOnly(for: store.state)
+        )
+
+        return Card {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionHeader(feature: .agent, eyebrow: "Account-ready", title: content.summaryTitle)
+
+                Text(content.summarySubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    Label(content.nextActionTitle, systemImage: "arrow.right.circle.fill")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.openLARPBlue)
+                    Pill(title: "Local only", systemImage: "lock.fill", color: .openLARPGreen)
+                }
+
+                Text(content.nextActionDetail)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(spacing: 8) {
+                    ForEach(content.rows) { row in
+                        CareerGraphStatusRow(row: row)
+                    }
                 }
             }
         }
@@ -361,6 +398,66 @@ struct ProfileView: View {
             .font(.subheadline)
             .foregroundStyle(Color.openLARPSoftInk)
         }
+    }
+}
+
+private struct CareerGraphStatusRow: View {
+    let row: CareerGraphSetupStatusRow
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: row.systemImage)
+                .font(.system(size: 14, weight: .black, design: .rounded))
+                .foregroundStyle(statusColor)
+                .frame(width: 25, height: 25)
+                .background(statusColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(row.title)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+                        .textCase(.uppercase)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Spacer(minLength: 8)
+
+                    Text(row.value)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+
+                Text(row.detail)
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(Color.openLARPBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statusColor: Color {
+        if row.isComplete {
+            return .openLARPGreen
+        }
+
+        let normalized = row.value.lowercased()
+        if normalized.contains("local") || normalized.contains("mock") {
+            return .openLARPPurple
+        }
+
+        if normalized.contains("missing") || normalized.contains("not connected") {
+            return .openLARPCoral
+        }
+
+        return .openLARPSoftInk
     }
 }
 
