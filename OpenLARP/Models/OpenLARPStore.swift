@@ -8,6 +8,7 @@ final class OpenLARPStore {
     private let attachmentStore: OpenLARPAttachmentStore
     private let aiWorkflowService: any V0AIWorkflowServicing
     private let agentService: CareerAgentBriefServicing
+    private let careerGraphSyncService: any CareerGraphSyncServicing
     private let now: () -> Date
     private let calendar: Calendar
 
@@ -18,12 +19,16 @@ final class OpenLARPStore {
     var isAgentScanning = false
     var isGoalSetupRunning = false
     var isProofChecking = false
+    var isPreparingCareerGraphSyncPreview = false
+    var careerGraphSyncPreview: CareerGraphSyncPreview?
+    private var careerGraphSyncPreviewGeneration = 0
 
     init(
         persistence: OpenLARPPersistence = .live,
         attachmentStore: OpenLARPAttachmentStore = .live,
         aiWorkflowService: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService(),
         agentService: CareerAgentBriefServicing = MockCareerAgentService(),
+        careerGraphSyncService: any CareerGraphSyncServicing = LocalMockCareerGraphSyncService(),
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .autoupdatingCurrent
     ) {
@@ -31,6 +36,7 @@ final class OpenLARPStore {
         self.attachmentStore = attachmentStore
         self.aiWorkflowService = aiWorkflowService
         self.agentService = agentService
+        self.careerGraphSyncService = careerGraphSyncService
         self.now = now
         self.calendar = calendar
         do {
@@ -94,6 +100,7 @@ final class OpenLARPStore {
         state.agentBrief = AgentBriefFactory.makeBrief(for: state, generatedAt: requestedAt)
         pendingProof = nil
         pendingQualityResult = nil
+        clearCareerGraphSyncPreview()
         clearPersistedProofDraft()
         save()
     }
@@ -112,6 +119,7 @@ final class OpenLARPStore {
         state.outcomeLog = existingOutcomeLog
         pendingProof = nil
         pendingQualityResult = nil
+        clearCareerGraphSyncPreview()
         clearPersistedProofDraft()
         save()
     }
@@ -195,6 +203,7 @@ final class OpenLARPStore {
             )
             self.pendingProof = nil
             self.pendingQualityResult = nil
+            clearCareerGraphSyncPreview()
             clearPersistedProofDraft()
             errorMessage = nil
             save()
@@ -228,6 +237,7 @@ final class OpenLARPStore {
         profile.privacy.requireApprovalForExternalActions = true
         profile.updatedAt = now()
         state.userProfile = profile
+        clearCareerGraphSyncPreview()
         state.updatedAt = now()
         save()
     }
@@ -278,6 +288,7 @@ final class OpenLARPStore {
         )
 
         state = OpenLARPEngine.logOutcome(outcome, in: state, now: timestamp)
+        clearCareerGraphSyncPreview()
         errorMessage = nil
         save()
     }
@@ -326,6 +337,7 @@ final class OpenLARPStore {
         )
 
         state = OpenLARPEngine.updateOutcome(updatedOutcome, in: state, now: timestamp)
+        clearCareerGraphSyncPreview()
         errorMessage = nil
         save()
     }
@@ -337,8 +349,42 @@ final class OpenLARPStore {
         }
 
         state = OpenLARPEngine.deleteOutcome(id: id, in: state, now: now())
+        clearCareerGraphSyncPreview()
         errorMessage = nil
         save()
+    }
+
+    func prepareCareerGraphSyncPreview(includePrivateEvidence explicitIncludePrivateEvidence: Bool? = nil) async {
+        guard !isPreparingCareerGraphSyncPreview else { return }
+        guard !state.needsGoalSetup else {
+            errorMessage = "Set a career goal before previewing your career graph."
+            return
+        }
+
+        let requestedAt = now()
+        let session = BackendUserSession.localOnly(for: state)
+        let includePrivateEvidence = explicitIncludePrivateEvidence ?? (state.userProfile?.privacy.shareWins ?? false)
+        let previewGeneration = careerGraphSyncPreviewGeneration
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: requestedAt,
+            includePrivateEvidence: includePrivateEvidence
+        )
+
+        isPreparingCareerGraphSyncPreview = true
+        defer { isPreparingCareerGraphSyncPreview = false }
+
+        do {
+            let result = try await careerGraphSyncService.prepareSync(request)
+            guard previewGeneration == careerGraphSyncPreviewGeneration else { return }
+            careerGraphSyncPreview = CareerGraphSyncPreview(request: request, result: result)
+            errorMessage = nil
+        } catch {
+            guard previewGeneration == careerGraphSyncPreviewGeneration else { return }
+            clearCareerGraphSyncPreview()
+            errorMessage = "The local career graph preview could not be prepared."
+        }
     }
 
     func runAgentScan() async {
@@ -455,5 +501,10 @@ final class OpenLARPStore {
     private func clearPersistedProofDraft() {
         state.proofDraft = nil
         state.proofDraftQualityResult = nil
+    }
+
+    private func clearCareerGraphSyncPreview() {
+        careerGraphSyncPreviewGeneration += 1
+        careerGraphSyncPreview = nil
     }
 }
