@@ -161,14 +161,15 @@ struct CareerGraphSyncPreparationRequest: Codable, Equatable {
         state: OpenLARPState,
         session: BackendUserSession,
         requestedAt: Date = Date(),
-        includePrivateEvidence: Bool = false,
+        includePrivateEvidence: Bool? = nil,
         includeReadinessHistory: Bool = true,
         schemaVersion: Int = 1
     ) {
         let privacy = state.userProfile?.privacy ?? .localDefault
+        let resolvedIncludePrivateEvidence = includePrivateEvidence ?? privacy.shareWins
         let policy = CloudExportPolicy(
             ownerUserID: session.ownerUserID,
-            includePrivateEvidence: includePrivateEvidence,
+            includePrivateEvidence: resolvedIncludePrivateEvidence,
             includeReadinessHistory: includeReadinessHistory,
             allowsLongTermMemoryWrite: privacy.memoryMode == .cloudReady && session.isAuthenticated,
             requiresApprovalForExternalActions: session.requiresUserApprovalForExternalActions
@@ -182,7 +183,7 @@ struct CareerGraphSyncPreparationRequest: Codable, Equatable {
             policy: policy,
             generatedAt: requestedAt
         )
-        self.includePrivateEvidence = includePrivateEvidence
+        self.includePrivateEvidence = resolvedIncludePrivateEvidence
         self.integrationRoutes = session.integrationRoutes
     }
 }
@@ -263,6 +264,66 @@ struct CareerGraphSyncResult: Codable, Equatable {
     }
 }
 
+struct CareerGraphSyncPreview: Codable, Equatable {
+    var schemaVersion: Int
+    var status: CareerGraphSyncStatus
+    var requestedAt: Date
+    var preparedAt: Date
+    var documentCount: Int
+    var proofUploadCount: Int
+    var proofUploadByteCount: Int
+    var includedPrivateEvidence: Bool
+    var allowsLongTermMemoryWrite: Bool
+    var didContactNetwork: Bool
+    var requiresAuthenticationToSync: Bool
+    var integrationRoutes: [BackendIntegrationRoute]
+
+    init(
+        status: CareerGraphSyncStatus,
+        requestedAt: Date,
+        preparedAt: Date,
+        documentCount: Int,
+        proofUploadCount: Int,
+        proofUploadByteCount: Int,
+        includedPrivateEvidence: Bool,
+        allowsLongTermMemoryWrite: Bool,
+        didContactNetwork: Bool,
+        requiresAuthenticationToSync: Bool,
+        integrationRoutes: [BackendIntegrationRoute] = [],
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.status = status
+        self.requestedAt = requestedAt
+        self.preparedAt = preparedAt
+        self.documentCount = documentCount
+        self.proofUploadCount = proofUploadCount
+        self.proofUploadByteCount = proofUploadByteCount
+        self.includedPrivateEvidence = includedPrivateEvidence
+        self.allowsLongTermMemoryWrite = allowsLongTermMemoryWrite
+        self.didContactNetwork = didContactNetwork
+        self.requiresAuthenticationToSync = requiresAuthenticationToSync
+        self.integrationRoutes = integrationRoutes
+    }
+
+    init(request: CareerGraphSyncPreparationRequest, result: CareerGraphSyncResult) {
+        self.init(
+            status: result.status,
+            requestedAt: result.requestedAt,
+            preparedAt: result.preparedAt,
+            documentCount: result.firestoreDocumentPaths.count,
+            proofUploadCount: result.uploadIntents.count,
+            proofUploadByteCount: result.uploadIntents.reduce(0) { $0 + $1.byteCount },
+            includedPrivateEvidence: request.includePrivateEvidence,
+            allowsLongTermMemoryWrite: request.snapshot.policy.allowsLongTermMemoryWrite,
+            didContactNetwork: result.didContactNetwork,
+            requiresAuthenticationToSync: result.requiresAuthenticationToSync,
+            integrationRoutes: result.integrationRoutes
+        )
+    }
+}
+
+@MainActor
 protocol CareerGraphSyncServicing {
     func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult
 }

@@ -51,16 +51,16 @@ struct CareerGraphSetupStatusContent: Equatable {
                 isComplete: hasGoal
             ),
             CareerGraphSetupStatusRow(
-                title: "Account sync",
-                value: session.isAuthenticated ? "Connected" : "Not connected",
+                title: "Account",
+                value: session.isAuthenticated ? "Connected" : "Device only",
                 detail: session.authProvider == .localMock ? "Local profile only" : session.authProvider.rawValue,
                 systemImage: "person.crop.circle.badge.checkmark",
                 isComplete: session.isAuthenticated
             ),
             CareerGraphSetupStatusRow(
                 title: "Agent context",
-                value: session.genkit.status.label,
-                detail: "No client LLM or external action is required",
+                value: session.genkit.status == .localMock ? "On-device" : session.genkit.status.label,
+                detail: "Career graph preview runs on this device",
                 systemImage: "sparkles",
                 isComplete: session.genkit.status == .localMock || session.genkit.status == .connected
             ),
@@ -72,10 +72,10 @@ struct CareerGraphSetupStatusContent: Equatable {
                 isComplete: proofCount > 0
             ),
             CareerGraphSetupStatusRow(
-                title: "Proof upload",
+                title: "File backup",
                 value: Self.proofUploadValue(for: session.storage.status),
-                detail: session.storage.status == .connected ? "Storage route available" : "Files stay on this device",
-                systemImage: "icloud.and.arrow.up",
+                detail: session.storage.status == .connected ? "File backup is available" : "Files stay on this device",
+                systemImage: "folder.fill",
                 isComplete: session.storage.status == .connected || session.storage.status == .configured
             ),
             CareerGraphSetupStatusRow(
@@ -109,7 +109,7 @@ struct CareerGraphSetupStatusContent: Equatable {
             nextActionDetail = "Complete one quest and save evidence the agent can reuse."
         } else if !session.isAuthenticated {
             nextActionTitle = "Connect account later"
-            nextActionDetail = "Your graph is prepared locally. Firebase Auth is still future setup."
+            nextActionDetail = "Your graph is prepared locally. Account setup is still future work."
         } else {
             nextActionTitle = "Review sync status"
             nextActionDetail = "Your account-ready evidence graph has the basics connected."
@@ -127,5 +127,79 @@ struct CareerGraphSetupStatusContent: Equatable {
         case .notConnected, .localMock, .disabled:
             "Local only"
         }
+    }
+}
+
+struct CareerGraphSyncPreviewContent: Equatable {
+    var title: String
+    var subtitle: String
+    var rows: [CareerGraphSetupStatusRow]
+    var nextStep: String
+
+    var displayText: String {
+        ([title, subtitle, nextStep] + rows.flatMap { [$0.title, $0.value, $0.detail] })
+            .joined(separator: " ")
+    }
+
+    init(preview: CareerGraphSyncPreview) {
+        title = preview.status == .failed
+            ? "Career graph preview needs retry"
+            : "Career graph preview ready"
+        subtitle = "OpenLARP prepared your saved career graph locally. This preview did not upload or sync anything."
+        nextStep = preview.requiresAuthenticationToSync
+            ? "Sign in will be required before any real account backup."
+            : "Account backup can run once the backend route is connected."
+
+        rows = [
+            CareerGraphSetupStatusRow(
+                title: "Saved records",
+                value: preview.documentCount == 1 ? "1 prepared" : "\(preview.documentCount) prepared",
+                detail: "Profile, goal, proof, outcomes, and readiness records",
+                systemImage: "doc.on.doc.fill",
+                isComplete: preview.documentCount > 0
+            ),
+            CareerGraphSetupStatusRow(
+                title: "Local files",
+                value: Self.fileCountText(preview.proofUploadCount),
+                detail: preview.proofUploadCount > 0
+                    ? "\(Self.byteCountText(preview.proofUploadByteCount)) would need backup later"
+                    : "No proof files need backup",
+                systemImage: "folder.fill",
+                isComplete: preview.proofUploadCount > 0
+            ),
+            CareerGraphSetupStatusRow(
+                title: "Privacy",
+                value: preview.includedPrivateEvidence ? "In local preview" : "Held back",
+                detail: preview.allowsLongTermMemoryWrite
+                    ? "Memory writes are allowed after account setup"
+                    : "No long-term memory write is allowed by this preview",
+                systemImage: "lock.shield.fill",
+                isComplete: !preview.allowsLongTermMemoryWrite
+            ),
+            CareerGraphSetupStatusRow(
+                title: "Network",
+                value: preview.didContactNetwork ? "Backend adapter" : "No network contact",
+                detail: preview.didContactNetwork
+                    ? "A backend adapter handled this preview"
+                    : "This preview was built on this device",
+                systemImage: "antenna.radiowaves.left.and.right",
+                isComplete: !preview.didContactNetwork
+            )
+        ]
+    }
+
+    private static func fileCountText(_ count: Int) -> String {
+        count == 1 ? "1 file" : "\(count) files"
+    }
+
+    private static func byteCountText(_ byteCount: Int) -> String {
+        guard byteCount > 0 else { return "No bytes" }
+        if byteCount < 1_000 {
+            return "\(byteCount) bytes"
+        }
+        if byteCount < 1_000_000 {
+            return "\(byteCount / 1_000) KB"
+        }
+        return "\(byteCount / 1_000_000) MB"
     }
 }

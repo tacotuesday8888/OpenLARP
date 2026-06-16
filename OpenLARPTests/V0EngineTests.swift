@@ -1774,6 +1774,35 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(json.localizedCaseInsensitiveContains("api key"))
     }
 
+    func testCareerGraphSyncPreparationRequestDerivesPrivateEvidenceFromSharingPreference() {
+        let now = Date(timeIntervalSince1970: 13_550)
+        var privateState = OpenLARPEngine.confirmGoal(goal, now: now)
+        privateState.userProfile?.privacy.shareWins = false
+        let privateSession = BackendUserSession.localOnly(for: privateState)
+
+        let privateRequest = CareerGraphSyncPreparationRequest(
+            state: privateState,
+            session: privateSession,
+            requestedAt: now
+        )
+
+        XCTAssertFalse(privateRequest.includePrivateEvidence)
+        XCTAssertFalse(privateRequest.snapshot.policy.includePrivateEvidence)
+
+        var shareableState = OpenLARPEngine.confirmGoal(goal, now: now)
+        shareableState.userProfile?.privacy.shareWins = true
+        let shareableSession = BackendUserSession.localOnly(for: shareableState)
+
+        let shareableRequest = CareerGraphSyncPreparationRequest(
+            state: shareableState,
+            session: shareableSession,
+            requestedAt: now
+        )
+
+        XCTAssertTrue(shareableRequest.includePrivateEvidence)
+        XCTAssertTrue(shareableRequest.snapshot.policy.includePrivateEvidence)
+    }
+
     func testCareerGraphSetupStatusContentShowsMissingSetupActions() {
         let emptyContent = CareerGraphSetupStatusContent(
             state: .empty,
@@ -1782,8 +1811,8 @@ final class V0EngineTests: XCTestCase {
 
         XCTAssertEqual(emptyContent.nextActionTitle, "Set career goal")
         XCTAssertEqual(emptyContent.rows.first { $0.title == "Goal" }?.value, "Missing")
-        XCTAssertEqual(emptyContent.rows.first { $0.title == "Account sync" }?.value, "Not connected")
-        XCTAssertEqual(emptyContent.rows.first { $0.title == "Proof upload" }?.value, "Local only")
+        XCTAssertEqual(emptyContent.rows.first { $0.title == "Account" }?.value, "Device only")
+        XCTAssertEqual(emptyContent.rows.first { $0.title == "File backup" }?.value, "Local only")
 
         let goalState = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 13_600))
         let goalContent = CareerGraphSetupStatusContent(
@@ -1793,7 +1822,7 @@ final class V0EngineTests: XCTestCase {
 
         XCTAssertEqual(goalContent.nextActionTitle, "Add first proof")
         XCTAssertEqual(goalContent.rows.first { $0.title == "Goal" }?.value, "Set")
-        XCTAssertEqual(goalContent.rows.first { $0.title == "Agent context" }?.value, "Local mock")
+        XCTAssertEqual(goalContent.rows.first { $0.title == "Agent context" }?.value, "On-device")
     }
 
     func testCareerGraphSetupStatusContentSummarizesConnectedEvidenceAndPrivacy() {
@@ -1840,6 +1869,288 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(displayText.contains(proof.id.uuidString))
         XCTAssertFalse(displayText.contains(outcome.id.uuidString))
         XCTAssertFalse(displayText.contains("Private notes"))
+    }
+
+    @MainActor
+    func testStorePreparesCareerGraphSyncPreviewWithoutContactingNetwork() async throws {
+        let now = Date(timeIntervalSince1970: 13_800)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let attachment = ProofAttachment(
+            id: UUID(uuidString: "E1E1E1E1-E1E1-E1E1-E1E1-E1E1E1E1E1E1")!,
+            fileName: "proof-upload.png",
+            originalFileName: "private-proof-upload.png",
+            contentType: "image/png",
+            byteCount: 77_000,
+            createdAt: now,
+            localRelativePath: "ProofAttachments/private-device-path.png"
+        )
+        let proof = ProofRecord(
+            id: UUID(uuidString: "E2E2E2E2-E2E2-E2E2-E2E2-E2E2E2E2E2E2")!,
+            questID: UUID(uuidString: "E3E3E3E3-E3E3-E3E3-E3E3-E3E3E3E3E3E3")!,
+            questTitle: "Create one tiny proof artifact",
+            kind: .proof,
+            text: "I shipped a real SwiftUI proof artifact and saved the screenshot locally.",
+            link: "https://example.com/proof",
+            attachments: [attachment],
+            submittedAt: now,
+            quality: QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 88,
+                label: "Strong proof",
+                reason: "Real artifact",
+                improvement: "Tie it to one role requirement.",
+                xpEarned: 120,
+                readinessDelta: 7
+            )
+        )
+        let syncService = RecordingCareerGraphSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            careerGraphSyncService: syncService,
+            now: { now }
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: now)
+        store.state.progress.recentProof = [proof]
+        store.state.progress.proofCount = 1
+        store.state.userProfile?.privacy.memoryMode = .cloudReady
+        store.state.userProfile?.privacy.shareWins = true
+
+        await store.prepareCareerGraphSyncPreview()
+
+        let preview = try XCTUnwrap(store.careerGraphSyncPreview)
+        XCTAssertEqual(syncService.requests.count, 1)
+        XCTAssertEqual(preview.status, .preparedLocally)
+        XCTAssertEqual(preview.documentCount, 5)
+        XCTAssertEqual(preview.proofUploadCount, 1)
+        XCTAssertEqual(preview.proofUploadByteCount, attachment.byteCount)
+        XCTAssertEqual(preview.includedPrivateEvidence, true)
+        XCTAssertEqual(preview.allowsLongTermMemoryWrite, false)
+        XCTAssertEqual(preview.didContactNetwork, false)
+        XCTAssertEqual(preview.requiresAuthenticationToSync, true)
+        XCTAssertEqual(preview.preparedAt, now)
+        XCTAssertFalse(store.isPreparingCareerGraphSyncPreview)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(syncService.requests.first?.includePrivateEvidence, true)
+        XCTAssertFalse(syncService.requests.first?.snapshot.policy.allowsLongTermMemoryWrite ?? true)
+    }
+
+    @MainActor
+    func testStoreCareerGraphSyncPreviewKeepsPrivateEvidenceOutByDefault() async {
+        let now = Date(timeIntervalSince1970: 13_850)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let attachment = ProofAttachment(
+            id: UUID(uuidString: "E4E4E4E4-E4E4-E4E4-E4E4-E4E4E4E4E4E4")!,
+            fileName: "proof-upload.png",
+            originalFileName: "private-proof-upload.png",
+            contentType: "image/png",
+            byteCount: 77_000,
+            createdAt: now,
+            localRelativePath: "ProofAttachments/private-device-path.png"
+        )
+        let proof = ProofRecord(
+            id: UUID(uuidString: "E5E5E5E5-E5E5-E5E5-E5E5-E5E5E5E5E5E5")!,
+            questID: UUID(uuidString: "E6E6E6E6-E6E6-E6E6-E6E6-E6E6E6E6E6E6")!,
+            questTitle: "Create one tiny proof artifact",
+            kind: .proof,
+            text: "This proof should stay out of the local backup preview by default.",
+            link: "https://example.com/private-proof",
+            attachments: [attachment],
+            submittedAt: now,
+            quality: QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 82,
+                label: "Strong proof",
+                reason: "Concrete enough to count.",
+                improvement: "Tie it to one role requirement.",
+                xpEarned: 100,
+                readinessDelta: 6
+            )
+        )
+        let syncService = RecordingCareerGraphSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            careerGraphSyncService: syncService,
+            now: { now }
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: now)
+        store.state.progress.recentProof = [proof]
+        store.state.progress.proofCount = 1
+        store.state.userProfile?.privacy.shareWins = false
+
+        await store.prepareCareerGraphSyncPreview()
+
+        XCTAssertEqual(syncService.requests.first?.includePrivateEvidence, false)
+        XCTAssertEqual(syncService.requests.first?.snapshot.proofRecords.count, 0)
+        XCTAssertEqual(store.careerGraphSyncPreview?.includedPrivateEvidence, false)
+        XCTAssertEqual(store.careerGraphSyncPreview?.proofUploadCount, 0)
+    }
+
+    @MainActor
+    func testStoreBlocksCareerGraphSyncPreviewUntilGoalExists() async {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let syncService = RecordingCareerGraphSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            careerGraphSyncService: syncService
+        )
+
+        await store.prepareCareerGraphSyncPreview()
+
+        XCTAssertNil(store.careerGraphSyncPreview)
+        XCTAssertEqual(syncService.requests.count, 0)
+        XCTAssertEqual(store.errorMessage, "Set a career goal before previewing your career graph.")
+        XCTAssertFalse(store.isPreparingCareerGraphSyncPreview)
+    }
+
+    @MainActor
+    func testStoreSurfacesCareerGraphSyncPreviewFailureAndClearsStalePreview() async {
+        let now = Date(timeIntervalSince1970: 13_900)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let syncService = RecordingCareerGraphSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            careerGraphSyncService: syncService,
+            now: { now }
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: now)
+
+        await store.prepareCareerGraphSyncPreview()
+        XCTAssertNotNil(store.careerGraphSyncPreview)
+        syncService.shouldThrow = true
+
+        await store.prepareCareerGraphSyncPreview()
+
+        XCTAssertNil(store.careerGraphSyncPreview)
+        XCTAssertEqual(store.errorMessage, "The local career graph preview could not be prepared.")
+        XCTAssertFalse(store.isPreparingCareerGraphSyncPreview)
+    }
+
+    @MainActor
+    func testStoreClearsCareerGraphSyncPreviewWhenPrivacyChanges() async {
+        let now = Date(timeIntervalSince1970: 13_950)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let syncService = RecordingCareerGraphSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            careerGraphSyncService: syncService,
+            now: { now }
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: now)
+
+        await store.prepareCareerGraphSyncPreview()
+        XCTAssertNotNil(store.careerGraphSyncPreview)
+
+        store.updateProfilePrivacy(memoryMode: CareerMemoryMode.off, shareWins: false)
+
+        XCTAssertNil(store.careerGraphSyncPreview)
+    }
+
+    @MainActor
+    func testStoreClearsCareerGraphSyncPreviewWhenProofIsClaimed() async {
+        let now = Date(timeIntervalSince1970: 13_960)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let syncService = RecordingCareerGraphSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            careerGraphSyncService: syncService,
+            now: { now },
+            calendar: testCalendar
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: now)
+        store.startCurrentQuest()
+        await store.checkProof(
+            kind: .proof,
+            text: "I created a real proof artifact, connected it to the target role, and saved the steps I took.",
+            link: "https://example.com/proof"
+        )
+        await store.prepareCareerGraphSyncPreview()
+        XCTAssertNotNil(store.careerGraphSyncPreview)
+
+        store.claimPendingQualityResult()
+
+        XCTAssertNil(store.careerGraphSyncPreview)
+    }
+
+    @MainActor
+    func testStoreClearsCareerGraphSyncPreviewWhenOutcomeChanges() async {
+        let now = Date(timeIntervalSince1970: 13_970)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let syncService = RecordingCareerGraphSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            careerGraphSyncService: syncService,
+            now: { now }
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: now)
+        await store.prepareCareerGraphSyncPreview()
+        XCTAssertNotNil(store.careerGraphSyncPreview)
+
+        store.logOutcome(
+            kind: .applied,
+            title: "Applied to iOS internship",
+            organizationName: "Example Labs",
+            occurredAt: now,
+            isPrivate: true
+        )
+
+        XCTAssertNil(store.careerGraphSyncPreview)
+    }
+
+    @MainActor
+    func testStoreDoesNotPublishStaleCareerGraphSyncPreviewAfterPrivacyChangesDuringPreparation() async {
+        let now = Date(timeIntervalSince1970: 13_975)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let syncService = DeferredCareerGraphSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            careerGraphSyncService: syncService,
+            now: { now }
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: now)
+        store.state.userProfile?.privacy.shareWins = true
+
+        let previewTask = Task {
+            await store.prepareCareerGraphSyncPreview()
+        }
+        for _ in 0..<20 where syncService.pendingContinuation == nil {
+            await Task.yield()
+        }
+        XCTAssertEqual(syncService.requests.count, 1)
+
+        store.updateProfilePrivacy(memoryMode: CareerMemoryMode.off, shareWins: false)
+        syncService.resume()
+        await previewTask.value
+
+        XCTAssertNil(store.careerGraphSyncPreview)
+        XCTAssertFalse(store.isPreparingCareerGraphSyncPreview)
+    }
+
+    func testCareerGraphSyncPreviewContentDescribesLocalOnlyPreparedState() {
+        let now = Date(timeIntervalSince1970: 14_000)
+        let preview = CareerGraphSyncPreview(
+            status: .preparedLocally,
+            requestedAt: now,
+            preparedAt: now,
+            documentCount: 6,
+            proofUploadCount: 1,
+            proofUploadByteCount: 77_000,
+            includedPrivateEvidence: true,
+            allowsLongTermMemoryWrite: false,
+            didContactNetwork: false,
+            requiresAuthenticationToSync: true
+        )
+
+        let content = CareerGraphSyncPreviewContent(preview: preview)
+
+        XCTAssertEqual(content.title, "Career graph preview ready")
+        XCTAssertEqual(content.rows.first { $0.title == "Saved records" }?.value, "6 prepared")
+        XCTAssertEqual(content.rows.first { $0.title == "Local files" }?.value, "1 file")
+        XCTAssertEqual(content.rows.first { $0.title == "Network" }?.value, "No network contact")
+        XCTAssertEqual(content.nextStep, "Sign in will be required before any real account backup.")
+        XCTAssertFalse(content.displayText.contains("users/"))
+        XCTAssertFalse(content.displayText.contains("private-device-path"))
+        XCTAssertFalse(content.displayText.contains("synced"))
+        XCTAssertFalse(content.displayText.contains("uploaded"))
     }
 
     @MainActor
@@ -2265,4 +2576,35 @@ private struct InvalidPlanV0AIWorkflowService: V0AIWorkflowServicing {
 
 private enum TestWorkflowError: Error {
     case expectedFailure
+}
+
+private final class RecordingCareerGraphSyncService: CareerGraphSyncServicing {
+    var requests: [CareerGraphSyncPreparationRequest] = []
+    var shouldThrow = false
+
+    func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
+        requests.append(request)
+        if shouldThrow {
+            throw TestWorkflowError.expectedFailure
+        }
+        return try await LocalMockCareerGraphSyncService().prepareSync(request)
+    }
+}
+
+private final class DeferredCareerGraphSyncService: CareerGraphSyncServicing {
+    var requests: [CareerGraphSyncPreparationRequest] = []
+    var pendingContinuation: CheckedContinuation<Void, Never>?
+
+    func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
+        requests.append(request)
+        await withCheckedContinuation { continuation in
+            pendingContinuation = continuation
+        }
+        return try await LocalMockCareerGraphSyncService().prepareSync(request)
+    }
+
+    func resume() {
+        pendingContinuation?.resume()
+        pendingContinuation = nil
+    }
 }

@@ -175,6 +175,36 @@ struct ProfileView: View {
                         CareerGraphStatusRow(row: row)
                     }
                 }
+
+                if let preview = store.careerGraphSyncPreview {
+                    CareerGraphSyncPreviewSummary(content: CareerGraphSyncPreviewContent(preview: preview))
+                }
+
+                Button {
+                    Task {
+                        await store.prepareCareerGraphSyncPreview()
+                    }
+                } label: {
+                    if store.isPreparingCareerGraphSyncPreview {
+                        HStack {
+                            ProgressView()
+                                .tint(.white)
+                            Text("Building Preview")
+                        }
+                    } else {
+                        Label("Preview Saved Career Graph", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(store.isPreparingCareerGraphSyncPreview || store.state.needsGoalSetup)
+                .opacity(store.state.needsGoalSetup ? 0.45 : 1)
+
+                Text(store.state.needsGoalSetup
+                    ? "Set a career goal before previewing your career graph."
+                    : "This prepares a local preview only. It does not upload or sync anything.")
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -458,6 +488,39 @@ private struct CareerGraphStatusRow: View {
         }
 
         return .openLARPSoftInk
+    }
+}
+
+private struct CareerGraphSyncPreviewSummary: View {
+    let content: CareerGraphSyncPreviewContent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+
+            VStack(alignment: .leading, spacing: 5) {
+                Label(content.title, systemImage: "checkmark.seal.fill")
+                    .font(.subheadline.weight(.black))
+                    .foregroundStyle(Color.openLARPGreen)
+
+                Text(content.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(content.rows) { row in
+                    CareerGraphStatusRow(row: row)
+                }
+            }
+
+            Text(content.nextStep)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.openLARPInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 
