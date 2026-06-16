@@ -1198,9 +1198,10 @@ struct OpenLARPState: Codable, Equatable {
     var proofDraft: ProofSubmission?
     var proofDraftQualityResult: QualityCheckResult?
     var outcomeLog: [CareerOutcomeRecord]
+    var betaEvents: [BetaEventRecord]
 
     init(
-        schemaVersion: Int = 4,
+        schemaVersion: Int = 5,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
         targetRoles: [TargetRole] = [],
@@ -1214,7 +1215,8 @@ struct OpenLARPState: Codable, Equatable {
         skippedToday: SkippedTodayState = .empty,
         proofDraft: ProofSubmission? = nil,
         proofDraftQualityResult: QualityCheckResult? = nil,
-        outcomeLog: [CareerOutcomeRecord] = []
+        outcomeLog: [CareerOutcomeRecord] = [],
+        betaEvents: [BetaEventRecord] = []
     ) {
         self.schemaVersion = schemaVersion
         self.userProfile = userProfile
@@ -1231,10 +1233,11 @@ struct OpenLARPState: Codable, Equatable {
         self.proofDraft = proofDraft
         self.proofDraftQualityResult = proofDraftQualityResult
         self.outcomeLog = outcomeLog
+        self.betaEvents = betaEvents
     }
 
     static let empty = OpenLARPState(
-        schemaVersion: 4,
+        schemaVersion: 5,
         userProfile: nil,
         goal: nil,
         targetRoles: [],
@@ -1274,12 +1277,13 @@ extension OpenLARPState {
         case proofDraft
         case proofDraftQualityResult
         case outcomeLog
+        case betaEvents
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         _ = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        schemaVersion = 4
+        schemaVersion = 5
         userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
         goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
@@ -1294,6 +1298,7 @@ extension OpenLARPState {
         proofDraft = try container.decodeIfPresent(ProofSubmission.self, forKey: .proofDraft)
         proofDraftQualityResult = try container.decodeIfPresent(QualityCheckResult.self, forKey: .proofDraftQualityResult)
         outcomeLog = try container.decodeIfPresent([CareerOutcomeRecord].self, forKey: .outcomeLog) ?? []
+        betaEvents = (try? container.decodeIfPresent(LossyBetaEventRecordList.self, forKey: .betaEvents)?.records) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1313,6 +1318,7 @@ extension OpenLARPState {
         try container.encodeIfPresent(proofDraft, forKey: .proofDraft)
         try container.encodeIfPresent(proofDraftQualityResult, forKey: .proofDraftQualityResult)
         try container.encode(outcomeLog, forKey: .outcomeLog)
+        try container.encode(betaEvents, forKey: .betaEvents)
     }
 }
 

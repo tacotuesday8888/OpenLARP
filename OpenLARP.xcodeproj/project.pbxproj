@@ -8,7 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		066022B6F446EAEBE1111E35 /* V0EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 164D2BA7F6FBB1EFCC90AED1 /* V0EngineTests.swift */; };
+		BEE7A001BEE7A001BEE7A001 /* BetaMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE7A002BEE7A002BEE7A002 /* BetaMeasurementTests.swift */; };
 		1874F67C93F87254F33A36AD /* OpenLARPBackendContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09BB0C0A238D1B10FD983B7 /* OpenLARPBackendContracts.swift */; };
+		BEE7A003BEE7A003BEE7A003 /* OpenLARPBetaMeasurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE7A004BEE7A004BEE7A004 /* OpenLARPBetaMeasurement.swift */; };
 		32C31764411CEAE637F3BF77 /* ProofArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38A7544CA52F69EBE427B74 /* ProofArchiveView.swift */; };
 		42E61DF100617B92FA6DF24F /* OpenLARPPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B5407A901AC7364EF7007F /* OpenLARPPersistence.swift */; };
 		4A3ED57F10AF410BC0E36884 /* AgentDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E02D1D89FFC34F40C6425094 /* AgentDashboardView.swift */; };
@@ -53,6 +55,7 @@
 		12DC112A777D32FCE8C8EE04 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		158AE576FBB3972BC8DFD382 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		164D2BA7F6FBB1EFCC90AED1 /* V0EngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V0EngineTests.swift; sourceTree = "<group>"; };
+		BEE7A002BEE7A002BEE7A002 /* BetaMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaMeasurementTests.swift; sourceTree = "<group>"; };
 		1AC8DF9C8B644BCA48495AD3 /* QuestMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestMapView.swift; sourceTree = "<group>"; };
 		3447BF3025FF32A58EA3A1A1 /* OpenLARPStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPStyle.swift; sourceTree = "<group>"; };
 		39D289D644FCC10CBC98DD5C /* ShareCardExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardExportTests.swift; sourceTree = "<group>"; };
@@ -60,6 +63,7 @@
 		56D7AF5561E51E598C8712C6 /* AgentChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChatView.swift; sourceTree = "<group>"; };
 		5D7F4B923B6F71934D650D8F /* OpenLARPAIWorkflowContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPAIWorkflowContracts.swift; sourceTree = "<group>"; };
 		601E79F5844C6D89A84C354B /* OpenLARPApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPApp.swift; sourceTree = "<group>"; };
+		BEE7A004BEE7A004BEE7A004 /* OpenLARPBetaMeasurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPBetaMeasurement.swift; sourceTree = "<group>"; };
 		6665166CE64A9711A38AB8EA /* ProofAttachmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofAttachmentViews.swift; sourceTree = "<group>"; };
 		6F2DD9179C36FA9D458C063C /* OpenLARPCareerGraphStatusContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPCareerGraphStatusContent.swift; sourceTree = "<group>"; };
 		8681DC4AF3698AFDF55C89E7 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
@@ -86,6 +90,7 @@
 		08E5E3C74C5BC85B7AE004CC /* OpenLARPTests */ = {
 			isa = PBXGroup;
 			children = (
+				BEE7A002BEE7A002BEE7A002 /* BetaMeasurementTests.swift */,
 				39D289D644FCC10CBC98DD5C /* ShareCardExportTests.swift */,
 				164D2BA7F6FBB1EFCC90AED1 /* V0EngineTests.swift */,
 			);
@@ -148,6 +153,7 @@
 				5D7F4B923B6F71934D650D8F /* OpenLARPAIWorkflowContracts.swift */,
 				D8140307FB53F34C6E1DD623 /* OpenLARPAttachmentStore.swift */,
 				B09BB0C0A238D1B10FD983B7 /* OpenLARPBackendContracts.swift */,
+				BEE7A004BEE7A004BEE7A004 /* OpenLARPBetaMeasurement.swift */,
 				6F2DD9179C36FA9D458C063C /* OpenLARPCareerGraphStatusContent.swift */,
 				A1D35430DA658F76CC63EB78 /* OpenLARPCloudContracts.swift */,
 				4C9DDB58985395E7EA0E0FAC /* OpenLARPEngine.swift */,
@@ -262,6 +268,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BEE7A001BEE7A001BEE7A001 /* BetaMeasurementTests.swift in Sources */,
 				90703ABE6E8B564BA1179B96 /* ShareCardExportTests.swift in Sources */,
 				066022B6F446EAEBE1111E35 /* V0EngineTests.swift in Sources */,
 			);
@@ -281,6 +288,7 @@
 				AE1297BA0332DD5C9843B616 /* OpenLARPApp.swift in Sources */,
 				AB4887FCA0C7653AA0A5FFC0 /* OpenLARPAttachmentStore.swift in Sources */,
 				1874F67C93F87254F33A36AD /* OpenLARPBackendContracts.swift in Sources */,
+				BEE7A003BEE7A003BEE7A003 /* OpenLARPBetaMeasurement.swift in Sources */,
 				E17D2CA04E8911F8C538A95A /* OpenLARPCareerGraphStatusContent.swift in Sources */,
 				F380ECF5AD25C430559A830F /* OpenLARPCloudContracts.swift in Sources */,
 				73D12E53D11D4CA44568D043 /* OpenLARPEngine.swift in Sources */,

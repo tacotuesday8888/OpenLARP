@@ -21,6 +21,7 @@ struct ProfileView: View {
                 careerSummaryCard
                 accountProfileCard
                 careerGraphSetupStatusCard
+                betaMeasurementCard
                 activeGoalCard
                 recentOutcomesCard
                 streakCard
@@ -59,6 +60,33 @@ struct ProfileView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This clears the local diagnostic and questline so you can set a new target.")
+        }
+    }
+
+    private var betaMeasurementCard: some View {
+        let content = BetaMeasurementSummaryContent(state: store.state)
+
+        return Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(feature: .agent, eyebrow: "Local beta", title: "Measurement export")
+
+                HStack(spacing: 8) {
+                    SummaryTile(value: "\(content.totalEvents)", label: "Events", color: .openLARPBlue)
+                    SummaryTile(value: "\(content.completedQuestCount)", label: "Done", color: .openLARPGreen)
+                    SummaryTile(value: "\(content.readinessOverall)%", label: "Ready", color: .openLARPCoral)
+                }
+
+                Text(content.privacyNotice)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ShareLink(item: content.searchableText) {
+                    Label("Export Beta Summary", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
         }
     }
 

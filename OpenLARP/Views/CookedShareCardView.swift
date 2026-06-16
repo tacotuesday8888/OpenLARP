@@ -36,11 +36,23 @@ struct CookedShareCardImageExportService {
 struct CookedShareCardSheet: View {
     let privateContent: CookedShareCardContent
     let detailedContent: CookedShareCardContent
+    let onImagePrepared: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var hideDetails = true
     @State private var imageExport: CookedShareCardImageExport?
     @State private var exportErrorMessage: String?
     @State private var isRenderingExport = false
+    @State private var preparedContentIDs: Set<String> = []
+
+    init(
+        privateContent: CookedShareCardContent,
+        detailedContent: CookedShareCardContent,
+        onImagePrepared: @escaping () -> Void = {}
+    ) {
+        self.privateContent = privateContent
+        self.detailedContent = detailedContent
+        self.onImagePrepared = onImagePrepared
+    }
 
     private var activeContent: CookedShareCardContent {
         hideDetails ? privateContent : detailedContent
@@ -138,6 +150,10 @@ struct CookedShareCardSheet: View {
         do {
             let payload = CookedShareCardExportPayload(content: activeContent)
             imageExport = try CookedShareCardImageExportService().render(payload: payload)
+            if !preparedContentIDs.contains(activeContent.id) {
+                preparedContentIDs.insert(activeContent.id)
+                onImagePrepared()
+            }
         } catch {
             exportErrorMessage = "Image export failed. The text-only fallback keeps private details hidden."
         }
