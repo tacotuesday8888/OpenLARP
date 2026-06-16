@@ -1182,6 +1182,74 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(twice.progress.badges, once.progress.badges)
     }
 
+    func testEditingOutcomeUpdatesRecordWithoutDoubleCountingProgress() {
+        let outcomeTime = Date(timeIntervalSince1970: 12_600)
+        let editTime = outcomeTime.addingTimeInterval(120)
+        let outcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "ABABABAB-ABAB-ABAB-ABAB-ABABABABABAB")!,
+            kind: .applied,
+            title: "Applied to campus iOS internship",
+            organizationName: "Example Labs",
+            note: "Original application note.",
+            occurredAt: outcomeTime,
+            createdAt: outcomeTime,
+            updatedAt: outcomeTime,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        let initial = OpenLARPEngine.confirmGoal(goal, now: outcomeTime)
+        let logged = OpenLARPEngine.logOutcome(outcome, in: initial, now: outcomeTime)
+        var edited = outcome
+        edited.kind = .interview
+        edited.title = "Scheduled campus iOS internship screen"
+        edited.organizationName = "Example Labs Recruiting"
+        edited.note = "Recruiter confirmed a truthful first screen."
+        edited.occurredAt = editTime
+        edited.updatedAt = editTime
+
+        let updated = OpenLARPEngine.updateOutcome(edited, in: logged, now: editTime)
+
+        XCTAssertEqual(updated.outcomeLog.count, 1)
+        XCTAssertEqual(updated.outcomeLog.first?.id, outcome.id)
+        XCTAssertEqual(updated.outcomeLog.first?.kind, .interview)
+        XCTAssertEqual(updated.outcomeLog.first?.title, "Scheduled campus iOS internship screen")
+        XCTAssertEqual(updated.outcomeLog.first?.updatedAt, editTime)
+        XCTAssertNil(updated.outcomeLog.first?.deletedAt)
+        XCTAssertEqual(updated.progress.xp, logged.progress.xp)
+        XCTAssertEqual(updated.progress.readiness, logged.progress.readiness)
+        XCTAssertEqual(updated.progress.readinessHistory.count, logged.progress.readinessHistory.count)
+        XCTAssertTrue(updated.agentBrief.summary.contains("1 career outcome"))
+    }
+
+    func testDeletingOutcomeHidesRecordButKeepsHistoricalProgressSnapshot() {
+        let outcomeTime = Date(timeIntervalSince1970: 12_620)
+        let deleteTime = outcomeTime.addingTimeInterval(180)
+        let outcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "ACACACAC-ACAC-ACAC-ACAC-ACACACACACAC")!,
+            kind: .applied,
+            title: "Applied to first iOS internship",
+            organizationName: "Example Labs",
+            note: "Application submitted with real proof.",
+            occurredAt: outcomeTime,
+            createdAt: outcomeTime,
+            updatedAt: outcomeTime,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        let initial = OpenLARPEngine.confirmGoal(goal, now: outcomeTime)
+        let logged = OpenLARPEngine.logOutcome(outcome, in: initial, now: outcomeTime)
+
+        let deleted = OpenLARPEngine.deleteOutcome(id: outcome.id, in: logged, now: deleteTime)
+
+        XCTAssertEqual(deleted.outcomeLog.count, 1)
+        XCTAssertEqual(deleted.outcomeLog.first?.deletedAt, deleteTime)
+        XCTAssertEqual(OutcomeLogContent(outcomes: deleted.outcomeLog).outcomes.count, 0)
+        XCTAssertEqual(deleted.progress.xp, logged.progress.xp)
+        XCTAssertEqual(deleted.progress.readiness, logged.progress.readiness)
+        XCTAssertEqual(deleted.progress.readinessHistory.last?.relatedOutcomeID, outcome.id)
+        XCTAssertTrue(deleted.agentBrief.summary.contains("0 career outcomes"))
+    }
+
     func testRejectionOutcomeDoesNotPretendReadinessImproved() {
         let outcomeTime = Date(timeIntervalSince1970: 12_700)
         let outcome = CareerOutcomeRecord(
@@ -1266,6 +1334,69 @@ final class V0EngineTests: XCTestCase {
     }
 
     @MainActor
+    func testStoreRejectsEditingOutcomeToFutureDate() async {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = Date(timeIntervalSince1970: 13_020)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { now }
+        )
+
+        await store.confirmGoal(goal)
+        store.logOutcome(
+            kind: .applied,
+            title: "Applied to iOS internship",
+            organizationName: "Example Labs",
+            note: "Submitted with real proof.",
+            occurredAt: now,
+            isPrivate: true
+        )
+        let outcomeID = store.state.outcomeLog[0].id
+        let originalState = store.state
+
+        store.updateOutcome(
+            id: outcomeID,
+            kind: .interview,
+            title: "Future interview",
+            organizationName: "Example Labs",
+            note: "This date should not save.",
+            occurredAt: now.addingTimeInterval(86_400),
+            isPrivate: true
+        )
+
+        XCTAssertEqual(store.state, originalState)
+        XCTAssertEqual(store.errorMessage, "Choose today or a past date for the outcome.")
+    }
+
+    @MainActor
+    func testStoreReturnsClearErrorWhenEditingMissingOutcome() async {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = Date(timeIntervalSince1970: 13_040)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { now }
+        )
+
+        await store.confirmGoal(goal)
+        store.updateOutcome(
+            id: UUID(uuidString: "ADADADAD-ADAD-ADAD-ADAD-ADADADADADAD")!,
+            kind: .applied,
+            title: "Missing outcome edit",
+            organizationName: "Example Labs",
+            note: "",
+            occurredAt: now,
+            isPrivate: true
+        )
+
+        XCTAssertTrue(store.state.outcomeLog.isEmpty)
+        XCTAssertEqual(store.errorMessage, "That outcome could not be found.")
+    }
+
+    @MainActor
     func testStoreRejectsFutureOutcomeDatesBeforeSaving() async {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1340,6 +1471,223 @@ final class V0EngineTests: XCTestCase {
         XCTAssertTrue(decoded.outcomeLog.isEmpty)
     }
 
+    func testOlderOutcomeRecordDecodesWithDefaultMutationMetadata() throws {
+        let createdAt = Date(timeIntervalSince1970: 13_140)
+        let outcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "B7B7B7B7-B7B7-B7B7-B7B7-B7B7B7B7B7B7")!,
+            kind: .applied,
+            title: "Applied to iOS internship",
+            organizationName: "Example Labs",
+            note: "Old local JSON before mutation metadata existed.",
+            occurredAt: createdAt,
+            createdAt: createdAt,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: try encoder.encode(outcome)) as? [String: Any])
+        object.removeValue(forKey: "updatedAt")
+        object.removeValue(forKey: "deletedAt")
+        let oldData = try JSONSerialization.data(withJSONObject: object)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode(CareerOutcomeRecord.self, from: oldData)
+
+        XCTAssertEqual(decoded.id, outcome.id)
+        XCTAssertEqual(decoded.updatedAt, createdAt)
+        XCTAssertNil(decoded.deletedAt)
+        XCTAssertFalse(decoded.isDeleted)
+    }
+
+    @MainActor
+    func testStoreEditsOutcomeAndPersistsAcrossReloadWithoutProgressReplay() async {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        var clock = Date(timeIntervalSince1970: 13_160)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { clock }
+        )
+
+        await store.confirmGoal(goal)
+        store.logOutcome(
+            kind: .applied,
+            title: "Applied to iOS internship",
+            organizationName: "Example Labs",
+            note: "Submitted the first truthful application.",
+            occurredAt: clock,
+            isPrivate: true
+        )
+        let loggedState = store.state
+        let outcomeID = store.state.outcomeLog[0].id
+
+        clock = clock.addingTimeInterval(300)
+        store.updateOutcome(
+            id: outcomeID,
+            kind: .interview,
+            title: "Scheduled iOS internship screen",
+            organizationName: "Example Labs Recruiting",
+            note: "Recruiter confirmed a first screen.",
+            occurredAt: clock,
+            isPrivate: false
+        )
+
+        XCTAssertEqual(store.state.outcomeLog.count, 1)
+        XCTAssertEqual(store.state.outcomeLog[0].kind, .interview)
+        XCTAssertEqual(store.state.outcomeLog[0].title, "Scheduled iOS internship screen")
+        XCTAssertEqual(store.state.outcomeLog[0].updatedAt, clock)
+        XCTAssertFalse(store.state.outcomeLog[0].isPrivate)
+        XCTAssertEqual(store.state.progress.xp, loggedState.progress.xp)
+        XCTAssertEqual(store.state.progress.readiness, loggedState.progress.readiness)
+        XCTAssertEqual(store.state.progress.readinessHistory.count, loggedState.progress.readinessHistory.count)
+
+        let reloaded = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { clock }
+        )
+
+        XCTAssertEqual(reloaded.state.outcomeLog.count, 1)
+        XCTAssertEqual(reloaded.state.outcomeLog[0].id, outcomeID)
+        XCTAssertEqual(reloaded.state.outcomeLog[0].kind, .interview)
+        XCTAssertEqual(reloaded.state.outcomeLog[0].title, "Scheduled iOS internship screen")
+        XCTAssertEqual(reloaded.state.outcomeLog[0].updatedAt, clock)
+        XCTAssertEqual(reloaded.state.progress.xp, loggedState.progress.xp)
+        XCTAssertEqual(reloaded.state.progress.readinessHistory.count, loggedState.progress.readinessHistory.count)
+    }
+
+    func testCloudCareerGraphSnapshotExportsBackendSafeEvidenceByPolicy() throws {
+        let now = Date(timeIntervalSince1970: 13_200)
+        let attachment = ProofAttachment(
+            id: UUID(uuidString: "AEAEAEAE-AEAE-AEAE-AEAE-AEAEAEAEAEAE")!,
+            fileName: "proof.png",
+            originalFileName: "local-proof.png",
+            contentType: "image/png",
+            byteCount: 42_000,
+            createdAt: now,
+            localRelativePath: "ProofAttachments/private-device-path.png"
+        )
+        let proof = ProofRecord(
+            id: UUID(uuidString: "AFAFAFAF-AFAF-AFAF-AFAF-AFAFAFAFAFAF")!,
+            questID: UUID(uuidString: "B0B0B0B0-B0B0-B0B0-B0B0-B0B0B0B0B0B0")!,
+            questTitle: "Create one tiny proof artifact",
+            kind: .proof,
+            text: "I built a real proof artifact and saved a screenshot.",
+            link: "https://example.com/proof",
+            attachments: [attachment],
+            submittedAt: now,
+            quality: QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 88,
+                label: "Strong proof",
+                reason: "Real artifact",
+                improvement: "Tie it to one role requirement.",
+                xpEarned: 120,
+                readinessDelta: 7
+            )
+        )
+        let privateOutcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "B1B1B1B1-B1B1-B1B1-B1B1-B1B1B1B1B1B1")!,
+            kind: .interview,
+            title: "Private recruiter screen",
+            organizationName: "Example Labs",
+            note: "Sensitive notes stay local unless export policy allows them.",
+            occurredAt: now,
+            createdAt: now,
+            updatedAt: now,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        let publicOutcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "B2B2B2B2-B2B2-B2B2-B2B2-B2B2B2B2B2B2")!,
+            kind: .offer,
+            title: "Share-safe internship offer",
+            organizationName: "Example Labs",
+            note: "Public win summary.",
+            occurredAt: now,
+            createdAt: now,
+            updatedAt: now,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: false
+        )
+        var deletedOutcome = publicOutcome
+        deletedOutcome.id = UUID(uuidString: "B8B8B8B8-B8B8-B8B8-B8B8-B8B8B8B8B8B8")!
+        deletedOutcome.title = "Deleted share-safe outcome"
+        deletedOutcome.updatedAt = now.addingTimeInterval(60)
+        deletedOutcome.deletedAt = now.addingTimeInterval(60)
+        var state = OpenLARPEngine.confirmGoal(goal, now: now)
+        state.progress.recentProof = [proof]
+        state.progress.proofCount = 1
+        state.outcomeLog = [privateOutcome, publicOutcome, deletedOutcome]
+        let mapper = LocalCareerGraphCloudMapper()
+
+        let privateSnapshot = mapper.makeSnapshot(
+            from: state,
+            policy: CloudExportPolicy(ownerUserID: "user_123", includePrivateEvidence: false),
+            generatedAt: now
+        )
+        let fullSnapshot = mapper.makeSnapshot(
+            from: state,
+            policy: CloudExportPolicy(ownerUserID: "user_123", includePrivateEvidence: true),
+            generatedAt: now
+        )
+
+        XCTAssertEqual(privateSnapshot.ownerUserID, "user_123")
+        XCTAssertTrue(privateSnapshot.proofRecords.isEmpty)
+        XCTAssertEqual(privateSnapshot.outcomes.map(\.metadata.localID), [publicOutcome.id.uuidString])
+        XCTAssertEqual(fullSnapshot.proofRecords.count, 1)
+        XCTAssertEqual(fullSnapshot.proofRecords.first?.attachments.first?.storagePath, "users/user_123/proofAttachments/\(attachment.id.uuidString)")
+        XCTAssertEqual(fullSnapshot.outcomes.map(\.metadata.localID), [privateOutcome.id.uuidString, publicOutcome.id.uuidString])
+        XCTAssertFalse(fullSnapshot.outcomes.map(\.metadata.localID).contains(deletedOutcome.id.uuidString))
+
+        let encoded = try JSONEncoder().encode(fullSnapshot)
+        let json = String(decoding: encoded, as: UTF8.self)
+        XCTAssertFalse(json.contains("localRelativePath"))
+        XCTAssertFalse(json.contains("private-device-path"))
+        XCTAssertNoThrow(try JSONDecoder().decode(CloudCareerGraphSnapshot.self, from: encoded))
+    }
+
+    func testCloudCareerOutcomeDocumentRoundTripsStableBackendFields() throws {
+        let now = Date(timeIntervalSince1970: 13_300)
+        let outcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "B3B3B3B3-B3B3-B3B3-B3B3-B3B3B3B3B3B3")!,
+            kind: .applied,
+            title: "Applied to iOS internship",
+            organizationName: "Example Labs",
+            note: "Submitted a truthful application.",
+            occurredAt: now,
+            createdAt: now,
+            updatedAt: now,
+            targetRoleID: UUID(uuidString: "B4B4B4B4-B4B4-B4B4-B4B4-B4B4B4B4B4B4")!,
+            targetRoleTitle: goal.targetRole,
+            relatedQuestID: UUID(uuidString: "B5B5B5B5-B5B5-B5B5-B5B5-B5B5B5B5B5B5")!,
+            relatedProofID: UUID(uuidString: "B6B6B6B6-B6B6-B6B6-B6B6-B6B6B6B6B6B6")!,
+            isPrivate: true
+        )
+
+        let document = CloudCareerOutcomeDocument(
+            outcome: outcome,
+            ownerUserID: "user_123"
+        )
+        let decoded = try JSONDecoder().decode(
+            CloudCareerOutcomeDocument.self,
+            from: try JSONEncoder().encode(document)
+        )
+
+        XCTAssertEqual(decoded.metadata.ownerUserID, "user_123")
+        XCTAssertEqual(decoded.metadata.localID, outcome.id.uuidString)
+        XCTAssertEqual(decoded.kind, .applied)
+        XCTAssertEqual(decoded.targetRoleID, outcome.targetRoleID?.uuidString)
+        XCTAssertEqual(decoded.relatedQuestID, outcome.relatedQuestID?.uuidString)
+        XCTAssertEqual(decoded.relatedProofID, outcome.relatedProofID?.uuidString)
+        XCTAssertEqual(decoded.collectionPath, "users/user_123/outcomes")
+        XCTAssertEqual(decoded.documentPath, "users/user_123/outcomes/\(outcome.id.uuidString)")
+    }
+
     @MainActor
     func testV0AIWorkflowContractsExposeOnlyNarrowV0Jobs() async throws {
         XCTAssertEqual(V0AIWorkflowKind.allCases, [
@@ -1397,6 +1745,40 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(String(describing: request).contains("OpenLARPState"))
         XCTAssertFalse(String(describing: request).contains("sk-"))
         XCTAssertFalse(String(describing: request).localizedCaseInsensitiveContains("api key"))
+    }
+
+    func testV0AIWorkflowContextSnapshotIncludesSafeOutcomeContextWithoutPrivateNotes() throws {
+        let now = Date(timeIntervalSince1970: 14_300)
+        let outcome = CareerOutcomeRecord(
+            id: UUID(uuidString: "B9B9B9B9-B9B9-B9B9-B9B9-B9B9B9B9B9B9")!,
+            kind: .interview,
+            title: "Private recruiter screen title",
+            organizationName: "Example Labs",
+            note: "Sensitive recruiter detail must not enter the narrow agent context.",
+            occurredAt: now,
+            createdAt: now,
+            updatedAt: now,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        var deletedOutcome = outcome
+        deletedOutcome.id = UUID(uuidString: "BABABABA-BABA-BABA-BABA-BABABABABABA")!
+        deletedOutcome.deletedAt = now.addingTimeInterval(60)
+        deletedOutcome.updatedAt = now.addingTimeInterval(60)
+        var state = OpenLARPEngine.confirmGoal(goal, now: now)
+        state.outcomeLog = [outcome, deletedOutcome]
+
+        let request = V0ProgressSummaryRequest(
+            state: state,
+            requestedAt: now.addingTimeInterval(120)
+        )
+
+        XCTAssertEqual(request.context.outcomes.activeOutcomeCount, 1)
+        XCTAssertEqual(request.context.outcomes.latestOutcomeKind, .interview)
+        XCTAssertEqual(request.context.outcomes.latestOutcomeOccurredAt, now)
+        XCTAssertEqual(request.context.outcomes.recentOutcomeKinds, [.interview])
+        XCTAssertFalse(String(describing: request.context.outcomes).contains("Sensitive recruiter detail"))
+        XCTAssertFalse(String(describing: request.context.outcomes).contains("Private recruiter screen title"))
     }
 
     @MainActor

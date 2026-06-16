@@ -208,15 +208,12 @@ enum OpenLARPEngine {
         now: Date = Date()
     ) -> OpenLARPState {
         var next = state
+        var savedOutcome = outcome
+        savedOutcome.deletedAt = nil
         let isExistingOutcome = next.outcomeLog.contains { $0.id == outcome.id }
-        next.outcomeLog.removeAll { $0.id == outcome.id }
-        next.outcomeLog.insert(outcome, at: 0)
-        next.outcomeLog.sort { lhs, rhs in
-            if lhs.occurredAt == rhs.occurredAt {
-                return lhs.createdAt > rhs.createdAt
-            }
-            return lhs.occurredAt > rhs.occurredAt
-        }
+        next.outcomeLog.removeAll { $0.id == savedOutcome.id }
+        next.outcomeLog.insert(savedOutcome, at: 0)
+        sortOutcomeLog(in: &next)
 
         if isExistingOutcome {
             next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
@@ -244,6 +241,44 @@ enum OpenLARPEngine {
             )
         }
 
+        next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
+        next.updatedAt = now
+        return next
+    }
+
+    static func updateOutcome(
+        _ outcome: CareerOutcomeRecord,
+        in state: OpenLARPState,
+        now: Date = Date()
+    ) -> OpenLARPState {
+        var next = state
+        guard next.outcomeLog.contains(where: { $0.id == outcome.id }) else {
+            return state
+        }
+
+        var updatedOutcome = outcome
+        updatedOutcome.updatedAt = now
+        next.outcomeLog.removeAll { $0.id == outcome.id }
+        next.outcomeLog.insert(updatedOutcome, at: 0)
+        sortOutcomeLog(in: &next)
+        next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
+        next.updatedAt = now
+        return next
+    }
+
+    static func deleteOutcome(
+        id: UUID,
+        in state: OpenLARPState,
+        now: Date = Date()
+    ) -> OpenLARPState {
+        var next = state
+        guard let index = next.outcomeLog.firstIndex(where: { $0.id == id }) else {
+            return state
+        }
+
+        next.outcomeLog[index].deletedAt = now
+        next.outcomeLog[index].updatedAt = now
+        sortOutcomeLog(in: &next)
         next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
         next.updatedAt = now
         return next
@@ -533,6 +568,15 @@ enum OpenLARPEngine {
         let nextIndex = completedIndex + 1
         guard state.plan.indices.contains(nextIndex) else { return nil }
         return state.plan[nextIndex].id
+    }
+
+    private static func sortOutcomeLog(in state: inout OpenLARPState) {
+        state.outcomeLog.sort { lhs, rhs in
+            if lhs.occurredAt == rhs.occurredAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+            return lhs.occurredAt > rhs.occurredAt
+        }
     }
 
     private static func lockFutureAvailableQuests(after id: UUID, in state: inout OpenLARPState) {

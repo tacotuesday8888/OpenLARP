@@ -488,7 +488,7 @@ enum AgentBriefFactory {
         let opportunities = rankingService.rank(sampleOpportunities(for: targetRole), for: targetRole)
         let proofCount = state.progress.proofCount
         let proofText = proofCount == 1 ? "1 proof receipt" : "\(proofCount) proof receipts"
-        let outcomeCount = state.outcomeLog.count
+        let outcomeCount = OutcomeLogContent(outcomes: state.outcomeLog).outcomes.count
         let outcomeText = outcomeCount == 1 ? "1 career outcome" : "\(outcomeCount) career outcomes"
         let currentQuest = state.currentQuest ?? state.plan.first { $0.status == .locked }
 

@@ -423,6 +423,8 @@ struct CareerOutcomeRecord: Codable, Equatable, Identifiable {
     var note: String
     var occurredAt: Date
     var createdAt: Date
+    var updatedAt: Date
+    var deletedAt: Date?
     var targetRoleID: UUID?
     var targetRoleTitle: String
     var relatedQuestID: UUID?
@@ -437,6 +439,8 @@ struct CareerOutcomeRecord: Codable, Equatable, Identifiable {
         note: String = "",
         occurredAt: Date,
         createdAt: Date = Date(),
+        updatedAt: Date? = nil,
+        deletedAt: Date? = nil,
         targetRoleID: UUID? = nil,
         targetRoleTitle: String,
         relatedQuestID: UUID? = nil,
@@ -450,11 +454,66 @@ struct CareerOutcomeRecord: Codable, Equatable, Identifiable {
         self.note = note
         self.occurredAt = occurredAt
         self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
+        self.deletedAt = deletedAt
         self.targetRoleID = targetRoleID
         self.targetRoleTitle = targetRoleTitle
         self.relatedQuestID = relatedQuestID
         self.relatedProofID = relatedProofID
         self.isPrivate = isPrivate
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case title
+        case organizationName
+        case note
+        case occurredAt
+        case createdAt
+        case updatedAt
+        case deletedAt
+        case targetRoleID
+        case targetRoleTitle
+        case relatedQuestID
+        case relatedProofID
+        case isPrivate
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(CareerOutcomeKind.self, forKey: .kind)
+        title = try container.decode(String.self, forKey: .title)
+        organizationName = try container.decode(String.self, forKey: .organizationName)
+        note = try container.decode(String.self, forKey: .note)
+        occurredAt = try container.decode(Date.self, forKey: .occurredAt)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        targetRoleID = try container.decodeIfPresent(UUID.self, forKey: .targetRoleID)
+        targetRoleTitle = try container.decode(String.self, forKey: .targetRoleTitle)
+        relatedQuestID = try container.decodeIfPresent(UUID.self, forKey: .relatedQuestID)
+        relatedProofID = try container.decodeIfPresent(UUID.self, forKey: .relatedProofID)
+        isPrivate = try container.decode(Bool.self, forKey: .isPrivate)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(title, forKey: .title)
+        try container.encode(organizationName, forKey: .organizationName)
+        try container.encode(note, forKey: .note)
+        try container.encode(occurredAt, forKey: .occurredAt)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+        try container.encodeIfPresent(targetRoleID, forKey: .targetRoleID)
+        try container.encode(targetRoleTitle, forKey: .targetRoleTitle)
+        try container.encodeIfPresent(relatedQuestID, forKey: .relatedQuestID)
+        try container.encodeIfPresent(relatedProofID, forKey: .relatedProofID)
+        try container.encode(isPrivate, forKey: .isPrivate)
     }
 
     var displayTitle: String {
@@ -466,6 +525,10 @@ struct CareerOutcomeRecord: Codable, Equatable, Identifiable {
         let trimmed = organizationName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+
+    var isDeleted: Bool {
+        deletedAt != nil
+    }
 }
 
 struct OutcomeLogContent: Equatable {
@@ -475,7 +538,7 @@ struct OutcomeLogContent: Equatable {
     var emptyMessage: String
 
     init(outcomes: [CareerOutcomeRecord]) {
-        self.outcomes = outcomes.sorted { lhs, rhs in
+        self.outcomes = outcomes.filter { !$0.isDeleted }.sorted { lhs, rhs in
             if lhs.occurredAt == rhs.occurredAt {
                 return lhs.createdAt > rhs.createdAt
             }

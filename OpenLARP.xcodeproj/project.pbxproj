@@ -26,6 +26,7 @@
 		AA18A9FAB1582A9275FA7162 /* OpenLARPAgentFoundation.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0ACFAB044B7890FEF3F2D6 /* OpenLARPAgentFoundation.swift */; };
 		AB4887FCA0C7653AA0A5FFC0 /* OpenLARPAttachmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8140307FB53F34C6E1DD623 /* OpenLARPAttachmentStore.swift */; };
 		AE1297BA0332DD5C9843B616 /* OpenLARPApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601E79F5844C6D89A84C354B /* OpenLARPApp.swift */; };
+		B8A4F94B6B6942AF9C947002 /* OpenLARPCloudContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8A4F94B6B6942AF9C947001 /* OpenLARPCloudContracts.swift */; };
 		C34A260A0624B02D5546FB74 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DC112A777D32FCE8C8EE04 /* ProfileView.swift */; };
 		CEA6BF731E8B671609BDCA34 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A32FE957054753A00B9C9E6F /* Assets.xcassets */; };
 		D59915296DAB4292D6F76100 /* ProgressTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39EFD52A49CEC4F79A489C4 /* ProgressTabView.swift */; };
@@ -63,6 +64,7 @@
 		A9B5407A901AC7364EF7007F /* OpenLARPPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPPersistence.swift; sourceTree = "<group>"; };
 		AF4DB2E5098EE63EAE50613B /* OpenLARP.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenLARP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B39EFD52A49CEC4F79A489C4 /* ProgressTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressTabView.swift; sourceTree = "<group>"; };
+		B8A4F94B6B6942AF9C947001 /* OpenLARPCloudContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPCloudContracts.swift; sourceTree = "<group>"; };
 		C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedQuestDetailView.swift; sourceTree = "<group>"; };
 		CC0ACFAB044B7890FEF3F2D6 /* OpenLARPAgentFoundation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPAgentFoundation.swift; sourceTree = "<group>"; };
 		D8140307FB53F34C6E1DD623 /* OpenLARPAttachmentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPAttachmentStore.swift; sourceTree = "<group>"; };
@@ -133,6 +135,7 @@
 				CC0ACFAB044B7890FEF3F2D6 /* OpenLARPAgentFoundation.swift */,
 				5D7F4B923B6F71934D650D8F /* OpenLARPAIWorkflowContracts.swift */,
 				D8140307FB53F34C6E1DD623 /* OpenLARPAttachmentStore.swift */,
+				B8A4F94B6B6942AF9C947001 /* OpenLARPCloudContracts.swift */,
 				4C9DDB58985395E7EA0E0FAC /* OpenLARPEngine.swift */,
 				DF8AF0E1D740ACDC741F585D /* OpenLARPModels.swift */,
 				A9B5407A901AC7364EF7007F /* OpenLARPPersistence.swift */,
@@ -260,6 +263,7 @@
 				AA18A9FAB1582A9275FA7162 /* OpenLARPAgentFoundation.swift in Sources */,
 				AE1297BA0332DD5C9843B616 /* OpenLARPApp.swift in Sources */,
 				AB4887FCA0C7653AA0A5FFC0 /* OpenLARPAttachmentStore.swift in Sources */,
+				B8A4F94B6B6942AF9C947002 /* OpenLARPCloudContracts.swift in Sources */,
 				73D12E53D11D4CA44568D043 /* OpenLARPEngine.swift in Sources */,
 				9ED25057BE1A58BA82F7BA50 /* OpenLARPModels.swift in Sources */,
 				42E61DF100617B92FA6DF24F /* OpenLARPPersistence.swift in Sources */,

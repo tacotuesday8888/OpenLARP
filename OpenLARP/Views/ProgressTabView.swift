@@ -1,10 +1,29 @@
 import SwiftUI
 
 typealias OutcomeLogSaveAction = (CareerOutcomeKind, String, String, String, Date, Bool) -> Void
+typealias OutcomeLogUpdateAction = (UUID, CareerOutcomeKind, String, String, String, Date, Bool) -> Void
+typealias OutcomeLogDeleteAction = (UUID) -> Void
 
 enum OutcomeLogAvailability {
     case available
     case readOnly(String)
+}
+
+enum OutcomeSheetDestination: Identifiable {
+    case log
+    case detail(CareerOutcomeRecord)
+    case edit(CareerOutcomeRecord)
+
+    var id: String {
+        switch self {
+        case .log:
+            "log"
+        case .detail(let outcome):
+            "detail-\(outcome.id.uuidString)"
+        case .edit(let outcome):
+            "edit-\(outcome.id.uuidString)"
+        }
+    }
 }
 
 struct ProgressTabView: View {
@@ -12,20 +31,26 @@ struct ProgressTabView: View {
     let attachmentURL: (ProofAttachment) -> URL
     let improveWeakestArea: () -> Void
     let logOutcome: OutcomeLogSaveAction
+    let updateOutcome: OutcomeLogUpdateAction
+    let deleteOutcome: OutcomeLogDeleteAction
     @State private var selectedProof: ProofRecord?
     @State private var showingProofArchive = false
-    @State private var showingOutcomeLog = false
+    @State private var outcomeSheetDestination: OutcomeSheetDestination?
 
     init(
         state: OpenLARPState,
         attachmentURL: @escaping (ProofAttachment) -> URL,
         improveWeakestArea: @escaping () -> Void,
-        logOutcome: @escaping OutcomeLogSaveAction = { _, _, _, _, _, _ in }
+        logOutcome: @escaping OutcomeLogSaveAction = { _, _, _, _, _, _ in },
+        updateOutcome: @escaping OutcomeLogUpdateAction = { _, _, _, _, _, _, _ in },
+        deleteOutcome: @escaping OutcomeLogDeleteAction = { _ in }
     ) {
         self.state = state
         self.attachmentURL = attachmentURL
         self.improveWeakestArea = improveWeakestArea
         self.logOutcome = logOutcome
+        self.updateOutcome = updateOutcome
+        self.deleteOutcome = deleteOutcome
     }
 
     var body: some View {
@@ -76,8 +101,39 @@ struct ProgressTabView: View {
                 attachmentURL: attachmentURL
             )
         }
-        .sheet(isPresented: $showingOutcomeLog) {
+        .sheet(item: $outcomeSheetDestination) { destination in
+            outcomeSheet(for: destination)
+        }
+    }
+
+    @ViewBuilder
+    private func outcomeSheet(for destination: OutcomeSheetDestination) -> some View {
+        switch destination {
+        case .log:
             OutcomeLogSheet(save: logOutcome)
+        case .detail(let outcome):
+            OutcomeDetailView(
+                outcome: outcome,
+                isEditable: !state.needsGoalSetup,
+                edit: {
+                    outcomeSheetDestination = .edit(outcome)
+                },
+                delete: {
+                    deleteOutcome(outcome.id)
+                }
+            )
+        case .edit(let outcome):
+            OutcomeLogSheet(outcome: outcome) { kind, title, organizationName, note, occurredAt, isPrivate in
+                updateOutcome(
+                    outcome.id,
+                    kind,
+                    title,
+                    organizationName,
+                    note,
+                    occurredAt,
+                    isPrivate
+                )
+            }
         }
     }
 
@@ -231,8 +287,10 @@ struct ProgressTabView: View {
             eyebrow: "Career history",
             title: "Outcome log",
             recentLimit: 3
-        ) {
-            showingOutcomeLog = true
+        ) { outcome in
+            outcomeSheetDestination = .detail(outcome)
+        } logOutcome: {
+            outcomeSheetDestination = .log
         }
     }
 
@@ -271,6 +329,7 @@ struct OutcomeLogCard: View {
     let title: String
     let recentLimit: Int
     var availability: OutcomeLogAvailability = .available
+    let openOutcome: (CareerOutcomeRecord) -> Void
     let logOutcome: () -> Void
 
     var body: some View {
@@ -312,7 +371,13 @@ struct OutcomeLogCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(content.outcomes.prefix(recentLimit)) { outcome in
-                        OutcomeRecordRow(outcome: outcome)
+                        Button {
+                            openOutcome(outcome)
+                        } label: {
+                            OutcomeRecordRow(outcome: outcome)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens outcome details")
                     }
                 }
             }
@@ -365,10 +430,17 @@ struct OutcomeRecordRow: View {
                     .foregroundStyle(Color.openLARPPurple)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.openLARPSoftInk)
+                .padding(.top, 3)
         }
         .padding(12)
         .background(Color.openLARPBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     private var metadataText: String {
@@ -386,6 +458,7 @@ struct OutcomeRecordRow: View {
 }
 
 struct OutcomeLogSheet: View {
+    let outcome: CareerOutcomeRecord?
     let save: OutcomeLogSaveAction
     @Environment(\.dismiss) private var dismiss
     @State private var kind: CareerOutcomeKind = .applied
@@ -394,6 +467,17 @@ struct OutcomeLogSheet: View {
     @State private var note = ""
     @State private var occurredAt = Date()
     @State private var isPrivate = true
+
+    init(outcome: CareerOutcomeRecord? = nil, save: @escaping OutcomeLogSaveAction) {
+        self.outcome = outcome
+        self.save = save
+        _kind = State(initialValue: outcome?.kind ?? .applied)
+        _title = State(initialValue: outcome?.title ?? "")
+        _organizationName = State(initialValue: outcome?.organizationName ?? "")
+        _note = State(initialValue: outcome?.note ?? "")
+        _occurredAt = State(initialValue: outcome?.occurredAt ?? Date())
+        _isPrivate = State(initialValue: outcome?.isPrivate ?? true)
+    }
 
     var body: some View {
         NavigationStack {
@@ -437,7 +521,7 @@ struct OutcomeLogSheet: View {
                     Text("This saves to local career history on this device. It is not uploaded, posted, or shown on a public profile.")
                 }
             }
-            .navigationTitle("Log Outcome")
+            .navigationTitle(outcome == nil ? "Log Outcome" : "Edit Outcome")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -466,6 +550,227 @@ struct OutcomeLogSheet: View {
 
     private var canSave: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+struct OutcomeDetailView: View {
+    let outcome: CareerOutcomeRecord
+    let isEditable: Bool
+    let edit: () -> Void
+    let delete: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingDeleteConfirmation = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    headerCard
+                    detailsCard
+                    noteCard
+                    provenanceCard
+                    actionCard
+                }
+                .padding(20)
+                .padding(.bottom, 24)
+            }
+            .background(Color.openLARPBackground)
+            .navigationTitle("Outcome")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+            .confirmationDialog(
+                "Delete outcome?",
+                isPresented: $showingDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Outcome", role: .destructive) {
+                    delete()
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the outcome from active history. Past readiness snapshots stay intact.")
+            }
+        }
+    }
+
+    private var headerCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                Label(outcome.kind.label, systemImage: outcome.kind.systemImage)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.openLARPPurple)
+                    .textCase(.uppercase)
+
+                Text(outcome.displayTitle)
+                    .font(.title3.weight(.black))
+                    .foregroundStyle(Color.openLARPInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    OutcomeDetailMetric(
+                        title: "Occurred",
+                        value: outcome.occurredAt.formatted(date: .abbreviated, time: .omitted),
+                        systemImage: "calendar"
+                    )
+                    OutcomeDetailMetric(
+                        title: "Privacy",
+                        value: outcome.isPrivate ? "Private" : "Share-safe",
+                        systemImage: outcome.isPrivate ? "lock.fill" : "checkmark.seal"
+                    )
+                }
+            }
+        }
+    }
+
+    private var detailsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(feature: .stats, eyebrow: "Evidence graph", title: "Career signal")
+
+                OutcomeDetailTextRow(title: "Organization", value: outcome.organizationText ?? "Not linked")
+                OutcomeDetailTextRow(title: "Target role", value: outcome.targetRoleTitle)
+                OutcomeDetailTextRow(title: "Saved", value: outcome.createdAt.formatted(date: .abbreviated, time: .shortened))
+
+                if outcome.updatedAt > outcome.createdAt {
+                    OutcomeDetailTextRow(title: "Last edited", value: outcome.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                }
+
+                Text(outcome.kind.recoveryPrompt)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var noteCard: some View {
+        let trimmedNote = outcome.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedNote.isEmpty {
+            Card {
+                OutcomeDetailTextBlock(title: "Private note", bodyText: trimmedNote)
+            }
+        }
+    }
+
+    private var provenanceCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(feature: .proof, eyebrow: "Links", title: "Related evidence")
+
+                OutcomeDetailTextRow(
+                    title: "Quest",
+                    value: outcome.relatedQuestID?.uuidString.prefix(8).description ?? "Not linked"
+                )
+                OutcomeDetailTextRow(
+                    title: "Proof",
+                    value: outcome.relatedProofID?.uuidString.prefix(8).description ?? "Not linked"
+                )
+
+                Text("These IDs keep the local record ready for future sync without exposing private proof by default.")
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionCard: some View {
+        if isEditable {
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Button {
+                        edit()
+                    } label: {
+                        Label("Edit Outcome", systemImage: "square.and.pencil")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Outcome", systemImage: "trash")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
+            }
+        } else {
+            Card {
+                Label("Saved as private history. Set a new goal before editing or logging more outcomes.", systemImage: "lock.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct OutcomeDetailMetric: View {
+    let title: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.openLARPGreen)
+                .textCase(.uppercase)
+
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.openLARPInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.openLARPBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct OutcomeDetailTextRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.openLARPGreen)
+                .textCase(.uppercase)
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(Color.openLARPSoftInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct OutcomeDetailTextBlock: View {
+    let title: String
+    let bodyText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Color.openLARPInk)
+
+            Text(bodyText)
+                .font(.body)
+                .foregroundStyle(Color.openLARPSoftInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

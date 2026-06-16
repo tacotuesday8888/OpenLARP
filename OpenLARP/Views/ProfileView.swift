@@ -5,7 +5,7 @@ struct ProfileView: View {
     @State private var showingResetConfirmation = false
     @State private var selectedProof: ProofRecord?
     @State private var showingProofArchive = false
-    @State private var showingOutcomeLog = false
+    @State private var outcomeSheetDestination: OutcomeSheetDestination?
 
     var body: some View {
         ScrollView {
@@ -44,17 +44,8 @@ struct ProfileView: View {
                 store.localURL(for: attachment)
             }
         }
-        .sheet(isPresented: $showingOutcomeLog) {
-            OutcomeLogSheet { kind, title, organizationName, note, occurredAt, isPrivate in
-                store.logOutcome(
-                    kind: kind,
-                    title: title,
-                    organizationName: organizationName,
-                    note: note,
-                    occurredAt: occurredAt,
-                    isPrivate: isPrivate
-                )
-            }
+        .sheet(item: $outcomeSheetDestination) { destination in
+            outcomeSheet(for: destination)
         }
         .confirmationDialog(
             "Change goal?",
@@ -67,6 +58,46 @@ struct ProfileView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This clears the local diagnostic and questline so you can set a new target.")
+        }
+    }
+
+    @ViewBuilder
+    private func outcomeSheet(for destination: OutcomeSheetDestination) -> some View {
+        switch destination {
+        case .log:
+            OutcomeLogSheet { kind, title, organizationName, note, occurredAt, isPrivate in
+                store.logOutcome(
+                    kind: kind,
+                    title: title,
+                    organizationName: organizationName,
+                    note: note,
+                    occurredAt: occurredAt,
+                    isPrivate: isPrivate
+                )
+            }
+        case .detail(let outcome):
+            OutcomeDetailView(
+                outcome: outcome,
+                isEditable: !store.state.needsGoalSetup,
+                edit: {
+                    outcomeSheetDestination = .edit(outcome)
+                },
+                delete: {
+                    store.deleteOutcome(id: outcome.id)
+                }
+            )
+        case .edit(let outcome):
+            OutcomeLogSheet(outcome: outcome) { kind, title, organizationName, note, occurredAt, isPrivate in
+                store.updateOutcome(
+                    id: outcome.id,
+                    kind: kind,
+                    title: title,
+                    organizationName: organizationName,
+                    note: note,
+                    occurredAt: occurredAt,
+                    isPrivate: isPrivate
+                )
+            }
         }
     }
 
@@ -113,9 +144,10 @@ struct ProfileView: View {
 
     @ViewBuilder
     private var recentOutcomesCard: some View {
-        if !store.state.outcomeLog.isEmpty {
+        let content = OutcomeLogContent(outcomes: store.state.outcomeLog)
+        if !content.outcomes.isEmpty {
             OutcomeLogCard(
-                content: OutcomeLogContent(outcomes: store.state.outcomeLog),
+                content: content,
                 feature: .profile,
                 eyebrow: "Private history",
                 title: "Recent outcomes",
@@ -123,8 +155,10 @@ struct ProfileView: View {
                 availability: store.state.needsGoalSetup
                     ? .readOnly("Set a new career goal before logging more outcomes. Existing outcomes stay saved as private history.")
                     : .available
-            ) {
-                showingOutcomeLog = true
+            ) { outcome in
+                outcomeSheetDestination = .detail(outcome)
+            } logOutcome: {
+                outcomeSheetDestination = .log
             }
         }
     }
