@@ -60,13 +60,19 @@ struct TodayView: View {
                 },
                 adjustGoal: {
                     store.resetGoal()
+                },
+                recordCookedCardPrepared: {
+                    store.recordCookedCardPrepared()
                 }
             )
         }
         .sheet(item: $selectedCookedShareCard) { content in
             CookedShareCardSheet(
                 privateContent: content,
-                detailedContent: CookedShareCardContent(state: store.state, includeDetails: true) ?? content
+                detailedContent: CookedShareCardContent(state: store.state, includeDetails: true) ?? content,
+                onImagePrepared: {
+                    store.recordCookedCardPrepared()
+                }
             )
         }
         .sheet(isPresented: $showingOutcomeLog) {
@@ -793,6 +799,7 @@ private struct DiagnosticResultBridgeView: View {
     let detailedShareContent: CookedShareCardContent?
     let startQuest: () -> Void
     let adjustGoal: () -> Void
+    let recordCookedCardPrepared: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var selectedShareCard: CookedShareCardContent?
 
@@ -919,7 +926,8 @@ private struct DiagnosticResultBridgeView: View {
             .sheet(item: $selectedShareCard) { shareContent in
                 CookedShareCardSheet(
                     privateContent: shareContent,
-                    detailedContent: detailedShareContent ?? shareContent
+                    detailedContent: detailedShareContent ?? shareContent,
+                    onImagePrepared: recordCookedCardPrepared
                 )
             }
         }

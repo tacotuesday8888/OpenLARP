@@ -41,11 +41,13 @@ final class OpenLARPStore {
         self.calendar = calendar
         do {
             let loadedState = try persistence.load()
-            state = OpenLARPEngine.refreshDailyAvailability(
+            let refreshedState = OpenLARPEngine.refreshDailyAvailability(
                 in: loadedState,
                 now: now(),
                 calendar: calendar
             )
+            state = refreshedState
+            recordNextDayReturnIfNeeded(previousState: loadedState, refreshedState: refreshedState, at: now())
             if state != loadedState {
                 do {
                     try persistence.save(state)
@@ -64,6 +66,7 @@ final class OpenLARPStore {
         guard !isGoalSetupRunning else { return }
         let previousPrivacy = state.userProfile?.privacy
         let previousOutcomeLog = state.outcomeLog
+        let previousBetaEvents = state.betaEvents
         let requestedAt = now()
         isGoalSetupRunning = true
         defer { isGoalSetupRunning = false }
@@ -97,6 +100,9 @@ final class OpenLARPStore {
             state.userProfile?.privacy = previousPrivacy
         }
         state.outcomeLog = previousOutcomeLog
+        state.betaEvents = previousBetaEvents
+        recordBetaEvent(.goalConfirmed, occurredAt: requestedAt)
+        recordBetaEvent(.diagnosticShown, occurredAt: requestedAt)
         state.agentBrief = AgentBriefFactory.makeBrief(for: state, generatedAt: requestedAt)
         pendingProof = nil
         pendingQualityResult = nil
@@ -113,10 +119,12 @@ final class OpenLARPStore {
         var existingProfile = state.userProfile
         existingProfile?.updatedAt = now()
         let existingOutcomeLog = state.outcomeLog
+        let existingBetaEvents = state.betaEvents
         deletePendingProofAttachments()
         state = OpenLARPEngine.resetGoal(now: now())
         state.userProfile = existingProfile
         state.outcomeLog = existingOutcomeLog
+        state.betaEvents = existingBetaEvents
         pendingProof = nil
         pendingQualityResult = nil
         clearCareerGraphSyncPreview()
@@ -126,8 +134,22 @@ final class OpenLARPStore {
 
     func startCurrentQuest() {
         refreshDailyAvailability()
-        mutate {
-            try OpenLARPEngine.startCurrentQuest(in: state, now: now())
+        let currentQuest = state.currentQuest
+        let shouldRecordStart = currentQuest?.status == .available
+        let isFirstQuestStart = state.progress.completedQuestCount == 0
+            && !state.betaEvents.contains { $0.kind == .firstQuestStarted }
+        do {
+            state = try OpenLARPEngine.startCurrentQuest(in: state, now: now())
+            if shouldRecordStart {
+                recordBetaEvent(
+                    isFirstQuestStart ? .firstQuestStarted : .questStarted,
+                    day: currentQuest?.day
+                )
+            }
+            errorMessage = nil
+            save()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -137,12 +159,14 @@ final class OpenLARPStore {
             return
         }
         refreshDailyAvailability()
+        let skippedQuest = state.currentQuest
         do {
             state = try OpenLARPEngine.skipCurrentQuest(
                 in: state,
                 now: now(),
                 calendar: calendar
             )
+            recordBetaEvent(.questSkipped, day: skippedQuest?.day)
             deletePendingProofAttachments()
             pendingProof = nil
             pendingQualityResult = nil
@@ -168,15 +192,17 @@ final class OpenLARPStore {
     ) async {
         guard !isProofChecking else { return }
         let questID = state.currentQuest?.id
+        let questDay = state.currentQuest?.day
+        let requestedAt = now()
         isProofChecking = true
         defer { isProofChecking = false }
         do {
-            let proof = ProofSubmission(kind: kind, text: text, link: link, attachments: attachments)
+            let proof = ProofSubmission(kind: kind, text: text, link: link, attachments: attachments, submittedAt: requestedAt)
             let response = try await aiWorkflowService.reviewProof(
                 V0ProofReviewRequest(
                     state: state,
                     proof: proof,
-                    requestedAt: now()
+                    requestedAt: requestedAt
                 )
             )
             guard state.currentQuest?.id == questID else { return }
@@ -184,6 +210,8 @@ final class OpenLARPStore {
             deletePendingProofAttachments(excluding: proof.attachments)
             pendingProof = proof
             pendingQualityResult = result
+            recordBetaEvent(.proofSubmitted, occurredAt: requestedAt, day: questDay)
+            recordBetaEvent(result.isAccepted ? .proofAccepted : .proofNeedsImprovement, occurredAt: requestedAt, day: questDay)
             errorMessage = nil
             persistProofDraft()
         } catch {
@@ -193,6 +221,7 @@ final class OpenLARPStore {
 
     func claimPendingQualityResult() {
         guard let pendingProof, let pendingQualityResult else { return }
+        let quest = state.currentQuest
         do {
             state = try OpenLARPEngine.claim(
                 pendingQualityResult,
@@ -201,6 +230,7 @@ final class OpenLARPStore {
                 now: now(),
                 calendar: calendar
             )
+            recordBetaEvent(.xpClaimed, day: quest?.day)
             self.pendingProof = nil
             self.pendingQualityResult = nil
             clearCareerGraphSyncPreview()
@@ -288,6 +318,7 @@ final class OpenLARPStore {
         )
 
         state = OpenLARPEngine.logOutcome(outcome, in: state, now: timestamp)
+        recordBetaEvent(.outcomeLogged, occurredAt: timestamp)
         clearCareerGraphSyncPreview()
         errorMessage = nil
         save()
@@ -379,12 +410,19 @@ final class OpenLARPStore {
             let result = try await careerGraphSyncService.prepareSync(request)
             guard previewGeneration == careerGraphSyncPreviewGeneration else { return }
             careerGraphSyncPreview = CareerGraphSyncPreview(request: request, result: result)
+            recordBetaEvent(.syncPreviewPrepared, occurredAt: requestedAt)
             errorMessage = nil
+            save()
         } catch {
             guard previewGeneration == careerGraphSyncPreviewGeneration else { return }
             clearCareerGraphSyncPreview()
             errorMessage = "The local career graph preview could not be prepared."
         }
+    }
+
+    func recordCookedCardPrepared() {
+        recordBetaEvent(.cookedCardPrepared)
+        save()
     }
 
     func runAgentScan() async {
@@ -431,7 +469,9 @@ final class OpenLARPStore {
             calendar: calendar
         )
         guard refreshedState != state else { return }
+        let previousState = state
         state = refreshedState
+        recordNextDayReturnIfNeeded(previousState: previousState, refreshedState: refreshedState, at: now())
         save()
     }
 
@@ -451,6 +491,38 @@ final class OpenLARPStore {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func recordBetaEvent(
+        _ kind: BetaEventKind,
+        occurredAt: Date? = nil,
+        day: Int? = nil
+    ) {
+        let event = BetaEventRecord(
+            kind: kind,
+            occurredAt: occurredAt ?? now(),
+            day: day
+        )
+        state.betaEvents.append(event)
+        if state.betaEvents.count > 500 {
+            state.betaEvents.removeFirst(state.betaEvents.count - 500)
+        }
+    }
+
+    private func recordNextDayReturnIfNeeded(
+        previousState: OpenLARPState,
+        refreshedState: OpenLARPState,
+        at timestamp: Date
+    ) {
+        let wasLockedForDay = previousState.dailyCadence.completedAt != nil || previousState.skippedToday.skippedAt != nil
+        guard wasLockedForDay, previousState != refreshedState, refreshedState.currentQuest != nil else { return }
+        let nextUnlockDate = previousState.dailyCadence.nextUnlockDate ?? previousState.skippedToday.nextUnlockDate
+        guard let nextUnlockDate, calendar.isDate(nextUnlockDate, inSameDayAs: timestamp) else { return }
+        let alreadyRecordedToday = refreshedState.betaEvents.contains { event in
+            event.kind == .nextDayReturn && calendar.isDate(event.occurredAt, inSameDayAs: timestamp)
+        }
+        guard !alreadyRecordedToday else { return }
+        recordBetaEvent(.nextDayReturn, occurredAt: timestamp, day: refreshedState.currentQuest?.day)
     }
 
     private func save() {
