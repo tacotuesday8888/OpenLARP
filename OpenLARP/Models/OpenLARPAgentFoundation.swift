@@ -573,7 +573,7 @@ enum AgentBriefFactory {
             title: "Career agent brief",
             summary: "For \(targetRole.title), readiness is \(state.progress.readiness.overall)%. The agent sees \(proofText), \(outcomeText), and \(opportunities.count) ranked next moves.",
             generatedAt: generatedAt,
-            providerRoute: .genkitBackend,
+            providerRoute: .localMock,
             targetRoleID: targetRole.id,
             opportunities: opportunities,
             nextSteps: nextSteps,
