@@ -79,6 +79,20 @@ struct AppRootView: View {
                             occurredAt: occurredAt,
                             isPrivate: isPrivate
                         )
+                    },
+                    updateOutcome: { id, kind, title, organizationName, note, occurredAt, isPrivate in
+                        store.updateOutcome(
+                            id: id,
+                            kind: kind,
+                            title: title,
+                            organizationName: organizationName,
+                            note: note,
+                            occurredAt: occurredAt,
+                            isPrivate: isPrivate
+                        )
+                    },
+                    deleteOutcome: { id in
+                        store.deleteOutcome(id: id)
                     }
                 )
             }

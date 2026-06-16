@@ -153,11 +153,27 @@ struct V0ProgressContext: Codable, Equatable {
     }
 }
 
+struct V0OutcomeContext: Codable, Equatable {
+    var activeOutcomeCount: Int
+    var latestOutcomeKind: CareerOutcomeKind?
+    var latestOutcomeOccurredAt: Date?
+    var recentOutcomeKinds: [CareerOutcomeKind]
+
+    init(outcomes: [CareerOutcomeRecord]) {
+        let visibleOutcomes = OutcomeLogContent(outcomes: outcomes).outcomes
+        activeOutcomeCount = visibleOutcomes.count
+        latestOutcomeKind = visibleOutcomes.first?.kind
+        latestOutcomeOccurredAt = visibleOutcomes.first?.occurredAt
+        recentOutcomeKinds = visibleOutcomes.prefix(5).map(\.kind)
+    }
+}
+
 struct V0AIWorkflowContextSnapshot: Codable, Equatable {
     var schemaVersion: Int
     var targetRoleTitle: String
     var currentQuest: Quest?
     var progress: V0ProgressContext
+    var outcomes: V0OutcomeContext
     var privacy: CareerUserPrivacySettings
     var allowsLongTermMemoryWrite: Bool
 
@@ -167,6 +183,7 @@ struct V0AIWorkflowContextSnapshot: Codable, Equatable {
         targetRoleTitle: String? = nil,
         currentQuest: Quest? = nil,
         progress: V0ProgressContext? = nil,
+        outcomes: V0OutcomeContext? = nil,
         privacy: CareerUserPrivacySettings? = nil,
         allowsLongTermMemoryWrite: Bool? = nil
     ) {
@@ -176,6 +193,7 @@ struct V0AIWorkflowContextSnapshot: Codable, Equatable {
         self.targetRoleTitle = targetRoleTitle ?? V0AIWorkflowContext.targetRoleTitle(in: state)
         self.currentQuest = currentQuest ?? state.currentQuest
         self.progress = progress ?? V0ProgressContext(progress: state.progress)
+        self.outcomes = outcomes ?? V0OutcomeContext(outcomes: state.outcomeLog)
         self.privacy = resolvedPrivacy
         self.allowsLongTermMemoryWrite = allowsLongTermMemoryWrite ?? V0AIWorkflowContext
             .allowsLongTermMemoryWrite(for: resolvedPrivacy)

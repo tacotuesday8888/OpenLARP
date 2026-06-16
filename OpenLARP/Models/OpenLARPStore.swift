@@ -269,6 +269,7 @@ final class OpenLARPStore {
             note: note.trimmingCharacters(in: .whitespacesAndNewlines),
             occurredAt: occurredAt,
             createdAt: timestamp,
+            updatedAt: timestamp,
             targetRoleID: targetRole?.id,
             targetRoleTitle: targetRoleTitle,
             relatedQuestID: relatedQuestID,
@@ -277,6 +278,65 @@ final class OpenLARPStore {
         )
 
         state = OpenLARPEngine.logOutcome(outcome, in: state, now: timestamp)
+        errorMessage = nil
+        save()
+    }
+
+    func updateOutcome(
+        id: UUID,
+        kind: CareerOutcomeKind,
+        title: String,
+        organizationName: String = "",
+        note: String = "",
+        occurredAt: Date,
+        isPrivate: Bool = true
+    ) {
+        guard let existingOutcome = state.outcomeLog.first(where: { $0.id == id }) else {
+            errorMessage = "That outcome could not be found."
+            return
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            errorMessage = "Add a short outcome title before saving."
+            return
+        }
+
+        let timestamp = now()
+        guard occurredAt <= timestamp else {
+            errorMessage = "Choose today or a past date for the outcome."
+            return
+        }
+
+        let updatedOutcome = CareerOutcomeRecord(
+            id: existingOutcome.id,
+            kind: kind,
+            title: trimmedTitle,
+            organizationName: organizationName.trimmingCharacters(in: .whitespacesAndNewlines),
+            note: note.trimmingCharacters(in: .whitespacesAndNewlines),
+            occurredAt: occurredAt,
+            createdAt: existingOutcome.createdAt,
+            updatedAt: timestamp,
+            deletedAt: existingOutcome.deletedAt,
+            targetRoleID: existingOutcome.targetRoleID,
+            targetRoleTitle: existingOutcome.targetRoleTitle,
+            relatedQuestID: existingOutcome.relatedQuestID,
+            relatedProofID: existingOutcome.relatedProofID,
+            isPrivate: isPrivate
+        )
+
+        state = OpenLARPEngine.updateOutcome(updatedOutcome, in: state, now: timestamp)
+        errorMessage = nil
+        save()
+    }
+
+    func deleteOutcome(id: UUID) {
+        guard state.outcomeLog.contains(where: { $0.id == id }) else {
+            errorMessage = "That outcome could not be found."
+            return
+        }
+
+        state = OpenLARPEngine.deleteOutcome(id: id, in: state, now: now())
         errorMessage = nil
         save()
     }
