@@ -40,6 +40,204 @@ struct CookedDiagnostic: Codable, Equatable {
     var readinessBaseline: Int
 }
 
+struct CookedDiagnosticResultContent: Equatable, Identifiable {
+    var id: UUID { firstQuestID }
+    var eyebrow: String
+    var title: String
+    var score: Int
+    var scoreText: String
+    var readinessScore: Int
+    var readinessText: String
+    var mainGap: String
+    var strongestSignal: String
+    var fastestFix: String
+    var firstQuestID: UUID
+    var firstQuestTitle: String
+    var firstQuestPurpose: String
+    var firstQuestMetaText: String
+    var primaryActionTitle: String
+    var shareActionTitle: String
+    var adjustGoalActionTitle: String
+    var explanationText: String
+
+    init?(state: OpenLARPState) {
+        guard let goal = state.goal,
+              let diagnostic = state.diagnostic,
+              let quest = state.currentQuest ??
+                state.plan.first(where: { $0.status == .locked }) ??
+                state.plan.first
+        else {
+            return nil
+        }
+
+        eyebrow = "Am I Cooked?"
+        title = diagnostic.label
+        score = diagnostic.score
+        scoreText = "\(diagnostic.score)/100 cooked"
+        readinessScore = state.progress.readiness.overall
+        readinessText = "\(state.progress.readiness.overall)% ready"
+        mainGap = diagnostic.mainGap
+        strongestSignal = diagnostic.strongestSignal
+        fastestFix = diagnostic.fastestFix
+        firstQuestID = quest.id
+        firstQuestTitle = quest.title
+        firstQuestPurpose = quest.purpose
+        firstQuestMetaText = "\(quest.timeEstimate), \(quest.difficulty), +\(quest.xpReward) XP"
+        primaryActionTitle = state.progress.completedQuestCount == 0 ? "Start My First Quest" : "Start Quest"
+        shareActionTitle = "Share Cooked Card"
+        adjustGoalActionTitle = "Adjust Goal"
+        let publicRole = PublicCareerCopy.safePublicRole(goal.targetRole, fallback: "your career goal")
+        explanationText = "This is a private baseline for \(publicRole), not an official employability grade."
+    }
+}
+
+struct CookedShareCardContent: Equatable, Identifiable {
+    var id: String { "\(targetRole.lowercased())-\(score)-\(includeDetails)" }
+    var title: String
+    var targetRole: String
+    var cookedLabel: String
+    var score: Int
+    var scoreText: String
+    var readinessText: String
+    var publicGapText: String
+    var recoveryText: String
+    var detailText: String?
+    var footerText: String
+    var shareText: String
+    var includeDetails: Bool
+
+    var displayText: String {
+        [
+            title,
+            cookedLabel,
+            scoreText,
+            readinessText,
+            publicGapText,
+            recoveryText,
+            detailText,
+            footerText
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+    }
+
+    init?(state: OpenLARPState, includeDetails: Bool = false) {
+        guard let goal = state.goal,
+              let diagnostic = state.diagnostic
+        else {
+            return nil
+        }
+
+        let role = PublicCareerCopy.safePublicRole(goal.targetRole, fallback: "my career goal")
+        targetRole = role
+        title = "Am I cooked for \(role)?"
+        cookedLabel = diagnostic.label
+        score = diagnostic.score
+        scoreText = "\(diagnostic.score)/100 cooked"
+        readinessText = "\(state.progress.readiness.overall)% ready"
+        publicGapText = Self.publicGapText(for: state)
+        recoveryText = "Recovery path: build one real proof artifact this week."
+        self.includeDetails = includeDetails
+        if includeDetails {
+            detailText = "First move: start one proof-building quest."
+        } else {
+            detailText = nil
+        }
+        footerText = "OpenLARP keeps the private details off this card."
+        shareText = [
+            "\(title) \(cookedLabel).",
+            "\(scoreText).",
+            "\(publicGapText).",
+            recoveryText,
+            detailText,
+            "Built with OpenLARP."
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+    }
+
+    private static func publicGapText(for state: OpenLARPState) -> String {
+        let gap = state.currentQuest?.gap ?? state.plan.first?.gap
+        guard let gap else { return "Main gap: career proof" }
+        return "Main gap: \(gap.title.lowercased())"
+    }
+
+}
+
+private enum PublicCareerCopy {
+    static func safePublicRole(_ value: String, fallback: String) -> String {
+        let trimmed = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+        guard !trimmed.isEmpty else { return fallback }
+        guard !looksPrivateForPublicCard(trimmed) else {
+            return fallback
+        }
+        return String(trimmed.prefix(80))
+    }
+
+    private static func looksPrivateForPublicCard(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        let blockedFragments = [
+            "@",
+            "http://",
+            "https://",
+            "www.",
+            "/users/",
+            "\\users\\",
+            "api key",
+            "apikey",
+            "token",
+            "secret",
+            "password",
+            "private",
+            "sk-",
+            "ghp_",
+            "pk_live",
+            "rk_live"
+        ]
+        if blockedFragments.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+
+        if value.contains("/") || value.contains("\\") {
+            return true
+        }
+
+        let domainFragments = [
+            ".com",
+            ".org",
+            ".net",
+            ".io",
+            ".dev",
+            ".edu",
+            ".gov",
+            ".ai",
+            ".co"
+        ]
+        if domainFragments.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+
+        if value.range(
+            of: #"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"#,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+
+        if value.range(
+            of: #"\.(pdf|png|jpe?g|txt|docx?|csv|json|md|swift|py|key|pem)\b"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil {
+            return true
+        }
+
+        return false
+    }
+}
+
 enum CareerGap: String, Codable, CaseIterable, Identifiable {
     case targetClarity
     case proofStrength

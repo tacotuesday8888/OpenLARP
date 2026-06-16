@@ -65,6 +65,227 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.plan.first?.timeEstimateMinutes, 90)
     }
 
+    func testCookedDiagnosticResultContentShowsScoreReadinessAndFirstQuest() throws {
+        let state = OpenLARPEngine.confirmGoal(goal)
+
+        let content = try XCTUnwrap(CookedDiagnosticResultContent(state: state))
+
+        XCTAssertEqual(content.eyebrow, "Am I Cooked?")
+        XCTAssertEqual(content.title, "Medium Cooked")
+        XCTAssertEqual(content.scoreText, "58/100 cooked")
+        XCTAssertEqual(content.readinessText, "42% ready")
+        XCTAssertEqual(content.mainGap, state.diagnostic?.mainGap)
+        XCTAssertEqual(content.strongestSignal, state.diagnostic?.strongestSignal)
+        XCTAssertEqual(content.fastestFix, state.diagnostic?.fastestFix)
+        XCTAssertEqual(content.firstQuestID, state.plan[0].id)
+        XCTAssertEqual(content.firstQuestTitle, state.plan[0].title)
+        XCTAssertEqual(content.firstQuestMetaText, "25 min, Starter, +120 XP")
+        XCTAssertEqual(content.primaryActionTitle, "Start My First Quest")
+        XCTAssertEqual(content.shareActionTitle, "Share Cooked Card")
+        XCTAssertEqual(content.adjustGoalActionTitle, "Adjust Goal")
+    }
+
+    func testCookedDiagnosticResultContentIsNilBeforeGoalSetup() {
+        XCTAssertNil(CookedDiagnosticResultContent(state: .empty))
+    }
+
+    func testCookedDiagnosticResultContentSanitizesPrivateTargetRoleInExplanation() throws {
+        let privateGoal = CareerGoal(
+            currentStatus: .student,
+            targetRole: "/Users/langqi/private/F1F1F1F1-F1F1-F1F1-F1F1-F1F1F1F1F1F1/sk-test-secret-api-key.txt",
+            timeline: "30 days",
+            background: "",
+            existingProof: "",
+            confidence: 3,
+            biggestBlocker: ""
+        )
+        let state = OpenLARPEngine.confirmGoal(privateGoal)
+
+        let content = try XCTUnwrap(CookedDiagnosticResultContent(state: state))
+
+        XCTAssertTrue(content.explanationText.contains("your career goal"))
+        XCTAssertFalse(content.explanationText.contains("/Users"))
+        XCTAssertFalse(content.explanationText.contains("F1F1F1F1-F1F1-F1F1-F1F1-F1F1F1F1F1F1"))
+        XCTAssertFalse(content.explanationText.contains("sk-test-secret"))
+        XCTAssertFalse(content.explanationText.localizedCaseInsensitiveContains("api key"))
+        XCTAssertFalse(content.explanationText.contains(".txt"))
+    }
+
+    func testCookedShareCardContentHidesPrivateGoalSetupDetailsByDefault() throws {
+        let sensitiveGoal = CareerGoal(
+            currentStatus: .student,
+            targetRole: "AI product internship",
+            timeline: "30 days",
+            background: "Private background: langqi@example.com, campus office, and personal visa concern.",
+            existingProof: "Secret Project Falcon, https://private.example.com/proof, and private repo notes.",
+            confidence: 2,
+            biggestBlocker: "Family money stress and confidential hiring anxiety."
+        )
+        let state = OpenLARPEngine.confirmGoal(sensitiveGoal)
+
+        let content = try XCTUnwrap(CookedShareCardContent(state: state))
+        let displayText = content.displayText + " " + content.shareText
+
+        XCTAssertEqual(content.title, "Am I cooked for AI product internship?")
+        XCTAssertTrue(displayText.contains("AI product internship"))
+        XCTAssertTrue(displayText.contains("Medium Cooked"))
+        XCTAssertFalse(displayText.contains("langqi@example.com"))
+        XCTAssertFalse(displayText.contains("campus office"))
+        XCTAssertFalse(displayText.contains("visa"))
+        XCTAssertFalse(displayText.contains("Secret Project Falcon"))
+        XCTAssertFalse(displayText.contains("private.example.com"))
+        XCTAssertFalse(displayText.contains("Family money"))
+        XCTAssertFalse(displayText.contains(sensitiveGoal.background))
+        XCTAssertFalse(displayText.contains(sensitiveGoal.existingProof))
+        XCTAssertFalse(displayText.contains(sensitiveGoal.biggestBlocker))
+    }
+
+    func testCookedShareCardContentNeverLeaksLocalPathsUUIDsOrSecrets() throws {
+        let now = Date(timeIntervalSince1970: 16_100)
+        let attachmentID = UUID(uuidString: "F1F1F1F1-F1F1-F1F1-F1F1-F1F1F1F1F1F1")!
+        let proofID = UUID(uuidString: "F2F2F2F2-F2F2-F2F2-F2F2-F2F2F2F2F2F2")!
+        let attachment = ProofAttachment(
+            id: attachmentID,
+            fileName: "local-private-proof.png",
+            originalFileName: "private-screenshot.png",
+            contentType: "image/png",
+            byteCount: 40_000,
+            createdAt: now,
+            localRelativePath: "ProofAttachments/private-device-path.png"
+        )
+        let proof = ProofRecord(
+            id: proofID,
+            questID: UUID(uuidString: "F3F3F3F3-F3F3-F3F3-F3F3-F3F3F3F3F3F3")!,
+            questTitle: "Private proof quest",
+            kind: .proof,
+            text: "Sensitive proof text with sk-test-secret and internal recruiter notes.",
+            link: "https://private.example.com/proof",
+            attachments: [attachment],
+            submittedAt: now,
+            quality: QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 88,
+                label: "Strong proof",
+                reason: "Concrete enough to count.",
+                improvement: "Tie it to one role requirement.",
+                xpEarned: 120,
+                readinessDelta: 7
+            )
+        )
+        let outcome = CareerOutcomeRecord(
+            kind: .interview,
+            title: "Private recruiter screen",
+            organizationName: "Example Labs",
+            note: "Sensitive recruiter note should stay private.",
+            occurredAt: now,
+            targetRoleTitle: goal.targetRole,
+            isPrivate: true
+        )
+        var state = OpenLARPEngine.confirmGoal(goal, now: now)
+        state.progress.recentProof = [proof]
+        state.progress.proofCount = 1
+        state.outcomeLog = [outcome]
+
+        let content = try XCTUnwrap(CookedShareCardContent(state: state))
+        let displayText = content.displayText + " " + content.shareText
+
+        XCTAssertFalse(displayText.contains(attachmentID.uuidString))
+        XCTAssertFalse(displayText.contains(proofID.uuidString))
+        XCTAssertFalse(displayText.contains("ProofAttachments"))
+        XCTAssertFalse(displayText.contains("private-device-path"))
+        XCTAssertFalse(displayText.contains("sk-test-secret"))
+        XCTAssertFalse(displayText.localizedCaseInsensitiveContains("api key"))
+        XCTAssertFalse(displayText.contains("Sensitive recruiter note"))
+        XCTAssertFalse(displayText.contains("private.example.com"))
+    }
+
+    func testCookedShareCardContentFallsBackWhenTargetRoleLooksPrivate() throws {
+        let privateRole = "/Users/langqi/private/F1F1F1F1-F1F1-F1F1-F1F1-F1F1F1F1F1F1/sk-test-secret-api-key.txt"
+        let privateGoal = CareerGoal(
+            currentStatus: .student,
+            targetRole: privateRole,
+            timeline: "30 days",
+            background: "",
+            existingProof: "",
+            confidence: 3,
+            biggestBlocker: ""
+        )
+        let state = OpenLARPEngine.confirmGoal(privateGoal)
+
+        let content = try XCTUnwrap(CookedShareCardContent(state: state, includeDetails: true))
+        let displayText = content.displayText + " " + content.shareText
+
+        XCTAssertEqual(content.targetRole, "my career goal")
+        XCTAssertTrue(displayText.contains("my career goal"))
+        XCTAssertFalse(displayText.contains("/Users"))
+        XCTAssertFalse(displayText.contains("F1F1F1F1-F1F1-F1F1-F1F1-F1F1F1F1F1F1"))
+        XCTAssertFalse(displayText.contains("sk-test-secret"))
+        XCTAssertFalse(displayText.localizedCaseInsensitiveContains("api key"))
+        XCTAssertFalse(displayText.contains(".txt"))
+    }
+
+    func testCookedShareCardDetailedModeUsesGenericPublicDetail() throws {
+        var state = OpenLARPEngine.confirmGoal(goal)
+        state.plan[0].title = "Use private proof from /Users/langqi/SecretProject and sk-test-secret"
+
+        let content = try XCTUnwrap(CookedShareCardContent(state: state, includeDetails: true))
+        let displayText = content.displayText + " " + content.shareText
+
+        XCTAssertEqual(content.detailText, "First move: start one proof-building quest.")
+        XCTAssertFalse(displayText.contains("/Users"))
+        XCTAssertFalse(displayText.contains("SecretProject"))
+        XCTAssertFalse(displayText.contains("sk-test-secret"))
+    }
+
+    func testCookedShareCardContentUsesCurrentQuestGapWithoutPrivateDetails() throws {
+        var state = OpenLARPEngine.confirmGoal(goal)
+        state.plan[0].gap = .networking
+
+        let content = try XCTUnwrap(CookedShareCardContent(state: state))
+
+        XCTAssertEqual(content.publicGapText, "Main gap: networking")
+    }
+
+    func testCookedShareCardContentRejectsBareDomainsAndSlashHeavyTargetRoles() throws {
+        let privateGoal = CareerGoal(
+            currentStatus: .student,
+            targetRole: "private.example.com/linkedin.com/in/langqi/recruiting-notes",
+            timeline: "30 days",
+            background: "",
+            existingProof: "",
+            confidence: 3,
+            biggestBlocker: ""
+        )
+        let state = OpenLARPEngine.confirmGoal(privateGoal)
+
+        let content = try XCTUnwrap(CookedShareCardContent(state: state))
+        let displayText = content.displayText + " " + content.shareText
+
+        XCTAssertEqual(content.targetRole, "my career goal")
+        XCTAssertFalse(displayText.contains("private.example.com"))
+        XCTAssertFalse(displayText.contains("linkedin.com"))
+        XCTAssertFalse(displayText.contains("recruiting-notes"))
+    }
+
+    func testCookedShareCardContentDoesNotMutateSharingPreference() throws {
+        var state = OpenLARPEngine.confirmGoal(goal)
+        state.userProfile?.privacy.shareWins = false
+
+        _ = try XCTUnwrap(CookedShareCardContent(state: state, includeDetails: true))
+
+        XCTAssertEqual(state.userProfile?.privacy.shareWins, false)
+    }
+
+    func testStartingFirstQuestFromDiagnosticResultUsesExistingQuestState() throws {
+        var state = OpenLARPEngine.confirmGoal(goal)
+        let content = try XCTUnwrap(CookedDiagnosticResultContent(state: state))
+
+        state = try OpenLARPEngine.startCurrentQuest(in: state)
+
+        XCTAssertEqual(state.currentQuest?.id, content.firstQuestID)
+        XCTAssertEqual(state.currentQuest?.status, .inProgress)
+    }
+
     func testStrongProofAwardsFullXPStreakReadinessAndBadges() throws {
         var state = OpenLARPEngine.confirmGoal(goal)
         state = try OpenLARPEngine.startCurrentQuest(in: state)

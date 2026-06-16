@@ -8,16 +8,20 @@ struct TodayView: View {
     @State private var showingOutcomeLog = false
     @State private var lastLoggedOutcomeCount = 0
     @State private var selectedProof: ProofRecord?
+    @State private var pendingDiagnosticResult: CookedDiagnosticResultContent?
+    @State private var selectedCookedShareCard: CookedShareCardContent?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if store.state.needsGoalSetup {
-                    GoalSetupView(store: store)
+                    GoalSetupView(store: store) { content in
+                        pendingDiagnosticResult = content
+                    }
                 } else {
                     header
-                    diagnosticCard
                     questCard
+                    diagnosticCard
                     progressStrip
                     dailyAgentBrief
                     Button {
@@ -45,6 +49,25 @@ struct TodayView: View {
             ProofDetailView(proof: proof) { attachment in
                 store.localURL(for: attachment)
             }
+        }
+        .sheet(item: $pendingDiagnosticResult) { content in
+            DiagnosticResultBridgeView(
+                content: content,
+                privateShareContent: CookedShareCardContent(state: store.state),
+                detailedShareContent: CookedShareCardContent(state: store.state, includeDetails: true),
+                startQuest: {
+                    store.startCurrentQuest()
+                },
+                adjustGoal: {
+                    store.resetGoal()
+                }
+            )
+        }
+        .sheet(item: $selectedCookedShareCard) { content in
+            CookedShareCardSheet(
+                privateContent: content,
+                detailedContent: CookedShareCardContent(state: store.state, includeDetails: true) ?? content
+            )
         }
         .sheet(isPresented: $showingOutcomeLog) {
             OutcomeLogSheet { kind, title, organizationName, note, occurredAt, isPrivate in
@@ -117,40 +140,69 @@ struct TodayView: View {
 
     @ViewBuilder
     private var diagnosticCard: some View {
-        if let diagnostic = store.state.diagnostic {
+        if let content = CookedDiagnosticResultContent(state: store.state) {
             Card {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 6) {
-                            SectionHeader(feature: .cooked, eyebrow: "Am I Cooked?", title: "The roast report")
+                            SectionHeader(feature: .cooked, eyebrow: content.eyebrow, title: "The roast report")
 
-                            Text(diagnostic.label)
+                            Text(content.title)
                                 .font(.system(size: 34, weight: .black, design: .rounded))
                                 .foregroundStyle(Color.openLARPCoral)
                         }
 
                         Spacer()
 
-                        ScoreRing(score: diagnostic.score)
+                        ScoreRing(score: content.score)
                     }
 
-                    Text(diagnostic.mainGap)
+                    Text(content.mainGap)
                         .font(.subheadline)
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Fastest fix: \(diagnostic.fastestFix)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.openLARPInk)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 7) {
+                        Label("Strongest signal: \(content.strongestSignal)", systemImage: "checkmark.seal.fill")
+                        Label("Fastest fix: \(content.fastestFix)", systemImage: "bolt.fill")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.openLARPInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    HStack {
+                        Pill(title: content.scoreText, systemImage: "flame.fill", color: .openLARPCoral)
+                        Pill(title: content.readinessText, systemImage: "chart.line.uptrend.xyaxis", color: .openLARPGreen)
+                    }
 
                     if store.state.currentQuest?.status == .available {
-                        Button {
-                            store.startCurrentQuest()
-                        } label: {
-                            Label(store.state.progress.completedQuestCount == 0 ? "Start My First Quest" : "Start Quest", systemImage: "play.fill")
+                        HStack(spacing: 10) {
+                            Button {
+                                store.startCurrentQuest()
+                            } label: {
+                                Label(content.primaryActionTitle, systemImage: "play.fill")
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
+
+                            Button {
+                                selectedCookedShareCard = CookedShareCardContent(state: store.state)
+                            } label: {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.openLARPInk)
+                                    .frame(width: 48, height: 48)
+                                    .background(Color.openLARPBlue.opacity(0.14))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                            .accessibilityLabel(content.shareActionTitle)
                         }
-                        .buttonStyle(PrimaryButtonStyle())
+                    } else {
+                        Button {
+                            selectedCookedShareCard = CookedShareCardContent(state: store.state)
+                        } label: {
+                            Label(content.shareActionTitle, systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
                     }
                 }
             }
@@ -625,6 +677,7 @@ private struct DoneForTodayCard: View {
 
 private struct GoalSetupView: View {
     let store: OpenLARPStore
+    let onGoalConfirmed: (CookedDiagnosticResultContent) -> Void
     @State private var currentStatus: CurrentStatus = .student
     @State private var targetRole = ""
     @State private var timeline = "30 days"
@@ -720,6 +773,9 @@ private struct GoalSetupView: View {
                 )
                 Task {
                     await store.confirmGoal(goal)
+                    if let content = CookedDiagnosticResultContent(state: store.state) {
+                        onGoalConfirmed(content)
+                    }
                 }
             } label: {
                 Label(store.isGoalSetupRunning ? "Checking Goal" : "Check If I'm Cooked", systemImage: "flame.fill")
@@ -728,6 +784,297 @@ private struct GoalSetupView: View {
             .disabled(!canSubmit || store.isGoalSetupRunning)
             .opacity(canSubmit && !store.isGoalSetupRunning ? 1 : 0.5)
         }
+    }
+}
+
+private struct DiagnosticResultBridgeView: View {
+    let content: CookedDiagnosticResultContent
+    let privateShareContent: CookedShareCardContent?
+    let detailedShareContent: CookedShareCardContent?
+    let startQuest: () -> Void
+    let adjustGoal: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedShareCard: CookedShareCardContent?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Card {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack(alignment: .center, spacing: 16) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    SectionHeader(feature: .cooked, eyebrow: content.eyebrow, title: "The roast report")
+
+                                    Text(content.title)
+                                        .font(.system(size: 40, weight: .black, design: .rounded))
+                                        .foregroundStyle(Color.openLARPCoral)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+
+                                Spacer()
+                                ScoreRing(score: content.score)
+                            }
+
+                            HStack {
+                                Pill(title: content.scoreText, systemImage: "flame.fill", color: .openLARPCoral)
+                                Pill(title: content.readinessText, systemImage: "chart.line.uptrend.xyaxis", color: .openLARPGreen)
+                            }
+
+                            Text(content.mainGap)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(Color.openLARPInk)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            VStack(alignment: .leading, spacing: 9) {
+                                ResultSignalRow(
+                                    title: "Strongest signal",
+                                    bodyText: content.strongestSignal,
+                                    systemImage: "checkmark.seal.fill",
+                                    color: .openLARPGreen
+                                )
+                                ResultSignalRow(
+                                    title: "Fastest fix",
+                                    bodyText: content.fastestFix,
+                                    systemImage: "bolt.fill",
+                                    color: .openLARPYellow
+                                )
+                            }
+                        }
+                    }
+
+                    Card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionHeader(feature: .quest, eyebrow: "First move", title: "Start with proof")
+
+                            Text(content.firstQuestTitle)
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(Color.openLARPInk)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text(content.firstQuestPurpose)
+                                .font(.subheadline)
+                                .foregroundStyle(Color.openLARPSoftInk)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Pill(title: content.firstQuestMetaText, systemImage: "timer", color: .openLARPGreen)
+
+                            Button {
+                                startQuest()
+                                dismiss()
+                            } label: {
+                                Label(content.primaryActionTitle, systemImage: "play.fill")
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
+                        }
+                    }
+
+                    DisclosureGroup {
+                        Text(content.explanationText)
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 4)
+                    } label: {
+                        Label("Why am I cooked?", systemImage: "questionmark.circle.fill")
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPInk)
+                    }
+                    .padding(14)
+                    .background(Color.openLARPPaper.opacity(0.72))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    HStack(spacing: 10) {
+                        Button {
+                            selectedShareCard = privateShareContent
+                        } label: {
+                            Label(content.shareActionTitle, systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(privateShareContent == nil)
+                        .opacity(privateShareContent == nil ? 0.5 : 1)
+
+                        Button {
+                            adjustGoal()
+                            dismiss()
+                        } label: {
+                            Label(content.adjustGoalActionTitle, systemImage: "slider.horizontal.3")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                    }
+                }
+                .padding(20)
+                .padding(.bottom, 24)
+            }
+            .background(Color.openLARPBackground)
+            .navigationTitle("Diagnostic")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Not Now") {
+                        dismiss()
+                    }
+                }
+            }
+            .sheet(item: $selectedShareCard) { shareContent in
+                CookedShareCardSheet(
+                    privateContent: shareContent,
+                    detailedContent: detailedShareContent ?? shareContent
+                )
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+private struct ResultSignalRow: View {
+    let title: String
+    let bodyText: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
+                .frame(width: 28, height: 28)
+                .background(color.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(color)
+                    .textCase(.uppercase)
+
+                Text(bodyText)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct CookedShareCardSheet: View {
+    let privateContent: CookedShareCardContent
+    let detailedContent: CookedShareCardContent
+    @Environment(\.dismiss) private var dismiss
+    @State private var hideDetails = true
+
+    private var activeContent: CookedShareCardContent {
+        hideDetails ? privateContent : detailedContent
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    CookedShareCardPreview(content: activeContent)
+
+                    Toggle(isOn: $hideDetails) {
+                        Label("Hide Details", systemImage: "eye.slash.fill")
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPInk)
+                    }
+                    .tint(.openLARPGreen)
+                    .padding(14)
+                    .background(Color.openLARPPaper)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    ShareLink(item: activeContent.shareText) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label("Not Now", systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
+                .padding(20)
+                .padding(.bottom, 24)
+            }
+            .background(Color.openLARPBackground)
+            .navigationTitle("Cooked Card")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+private struct CookedShareCardPreview: View {
+    let content: CookedShareCardContent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("OpenLARP")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.openLARPGreen)
+                        .textCase(.uppercase)
+
+                    Text(content.title)
+                        .font(.title2.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                ScoreRing(score: content.score)
+                    .frame(width: 72, height: 72)
+            }
+
+            Text(content.cookedLabel)
+                .font(.system(size: 34, weight: .black, design: .rounded))
+                .foregroundStyle(Color.openLARPCoral)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Pill(title: content.scoreText, systemImage: "flame.fill", color: .openLARPCoral)
+                Pill(title: content.readinessText, systemImage: "chart.line.uptrend.xyaxis", color: .openLARPGreen)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(content.publicGapText)
+                    .font(.headline)
+                    .foregroundStyle(Color.openLARPInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(content.recoveryText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let detailText = content.detailText {
+                    Text(detailText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(14)
+            .background(Color.openLARPBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            Text(content.footerText)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.openLARPSoftInk)
+        }
+        .padding(18)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.openLARPGray.opacity(0.16))
+        )
     }
 }
 
