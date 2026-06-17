@@ -3250,6 +3250,245 @@ final class V0EngineTests: XCTestCase {
     }
 
     @MainActor
+    func testStoreSyncsPendingBackendEventsThroughBackendServiceAndPersistsReceipts() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let syncService = DeferredBackendEventSyncService()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            backendEventSyncService: syncService,
+            now: { Date(timeIntervalSince1970: 15_820) }
+        )
+
+        await store.confirmGoal(goal)
+        let eventID = try XCTUnwrap(store.state.backendEvents.first?.id)
+
+        let syncTask = Task { await store.syncBackendEvents() }
+        for _ in 0..<20 where syncService.pendingContinuation == nil {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(syncService.requests.count, 1)
+        XCTAssertEqual(syncService.requests.first?.events.map(\.id), [eventID])
+        XCTAssertEqual(syncService.requests.first?.events.first?.syncStatus, .inFlight)
+        XCTAssertEqual(try persistence.load().backendEvents.first?.syncStatus, .inFlight)
+
+        syncService.resume()
+        await syncTask.value
+
+        let syncedEvent = try XCTUnwrap(store.state.backendEvents.first)
+        XCTAssertEqual(syncedEvent.id, eventID)
+        XCTAssertEqual(syncedEvent.syncStatus, .acknowledged)
+        XCTAssertEqual(syncedEvent.lastAttemptAt, Date(timeIntervalSince1970: 15_820))
+        XCTAssertEqual(syncedEvent.retryCount, 0)
+        XCTAssertNil(syncedEvent.failureSummary)
+        XCTAssertFalse(store.isSyncingBackendEvents)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
+    }
+
+    @MainActor
+    func testStoreMarksBackendEventsFailedWithSafeRetryStateWhenSyncThrows() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let syncService = RecordingBackendEventSyncService()
+        syncService.errorToThrow = SensitiveBackendEventSyncError()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            backendEventSyncService: syncService,
+            now: { Date(timeIntervalSince1970: 15_840) }
+        )
+
+        await store.confirmGoal(goal)
+        await store.syncBackendEvents()
+
+        XCTAssertEqual(syncService.requests.count, 1)
+        let failedEvent = try XCTUnwrap(store.state.backendEvents.first)
+        XCTAssertEqual(failedEvent.syncStatus, .failed)
+        XCTAssertEqual(failedEvent.retryCount, 1)
+        XCTAssertEqual(failedEvent.lastAttemptAt, Date(timeIntervalSince1970: 15_840))
+        XCTAssertEqual(failedEvent.failureSummary, BackendEventRecord.safeSyncFailureSummary)
+        XCTAssertEqual(store.errorMessage, "Backend event sync could not finish. OpenLARP will retry later.")
+
+        let encodedJournal = String(
+            decoding: try JSONEncoder.openLARPPersistence.encode(store.state.backendEvents),
+            as: UTF8.self
+        )
+        XCTAssertFalse(encodedJournal.contains("langqi@example.com"))
+        XCTAssertFalse(encodedJournal.contains("sk-test-secret"))
+        XCTAssertFalse(encodedJournal.contains("private.example.com"))
+        XCTAssertFalse(encodedJournal.contains("/Users/langqi"))
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
+    }
+
+    @MainActor
+    func testStoreRetriesFailedAndStaleInFlightEventsWithoutDuplicatingFreshInFlightOrAcknowledged() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let now = Date(timeIntervalSince1970: 15_900)
+        let pending = BackendEventRecord(
+            kind: .goalConfirmed,
+            ownerUserID: "local_user",
+            occurredAt: now.addingTimeInterval(-500),
+            entityID: "pending",
+            summary: BackendEventSummary(targetRoleTitle: goal.targetRole)
+        )
+        let failedRecent = BackendEventRecord(
+            kind: .privacyUpdated,
+            syncStatus: .failed,
+            ownerUserID: "local_user",
+            occurredAt: now.addingTimeInterval(-400),
+            entityID: "failed-recent",
+            retryCount: 1,
+            lastAttemptAt: now.addingTimeInterval(-120),
+            failureSummary: "raw failure",
+            summary: BackendEventSummary(memoryMode: .cloudReady)
+        )
+        let failedOld = BackendEventRecord(
+            kind: .questStarted,
+            syncStatus: .failed,
+            ownerUserID: "local_user",
+            occurredAt: now.addingTimeInterval(-300),
+            entityID: "failed-old",
+            retryCount: 1,
+            lastAttemptAt: now.addingTimeInterval(-420),
+            failureSummary: "raw failure",
+            summary: BackendEventSummary(questDay: 1)
+        )
+        let inFlightRecent = BackendEventRecord(
+            kind: .proofReviewed,
+            syncStatus: .inFlight,
+            ownerUserID: "local_user",
+            occurredAt: now.addingTimeInterval(-200),
+            entityID: "inflight-recent",
+            lastAttemptAt: now.addingTimeInterval(-300),
+            summary: BackendEventSummary(qualityAccepted: true)
+        )
+        let inFlightStale = BackendEventRecord(
+            kind: .proofClaimed,
+            syncStatus: .inFlight,
+            ownerUserID: "local_user",
+            occurredAt: now.addingTimeInterval(-100),
+            entityID: "inflight-stale",
+            lastAttemptAt: now.addingTimeInterval(-1_200),
+            summary: BackendEventSummary(proofCount: 1)
+        )
+        let acknowledged = BackendEventRecord(
+            kind: .syncPreviewPrepared,
+            syncStatus: .acknowledged,
+            ownerUserID: "local_user",
+            occurredAt: now,
+            entityID: "acknowledged",
+            lastAttemptAt: now.addingTimeInterval(-2_000),
+            summary: BackendEventSummary(documentCount: 4)
+        )
+        var state = OpenLARPState.empty
+        state.backendEvents = [
+            pending,
+            failedRecent,
+            failedOld,
+            inFlightRecent,
+            inFlightStale,
+            acknowledged
+        ]
+        try persistence.save(state)
+        let syncService = RecordingBackendEventSyncService()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            backendEventSyncService: syncService,
+            now: { now }
+        )
+
+        await store.syncBackendEvents()
+
+        XCTAssertEqual(syncService.requests.count, 1)
+        XCTAssertEqual(syncService.requests.first?.events.map(\.id), [
+            pending.id,
+            failedOld.id,
+            inFlightStale.id
+        ])
+        XCTAssertEqual(store.state.backendEvents.map(\.syncStatus), [
+            .acknowledged,
+            .failed,
+            .acknowledged,
+            .inFlight,
+            .acknowledged,
+            .acknowledged
+        ])
+        XCTAssertEqual(store.state.backendEvents[1].retryCount, 1)
+        XCTAssertEqual(store.state.backendEvents[3].lastAttemptAt, inFlightRecent.lastAttemptAt)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
+    }
+
+    @MainActor
+    func testConcurrentBackendEventSyncsSendEachEventAtMostOnce() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let syncService = DeferredBackendEventSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            backendEventSyncService: syncService,
+            now: { Date(timeIntervalSince1970: 15_940) }
+        )
+
+        await store.confirmGoal(goal)
+        let firstSync = Task { await store.syncBackendEvents() }
+        let secondSync = Task { await store.syncBackendEvents() }
+        for _ in 0..<20 where syncService.pendingContinuation == nil {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(syncService.requests.count, 1)
+        syncService.resume()
+        await firstSync.value
+        await secondSync.value
+
+        XCTAssertEqual(syncService.requests.count, 1)
+        XCTAssertEqual(store.state.backendEvents.first?.syncStatus, .acknowledged)
+    }
+
+    @MainActor
+    func testBackendEventSyncDoesNotContactServiceWhenInFlightClaimCannotPersist() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let syncService = RecordingBackendEventSyncService()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            backendEventSyncService: syncService,
+            now: { Date(timeIntervalSince1970: 15_960) }
+        )
+
+        await store.confirmGoal(goal)
+        let originalEvents = store.state.backendEvents
+        try FileManager.default.removeItem(at: directory)
+        try "not a directory".write(
+            to: directory,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        await store.syncBackendEvents()
+
+        XCTAssertEqual(syncService.requests.count, 0)
+        XCTAssertEqual(store.state.backendEvents, originalEvents)
+        XCTAssertEqual(store.errorMessage, "Local progress could not be saved.")
+    }
+
+    @MainActor
     func testStoreFallsBackToLocalPlanWhenWorkflowReturnsInvalidQuestPlan() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -3738,6 +3977,68 @@ private final class StateChangingProofReviewService: V0AIWorkflowServicing {
 
 private enum TestWorkflowError: Error {
     case expectedFailure
+}
+
+private struct SensitiveBackendEventSyncError: LocalizedError {
+    var errorDescription: String? {
+        "Sync failed for langqi@example.com with sk-test-secret at https://private.example.com/proof from /Users/langqi/private.txt"
+    }
+}
+
+private final class RecordingBackendEventSyncService: BackendEventSyncServicing {
+    var requests: [BackendEventSyncRequest] = []
+    var errorToThrow: Error?
+    var receipts: [BackendEventSyncReceipt]?
+
+    func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult {
+        requests.append(request)
+        if let errorToThrow {
+            throw errorToThrow
+        }
+        return BackendEventSyncResult(
+            request: request,
+            completedAt: request.requestedAt,
+            didContactNetwork: false,
+            receipts: receipts ?? request.events.map {
+                BackendEventSyncReceipt(
+                    eventID: $0.id,
+                    idempotencyKey: $0.idempotencyKey,
+                    status: .acknowledged,
+                    acceptedAt: request.requestedAt
+                )
+            }
+        )
+    }
+}
+
+private final class DeferredBackendEventSyncService: BackendEventSyncServicing {
+    var requests: [BackendEventSyncRequest] = []
+    var pendingContinuation: CheckedContinuation<Void, Never>?
+
+    func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult {
+        requests.append(request)
+        await withCheckedContinuation { continuation in
+            pendingContinuation = continuation
+        }
+        return BackendEventSyncResult(
+            request: request,
+            completedAt: request.requestedAt,
+            didContactNetwork: false,
+            receipts: request.events.map {
+                BackendEventSyncReceipt(
+                    eventID: $0.id,
+                    idempotencyKey: $0.idempotencyKey,
+                    status: .acknowledged,
+                    acceptedAt: request.requestedAt
+                )
+            }
+        )
+    }
+
+    func resume() {
+        pendingContinuation?.resume()
+        pendingContinuation = nil
+    }
 }
 
 private final class RecordingCareerGraphSyncService: CareerGraphSyncServicing {

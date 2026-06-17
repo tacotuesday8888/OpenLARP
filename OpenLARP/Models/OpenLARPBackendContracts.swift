@@ -199,6 +199,7 @@ struct BackendEventSummary: Codable, Equatable {
 struct BackendEventRecord: Codable, Equatable, Identifiable {
     /// Caps acknowledged history only. Pending, in-flight, and failed records are durable outbox entries.
     static let maxStoredCount = 250
+    static let safeSyncFailureSummary = "Backend event sync failed. Retry is safe because this event has an idempotency key."
 
     var id: UUID
     var schemaVersion: Int
@@ -242,6 +243,44 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
         self.summary = summary
     }
 
+    func isEligibleForSync(
+        at timestamp: Date,
+        retryDelay: TimeInterval,
+        staleInFlightAge: TimeInterval
+    ) -> Bool {
+        switch syncStatus {
+        case .pending:
+            return true
+        case .failed:
+            guard let lastAttemptAt else { return true }
+            return timestamp.timeIntervalSince(lastAttemptAt) >= retryDelay
+        case .inFlight:
+            guard let lastAttemptAt else { return true }
+            return timestamp.timeIntervalSince(lastAttemptAt) >= staleInFlightAge
+        case .acknowledged:
+            return false
+        }
+    }
+
+    mutating func markInFlight(at timestamp: Date) {
+        syncStatus = .inFlight
+        lastAttemptAt = Self.persistenceStableDate(timestamp)
+        failureSummary = nil
+    }
+
+    mutating func markAcknowledged(at timestamp: Date) {
+        syncStatus = .acknowledged
+        lastAttemptAt = Self.persistenceStableDate(timestamp)
+        failureSummary = nil
+    }
+
+    mutating func markFailed(at timestamp: Date) {
+        syncStatus = .failed
+        retryCount += 1
+        lastAttemptAt = Self.persistenceStableDate(timestamp)
+        failureSummary = Self.safeSyncFailureSummary
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case schemaVersion
@@ -282,7 +321,7 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
 
     private static func safeFailureSummary(_ value: String?) -> String? {
         guard value != nil else { return nil }
-        return "Backend event sync failed. Retry is safe because this event has an idempotency key."
+        return Self.safeSyncFailureSummary
     }
 
     private static func persistenceStableDate(_ date: Date) -> Date {
@@ -451,6 +490,107 @@ struct BackendUserSession: Codable, Equatable {
         session.accountID = nil
         session.email = nil
         return session
+    }
+
+    func redactedForBackendEventSync() -> BackendUserSession {
+        var session = self
+        session.accountID = nil
+        session.email = nil
+        return session
+    }
+}
+
+struct BackendEventSyncRequest: Codable, Equatable {
+    var schemaVersion: Int
+    var requestedAt: Date
+    var session: BackendUserSession
+    var events: [BackendEventRecord]
+    var integrationRoutes: [BackendIntegrationRoute]
+
+    init(
+        session: BackendUserSession,
+        events: [BackendEventRecord],
+        requestedAt: Date = Date(),
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.requestedAt = requestedAt
+        let syncSession = session.redactedForBackendEventSync()
+        self.session = syncSession
+        self.events = events
+        integrationRoutes = syncSession.integrationRoutes
+    }
+}
+
+struct BackendEventSyncReceipt: Codable, Equatable, Identifiable {
+    var id: UUID { eventID }
+
+    var schemaVersion: Int
+    var eventID: UUID
+    var idempotencyKey: String
+    var status: BackendEventSyncStatus
+    var acceptedAt: Date
+
+    init(
+        eventID: UUID,
+        idempotencyKey: String,
+        status: BackendEventSyncStatus,
+        acceptedAt: Date,
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.eventID = eventID
+        self.idempotencyKey = idempotencyKey
+        self.status = status
+        self.acceptedAt = acceptedAt
+    }
+}
+
+struct BackendEventSyncResult: Codable, Equatable {
+    var schemaVersion: Int
+    var requestedAt: Date
+    var completedAt: Date
+    var didContactNetwork: Bool
+    var receipts: [BackendEventSyncReceipt]
+    var integrationRoutes: [BackendIntegrationRoute]
+
+    init(
+        request: BackendEventSyncRequest,
+        completedAt: Date? = nil,
+        didContactNetwork: Bool = false,
+        receipts: [BackendEventSyncReceipt],
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        requestedAt = request.requestedAt
+        self.completedAt = completedAt ?? request.requestedAt
+        self.didContactNetwork = didContactNetwork
+        self.receipts = receipts
+        integrationRoutes = request.integrationRoutes
+    }
+}
+
+@MainActor
+protocol BackendEventSyncServicing {
+    func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult
+}
+
+struct LocalMockBackendEventSyncService: BackendEventSyncServicing {
+    init() {}
+
+    func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult {
+        BackendEventSyncResult(
+            request: request,
+            didContactNetwork: false,
+            receipts: request.events.map {
+                BackendEventSyncReceipt(
+                    eventID: $0.id,
+                    idempotencyKey: $0.idempotencyKey,
+                    status: .acknowledged,
+                    acceptedAt: request.requestedAt
+                )
+            }
+        )
     }
 }
 
