@@ -24,18 +24,30 @@ struct OpenLARPPersistence {
         }
 
         let data = try Data(contentsOf: fileURL)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(OpenLARPState.self, from: data)
+        return try JSONDecoder.openLARPPersistence.decode(OpenLARPState.self, from: data)
     }
 
     func save(_ state: OpenLARPState) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
+        let data = try JSONEncoder.openLARPPersistence.encode(state)
+        try data.write(to: fileURL, options: [.atomic])
+    }
+}
+
+extension JSONEncoder {
+    static var openLARPPersistence: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(state)
-        try data.write(to: fileURL, options: [.atomic])
+        return encoder
+    }
+}
+
+extension JSONDecoder {
+    static var openLARPPersistence: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 }

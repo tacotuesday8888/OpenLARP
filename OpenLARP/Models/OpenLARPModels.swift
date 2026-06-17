@@ -1200,9 +1200,10 @@ struct OpenLARPState: Codable, Equatable {
     var outcomeLog: [CareerOutcomeRecord]
     var betaEvents: [BetaEventRecord]
     var aiWorkflowRuns: [AIWorkflowAuditRecord]
+    var backendEvents: [BackendEventRecord]
 
     init(
-        schemaVersion: Int = 6,
+        schemaVersion: Int = 7,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
         targetRoles: [TargetRole] = [],
@@ -1218,7 +1219,8 @@ struct OpenLARPState: Codable, Equatable {
         proofDraftQualityResult: QualityCheckResult? = nil,
         outcomeLog: [CareerOutcomeRecord] = [],
         betaEvents: [BetaEventRecord] = [],
-        aiWorkflowRuns: [AIWorkflowAuditRecord] = []
+        aiWorkflowRuns: [AIWorkflowAuditRecord] = [],
+        backendEvents: [BackendEventRecord] = []
     ) {
         self.schemaVersion = schemaVersion
         self.userProfile = userProfile
@@ -1237,10 +1239,11 @@ struct OpenLARPState: Codable, Equatable {
         self.outcomeLog = outcomeLog
         self.betaEvents = betaEvents
         self.aiWorkflowRuns = aiWorkflowRuns
+        self.backendEvents = backendEvents
     }
 
     static let empty = OpenLARPState(
-        schemaVersion: 6,
+        schemaVersion: 7,
         userProfile: nil,
         goal: nil,
         targetRoles: [],
@@ -1282,12 +1285,13 @@ extension OpenLARPState {
         case outcomeLog
         case betaEvents
         case aiWorkflowRuns
+        case backendEvents
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         _ = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        schemaVersion = 6
+        schemaVersion = 7
         userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
         goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
@@ -1304,6 +1308,7 @@ extension OpenLARPState {
         outcomeLog = try container.decodeIfPresent([CareerOutcomeRecord].self, forKey: .outcomeLog) ?? []
         betaEvents = (try? container.decodeIfPresent(LossyBetaEventRecordList.self, forKey: .betaEvents)?.records) ?? []
         aiWorkflowRuns = (try? container.decodeIfPresent(LossyAIWorkflowAuditRecordList.self, forKey: .aiWorkflowRuns)?.records) ?? []
+        backendEvents = (try? container.decodeIfPresent(LossyBackendEventRecordList.self, forKey: .backendEvents)?.records) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1325,6 +1330,7 @@ extension OpenLARPState {
         try container.encode(outcomeLog, forKey: .outcomeLog)
         try container.encode(betaEvents, forKey: .betaEvents)
         try container.encode(aiWorkflowRuns, forKey: .aiWorkflowRuns)
+        try container.encode(backendEvents, forKey: .backendEvents)
     }
 }
 
@@ -1333,6 +1339,16 @@ extension OpenLARPState {
         aiWorkflowRuns.append(AIWorkflowAuditRecord(run: run))
         if aiWorkflowRuns.count > AIWorkflowAuditRecord.maxStoredCount {
             aiWorkflowRuns.removeFirst(aiWorkflowRuns.count - AIWorkflowAuditRecord.maxStoredCount)
+        }
+    }
+
+    mutating func recordBackendEvent(_ event: BackendEventRecord) {
+        backendEvents.append(event)
+        let acknowledgedIndexes = backendEvents.indices.filter { backendEvents[$0].syncStatus == .acknowledged }
+        let acknowledgedOverflow = acknowledgedIndexes.count - BackendEventRecord.maxStoredCount
+        if acknowledgedOverflow > 0 {
+            let idsToRemove = Set(acknowledgedIndexes.prefix(acknowledgedOverflow).map { backendEvents[$0].id })
+            backendEvents.removeAll { idsToRemove.contains($0.id) }
         }
     }
 }
