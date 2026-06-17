@@ -1872,6 +1872,82 @@ final class V0EngineTests: XCTestCase {
         XCTAssertNoThrow(try JSONDecoder().decode(CloudCareerGraphSnapshot.self, from: encoded))
     }
 
+    func testCloudCareerGraphSnapshotExportsPrivacySafeGoalAndProfileByDefault() throws {
+        let now = Date(timeIntervalSince1970: 13_250)
+        let state = privacySensitiveCloudState(now: now)
+        let mapper = LocalCareerGraphCloudMapper()
+
+        let privateSnapshot = mapper.makeSnapshot(
+            from: state,
+            policy: CloudExportPolicy(ownerUserID: "user_123", includePrivateEvidence: false),
+            generatedAt: now
+        )
+        let fullSnapshot = mapper.makeSnapshot(
+            from: state,
+            policy: CloudExportPolicy(ownerUserID: "user_123", includePrivateEvidence: true),
+            generatedAt: now
+        )
+
+        XCTAssertEqual(privateSnapshot.ownerUserID, "user_123")
+        XCTAssertEqual(privateSnapshot.goal?.targetRole, "AI product internship")
+        XCTAssertEqual(privateSnapshot.goal?.timeline, "30 days")
+        XCTAssertEqual(privateSnapshot.goal?.currentStatus, .student)
+        XCTAssertNil(privateSnapshot.goal?.privateContext)
+        XCTAssertEqual(privateSnapshot.userProfile?.segment, .student)
+        XCTAssertNil(privateSnapshot.userProfile?.email)
+        XCTAssertNil(privateSnapshot.userProfile?.accountID)
+
+        let privateJSON = String(
+            decoding: try JSONEncoder().encode(privateSnapshot),
+            as: UTF8.self
+        )
+        assertNoPrivateCloudExportLeaks(privateJSON)
+
+        XCTAssertEqual(fullSnapshot.goal?.privateContext?.background, state.goal?.background)
+        XCTAssertEqual(fullSnapshot.goal?.privateContext?.existingProof, state.goal?.existingProof)
+        XCTAssertEqual(fullSnapshot.goal?.privateContext?.confidence, state.goal?.confidence)
+        XCTAssertEqual(fullSnapshot.goal?.privateContext?.biggestBlocker, state.goal?.biggestBlocker)
+        XCTAssertNoThrow(try JSONDecoder().decode(
+            CloudCareerGraphSnapshot.self,
+            from: try JSONEncoder().encode(fullSnapshot)
+        ))
+    }
+
+    func testCloudCareerGraphSnapshotDecodesLegacyRawGoalWithoutPrivateContext() throws {
+        let now = Date(timeIntervalSince1970: 13_255)
+        let state = privacySensitiveCloudState(now: now)
+        let legacyPayload = LegacyCloudCareerGraphSnapshotPayload(
+            schemaVersion: 1,
+            ownerUserID: "user_legacy",
+            generatedAt: now,
+            userProfile: nil,
+            goal: try XCTUnwrap(state.goal),
+            targetRoles: [],
+            proofRecords: [],
+            outcomes: [],
+            readinessSnapshots: [],
+            currentReadiness: state.progress.readiness,
+            policy: CloudExportPolicy(ownerUserID: "user_legacy", includePrivateEvidence: true)
+        )
+
+        let decoded = try JSONDecoder().decode(
+            CloudCareerGraphSnapshot.self,
+            from: try JSONEncoder().encode(legacyPayload)
+        )
+
+        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertEqual(decoded.goal?.targetRole, "AI product internship")
+        XCTAssertEqual(decoded.goal?.timeline, "30 days")
+        XCTAssertEqual(decoded.goal?.currentStatus, .student)
+        XCTAssertNil(decoded.goal?.privateContext)
+
+        let reencodedJSON = String(
+            decoding: try JSONEncoder().encode(decoded),
+            as: UTF8.self
+        )
+        assertNoPrivateCloudExportLeaks(reencodedJSON)
+    }
+
     func testCloudCareerOutcomeDocumentRoundTripsStableBackendFields() throws {
         let now = Date(timeIntervalSince1970: 13_300)
         let outcome = CareerOutcomeRecord(
@@ -1993,6 +2069,150 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(json.contains("private-device-path"))
         XCTAssertFalse(json.contains("sk-"))
         XCTAssertFalse(json.localizedCaseInsensitiveContains("api key"))
+    }
+
+    func testCareerGraphSyncManifestListsGoalProfileDocumentsAndFileUploadsForAdapters() async throws {
+        let now = Date(timeIntervalSince1970: 13_525)
+        var state = privacySensitiveCloudState(now: now)
+        state.userProfile?.privacy.shareWins = false
+        let session = BackendUserSession.localOnly(for: state)
+        let attachment = try XCTUnwrap(state.progress.recentProof.first?.attachments.first)
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+
+        let result = try await LocalMockCareerGraphSyncService().prepareSync(request)
+        let manifest = result.syncManifest
+
+        XCTAssertEqual(manifest.ownerUserID, session.ownerUserID)
+        XCTAssertEqual(manifest.firestoreRootPath, "users/\(session.ownerUserID)")
+        XCTAssertEqual(manifest.documentWrites.map(\.documentType), [
+            .profile,
+            .goal,
+            .targetRole,
+            .proofRecord,
+            .proofAttachment,
+            .readinessSnapshot
+        ])
+        XCTAssertTrue(manifest.documentWrites.allSatisfy { $0.operation == .upsert })
+        XCTAssertEqual(result.firestoreDocumentPaths, manifest.documentWrites.map(\.documentPath))
+        XCTAssertTrue(manifest.documentWrites.contains {
+            $0.documentPath.hasPrefix("users/\(session.ownerUserID)/goals/")
+        })
+        XCTAssertEqual(manifest.storageUploads.map(\.storagePath), [
+            "users/\(session.ownerUserID)/proofAttachments/\(attachment.id.uuidString)"
+        ])
+        XCTAssertEqual(manifest.storageUploads.map(\.proofDocumentPath), [
+            "users/\(session.ownerUserID)/proofRecords/\(state.progress.recentProof[0].id.uuidString)"
+        ])
+        XCTAssertEqual(manifest.storageUploads.map(\.attachmentDocumentPath), [
+            "users/\(session.ownerUserID)/proofAttachments/\(attachment.id.uuidString)"
+        ])
+        XCTAssertEqual(manifest.requiredRoutes.map(\.kind), [
+            .firebaseAuth,
+            .firestore,
+            .firebaseStorage
+        ])
+        XCTAssertEqual(result.integrationRoutes.map(\.kind), manifest.requiredRoutes.map(\.kind))
+        XCTAssertEqual(
+            CareerGraphSyncPreview(request: request, result: result).integrationRoutes.map(\.kind),
+            manifest.requiredRoutes.map(\.kind)
+        )
+        XCTAssertFalse(result.didContactNetwork)
+
+        let manifestJSON = String(
+            decoding: try JSONEncoder().encode(manifest),
+            as: UTF8.self
+        )
+        assertNoPrivateCloudExportLeaks(manifestJSON)
+        XCTAssertNoThrow(try JSONDecoder().decode(
+            CareerGraphSyncManifest.self,
+            from: try JSONEncoder().encode(manifest)
+        ))
+    }
+
+    func testCareerGraphSyncRequestAndManifestDoNotLeakPrivateEvidenceByDefault() async throws {
+        let now = Date(timeIntervalSince1970: 13_530)
+        let state = privacySensitiveCloudState(now: now)
+        let session = BackendUserSession.localOnly(for: state)
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: now,
+            includePrivateEvidence: false
+        )
+
+        let encodedRequest = String(
+            decoding: try JSONEncoder().encode(request),
+            as: UTF8.self
+        )
+        assertNoPrivateCloudExportLeaks(encodedRequest)
+        XCTAssertNil(request.session.accountID)
+        XCTAssertNil(request.session.email)
+        XCTAssertNil(request.snapshot.goal?.privateContext)
+        XCTAssertTrue(request.snapshot.proofRecords.isEmpty)
+
+        let result = try await LocalMockCareerGraphSyncService().prepareSync(request)
+        let manifest = result.syncManifest
+
+        XCTAssertFalse(manifest.documentWrites.map(\.documentType).contains(.proofRecord))
+        XCTAssertFalse(manifest.documentWrites.map(\.documentType).contains(.proofAttachment))
+        XCTAssertTrue(manifest.storageUploads.isEmpty)
+        XCTAssertEqual(manifest.requiredRoutes.map(\.kind), [
+            .firebaseAuth,
+            .firestore
+        ])
+        XCTAssertEqual(result.integrationRoutes.map(\.kind), manifest.requiredRoutes.map(\.kind))
+        XCTAssertEqual(
+            CareerGraphSyncPreview(request: request, result: result).integrationRoutes.map(\.kind),
+            manifest.requiredRoutes.map(\.kind)
+        )
+
+        let encodedManifest = String(
+            decoding: try JSONEncoder().encode(manifest),
+            as: UTF8.self
+        )
+        assertNoPrivateCloudExportLeaks(encodedManifest)
+    }
+
+    func testCareerGraphSyncPreparationRequestRedactsAuthenticatedSessionIdentifiers() throws {
+        let now = Date(timeIntervalSince1970: 13_535)
+        let state = privacySensitiveCloudState(now: now)
+        let session = BackendUserSession(
+            ownerUserID: "firebase_uid_123",
+            isAuthenticated: true,
+            authProvider: .firebaseAuth,
+            accountID: "acct_private_123",
+            email: "langqi@example.com",
+            auth: BackendIntegrationRoute(kind: .firebaseAuth, status: .connected),
+            firestore: BackendIntegrationRoute(kind: .firestore, status: .connected),
+            storage: BackendIntegrationRoute(kind: .firebaseStorage, status: .configured),
+            functions: BackendIntegrationRoute(kind: .cloudFunctions, status: .configured),
+            cloudRun: BackendIntegrationRoute(kind: .cloudRun, status: .configured),
+            genkit: BackendIntegrationRoute(kind: .genkit, status: .configured)
+        )
+
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: now,
+            includePrivateEvidence: false
+        )
+
+        XCTAssertTrue(request.session.isAuthenticated)
+        XCTAssertEqual(request.session.authProvider, .firebaseAuth)
+        XCTAssertNil(request.session.accountID)
+        XCTAssertNil(request.session.email)
+        XCTAssertEqual(request.firestoreRootPath, "users/firebase_uid_123")
+
+        let encodedRequest = String(
+            decoding: try JSONEncoder().encode(request),
+            as: UTF8.self
+        )
+        assertNoPrivateCloudExportLeaks(encodedRequest)
     }
 
     func testCareerGraphSyncPreparationRequestDerivesPrivateEvidenceFromSharingPreference() {
@@ -2141,7 +2361,7 @@ final class V0EngineTests: XCTestCase {
         let preview = try XCTUnwrap(store.careerGraphSyncPreview)
         XCTAssertEqual(syncService.requests.count, 1)
         XCTAssertEqual(preview.status, .preparedLocally)
-        XCTAssertEqual(preview.documentCount, 5)
+        XCTAssertEqual(preview.documentCount, 6)
         XCTAssertEqual(preview.proofUploadCount, 1)
         XCTAssertEqual(preview.proofUploadByteCount, attachment.byteCount)
         XCTAssertEqual(preview.includedPrivateEvidence, true)
@@ -2708,6 +2928,83 @@ final class V0EngineTests: XCTestCase {
         )
     }
 
+    private func privacySensitiveCloudState(now: Date) -> OpenLARPState {
+        let privateGoal = CareerGoal(
+            currentStatus: .student,
+            targetRole: "AI product internship",
+            timeline: "30 days",
+            background: "Private background with langqi@example.com, visa concern, campus office, and sk-test-secret api key notes.",
+            existingProof: "Secret Project Falcon, private repo, and https://private.example.com/proof.",
+            confidence: 2,
+            biggestBlocker: "Confidential blocker with family money stress."
+        )
+        let attachment = ProofAttachment(
+            id: UUID(uuidString: "EBEBEBEB-EBEB-EBEB-EBEB-EBEBEBEBEBEB")!,
+            fileName: "proof-upload.png",
+            originalFileName: "private-proof-upload.png",
+            contentType: "image/png",
+            byteCount: 77_000,
+            createdAt: now,
+            localRelativePath: "ProofAttachments/private-device-path.png"
+        )
+        let proof = ProofRecord(
+            id: UUID(uuidString: "ECECECEC-ECEC-ECEC-ECEC-ECECECECECEC")!,
+            questID: UUID(uuidString: "EDEDEDED-EDED-EDED-EDED-EDEDEDEDEDED")!,
+            questTitle: "Create one tiny proof artifact",
+            kind: .proof,
+            text: "Sensitive proof text references Secret Project Falcon and should not export unless explicitly allowed.",
+            link: "https://private.example.com/proof",
+            attachments: [attachment],
+            submittedAt: now,
+            quality: QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 88,
+                label: "Strong proof",
+                reason: "Real artifact",
+                improvement: "Tie it to one role requirement.",
+                xpEarned: 120,
+                readinessDelta: 7
+            )
+        )
+        var state = OpenLARPEngine.confirmGoal(privateGoal, now: now)
+        state.userProfile?.accountID = "acct_private_123"
+        state.userProfile?.email = "langqi@example.com"
+        state.userProfile?.backgroundSummary = "Private background with visa concern and campus office details."
+        state.progress.recentProof = [proof]
+        state.progress.proofCount = 1
+        return state
+    }
+
+    private func assertNoPrivateCloudExportLeaks(
+        _ json: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let blockedFragments = [
+            "langqi@example.com",
+            "visa",
+            "campus office",
+            "Secret Project Falcon",
+            "private repo",
+            "private.example.com",
+            "family money",
+            "sk-test-secret",
+            "api key",
+            "acct_private_123",
+            "private-device-path",
+            "localRelativePath"
+        ]
+
+        for fragment in blockedFragments {
+            XCTAssertFalse(
+                json.localizedCaseInsensitiveContains(fragment),
+                "Cloud export leaked private fragment: \(fragment)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
     private func completedFirstQuestState(claimTime: Date) throws -> OpenLARPState {
         var state = OpenLARPEngine.confirmGoal(goal, now: claimTime)
         state = try OpenLARPEngine.startCurrentQuest(in: state, now: claimTime)
@@ -2736,6 +3033,20 @@ final class V0EngineTests: XCTestCase {
             hour: hour
         ))!
     }
+}
+
+private struct LegacyCloudCareerGraphSnapshotPayload: Codable {
+    var schemaVersion: Int
+    var ownerUserID: String
+    var generatedAt: Date
+    var userProfile: CloudUserProfileDocument?
+    var goal: CareerGoal?
+    var targetRoles: [CloudTargetRoleDocument]
+    var proofRecords: [CloudProofRecordDocument]
+    var outcomes: [CloudCareerOutcomeDocument]
+    var readinessSnapshots: [CloudReadinessSnapshotDocument]
+    var currentReadiness: ReadinessMetrics
+    var policy: CloudExportPolicy
 }
 
 private struct ThrowingV0AIWorkflowService: V0AIWorkflowServicing {
