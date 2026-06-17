@@ -485,6 +485,28 @@ struct BackendUserSession: Codable, Equatable {
         )
     }
 
+    static func firebaseAuthenticated(
+        ownerUserID: String,
+        accountID: String? = nil,
+        email: String? = nil,
+        requiresUserApprovalForExternalActions: Bool = true
+    ) -> BackendUserSession {
+        BackendUserSession(
+            ownerUserID: ownerUserID,
+            isAuthenticated: true,
+            authProvider: .firebaseAuth,
+            accountID: accountID,
+            email: email,
+            auth: BackendIntegrationRoute(kind: .firebaseAuth, status: .connected),
+            firestore: BackendIntegrationRoute(kind: .firestore, status: .configured),
+            storage: BackendIntegrationRoute(kind: .firebaseStorage, status: .configured),
+            functions: BackendIntegrationRoute(kind: .cloudFunctions, status: .configured),
+            cloudRun: BackendIntegrationRoute(kind: .cloudRun, status: .configured),
+            genkit: BackendIntegrationRoute(kind: .genkit, status: .configured),
+            requiresUserApprovalForExternalActions: requiresUserApprovalForExternalActions
+        )
+    }
+
     func redactedForCareerGraphSync() -> BackendUserSession {
         var session = self
         session.accountID = nil
@@ -497,6 +519,19 @@ struct BackendUserSession: Codable, Equatable {
         session.accountID = nil
         session.email = nil
         return session
+    }
+}
+
+@MainActor
+protocol BackendSessionProviding {
+    func currentSession(for state: OpenLARPState) -> BackendUserSession
+}
+
+struct LocalMockBackendSessionProvider: BackendSessionProviding {
+    init() {}
+
+    func currentSession(for state: OpenLARPState) -> BackendUserSession {
+        BackendUserSession.localOnly(for: state)
     }
 }
 

@@ -10,6 +10,7 @@ final class OpenLARPStore {
     private let agentService: CareerAgentBriefServicing
     private let careerGraphSyncService: any CareerGraphSyncServicing
     private let backendEventSyncService: any BackendEventSyncServicing
+    private let backendSessionProvider: any BackendSessionProviding
     private let now: () -> Date
     private let calendar: Calendar
     private let backendEventRetryDelay: TimeInterval
@@ -34,6 +35,7 @@ final class OpenLARPStore {
         agentService: CareerAgentBriefServicing = MockCareerAgentService(),
         careerGraphSyncService: any CareerGraphSyncServicing = LocalMockCareerGraphSyncService(),
         backendEventSyncService: any BackendEventSyncServicing = LocalMockBackendEventSyncService(),
+        backendSessionProvider: any BackendSessionProviding = LocalMockBackendSessionProvider(),
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .autoupdatingCurrent,
         backendEventRetryDelay: TimeInterval = 300,
@@ -45,6 +47,7 @@ final class OpenLARPStore {
         self.agentService = agentService
         self.careerGraphSyncService = careerGraphSyncService
         self.backendEventSyncService = backendEventSyncService
+        self.backendSessionProvider = backendSessionProvider
         self.now = now
         self.calendar = calendar
         self.backendEventRetryDelay = backendEventRetryDelay
@@ -79,6 +82,7 @@ final class OpenLARPStore {
         let previousBetaEvents = state.betaEvents
         let previousAIWorkflowRuns = state.aiWorkflowRuns
         let previousBackendEvents = state.backendEvents
+        let previousSubscriptionState = state.needsGoalSetup ? nil : state.subscriptionState
         var completedAIWorkflowRuns: [V0AIWorkflowRun] = []
         let requestedAt = now()
         isGoalSetupRunning = true
@@ -126,6 +130,9 @@ final class OpenLARPStore {
         state.betaEvents = previousBetaEvents
         state.aiWorkflowRuns = previousAIWorkflowRuns
         state.backendEvents = previousBackendEvents
+        if let previousSubscriptionState {
+            state.subscriptionState = previousSubscriptionState
+        }
         recordAIWorkflowRuns(completedAIWorkflowRuns)
         recordBackendEvent(
             .goalConfirmed,
@@ -158,6 +165,7 @@ final class OpenLARPStore {
         let existingBetaEvents = state.betaEvents
         let existingAIWorkflowRuns = state.aiWorkflowRuns
         let existingBackendEvents = state.backendEvents
+        let existingSubscriptionState = state.subscriptionState
         deletePendingProofAttachments()
         state = OpenLARPEngine.resetGoal(now: now())
         state.userProfile = existingProfile
@@ -165,6 +173,7 @@ final class OpenLARPStore {
         state.betaEvents = existingBetaEvents
         state.aiWorkflowRuns = existingAIWorkflowRuns
         state.backendEvents = existingBackendEvents
+        state.subscriptionState = existingSubscriptionState
         pendingProof = nil
         pendingQualityResult = nil
         clearCareerGraphSyncPreview()
@@ -530,7 +539,7 @@ final class OpenLARPStore {
         }
 
         let requestedAt = now()
-        let session = BackendUserSession.localOnly(for: state)
+        let session = currentBackendSession()
         let includePrivateEvidence = explicitIncludePrivateEvidence ?? (state.userProfile?.privacy.shareWins ?? false)
         let previewGeneration = careerGraphSyncPreviewGeneration
         let request = CareerGraphSyncPreparationRequest(
@@ -591,7 +600,7 @@ final class OpenLARPStore {
         }
 
         let request = BackendEventSyncRequest(
-            session: BackendUserSession.localOnly(for: state),
+            session: currentBackendSession(),
             events: events.map { event in
                 var inFlightEvent = event
                 inFlightEvent.markInFlight(at: requestedAt)
@@ -723,12 +732,16 @@ final class OpenLARPStore {
         state.recordBackendEvent(
             BackendEventRecord(
                 kind: kind,
-                ownerUserID: BackendUserSession.localOnly(for: state).ownerUserID,
+                ownerUserID: currentBackendSession().ownerUserID,
                 occurredAt: occurredAt ?? now(),
                 entityID: entityID,
                 summary: summary
             )
         )
+    }
+
+    private func currentBackendSession() -> BackendUserSession {
+        backendSessionProvider.currentSession(for: state)
     }
 
     private func recordNextDayReturnIfNeeded(

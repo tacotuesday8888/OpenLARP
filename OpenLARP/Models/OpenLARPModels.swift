@@ -1201,9 +1201,10 @@ struct OpenLARPState: Codable, Equatable {
     var betaEvents: [BetaEventRecord]
     var aiWorkflowRuns: [AIWorkflowAuditRecord]
     var backendEvents: [BackendEventRecord]
+    var subscriptionState: OpenLARPSubscriptionState
 
     init(
-        schemaVersion: Int = 7,
+        schemaVersion: Int = 8,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
         targetRoles: [TargetRole] = [],
@@ -1220,7 +1221,8 @@ struct OpenLARPState: Codable, Equatable {
         outcomeLog: [CareerOutcomeRecord] = [],
         betaEvents: [BetaEventRecord] = [],
         aiWorkflowRuns: [AIWorkflowAuditRecord] = [],
-        backendEvents: [BackendEventRecord] = []
+        backendEvents: [BackendEventRecord] = [],
+        subscriptionState: OpenLARPSubscriptionState? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.userProfile = userProfile
@@ -1240,10 +1242,11 @@ struct OpenLARPState: Codable, Equatable {
         self.betaEvents = betaEvents
         self.aiWorkflowRuns = aiWorkflowRuns
         self.backendEvents = backendEvents
+        self.subscriptionState = subscriptionState ?? .localFreeSprint(startedAt: updatedAt)
     }
 
     static let empty = OpenLARPState(
-        schemaVersion: 7,
+        schemaVersion: 8,
         userProfile: nil,
         goal: nil,
         targetRoles: [],
@@ -1251,7 +1254,8 @@ struct OpenLARPState: Codable, Equatable {
         plan: [],
         progress: .empty,
         agentBrief: .empty,
-        updatedAt: Date(timeIntervalSince1970: 0)
+        updatedAt: Date(timeIntervalSince1970: 0),
+        subscriptionState: OpenLARPSubscriptionState.notStarted()
     )
 
     var needsGoalSetup: Bool {
@@ -1286,12 +1290,13 @@ extension OpenLARPState {
         case betaEvents
         case aiWorkflowRuns
         case backendEvents
+        case subscriptionState
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         _ = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        schemaVersion = 7
+        schemaVersion = 8
         userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
         goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
@@ -1309,6 +1314,8 @@ extension OpenLARPState {
         betaEvents = (try? container.decodeIfPresent(LossyBetaEventRecordList.self, forKey: .betaEvents)?.records) ?? []
         aiWorkflowRuns = (try? container.decodeIfPresent(LossyAIWorkflowAuditRecordList.self, forKey: .aiWorkflowRuns)?.records) ?? []
         backendEvents = (try? container.decodeIfPresent(LossyBackendEventRecordList.self, forKey: .backendEvents)?.records) ?? []
+        subscriptionState = try container.decodeIfPresent(OpenLARPSubscriptionState.self, forKey: .subscriptionState) ??
+            OpenLARPSubscriptionState.migrationDefault(startedAt: updatedAt)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1331,6 +1338,7 @@ extension OpenLARPState {
         try container.encode(betaEvents, forKey: .betaEvents)
         try container.encode(aiWorkflowRuns, forKey: .aiWorkflowRuns)
         try container.encode(backendEvents, forKey: .backendEvents)
+        try container.encode(subscriptionState, forKey: .subscriptionState)
     }
 }
 

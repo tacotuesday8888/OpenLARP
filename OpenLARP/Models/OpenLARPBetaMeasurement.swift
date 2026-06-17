@@ -14,6 +14,12 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
     case cookedCardPrepared
     case outcomeLogged
     case syncPreviewPrepared
+    case freeSprintStarted
+    case subscriptionStatusChecked
+    case subscriptionPaywallViewed
+    case subscriptionRestoreRequested
+    case subscriptionRestoreCompleted
+    case subscriptionRestoreFailed
 
     var id: String { rawValue }
 
@@ -32,6 +38,12 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
         case .cookedCardPrepared: "Cooked card prepared"
         case .outcomeLogged: "Outcome logged"
         case .syncPreviewPrepared: "Sync preview prepared"
+        case .freeSprintStarted: "Free sprint started"
+        case .subscriptionStatusChecked: "Subscription status checked"
+        case .subscriptionPaywallViewed: "Subscription paywall viewed"
+        case .subscriptionRestoreRequested: "Subscription restore requested"
+        case .subscriptionRestoreCompleted: "Subscription restore completed"
+        case .subscriptionRestoreFailed: "Subscription restore failed"
         }
     }
 }
@@ -103,6 +115,13 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
     let aiWorkflowFallbackCount: Int
     let aiWorkflowKindCounts: [AIWorkflowRunCount]
     let aiWorkflowProviderCounts: [AIWorkflowProviderCount]
+    let paymentEventCount: Int
+    let subscriptionHasAccess: Bool
+    let subscriptionAccessStatus: OpenLARPSubscriptionAccessStatus
+    let subscriptionAccessSource: OpenLARPSubscriptionAccessSource
+    let subscriptionNeedsPaywall: Bool
+    let subscriptionFreeSprintDaysRemaining: Int?
+    let subscriptionRestoreStatus: OpenLARPSubscriptionRestoreStatus
     let goalSetupComplete: Bool
     let planQuestCount: Int
     let availableQuestCount: Int
@@ -142,6 +161,14 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
             let count = state.aiWorkflowRuns.filter { $0.providerRoute == providerRoute }.count
             return count > 0 ? AIWorkflowProviderCount(providerRoute: providerRoute, count: count) : nil
         }
+        paymentEventCount = state.betaEvents.filter { Self.paymentEventKinds.contains($0.kind) }.count
+        let subscriptionAccess = state.subscriptionState.access(at: generatedAt)
+        subscriptionHasAccess = subscriptionAccess.isEntitled
+        subscriptionAccessStatus = subscriptionAccess.status
+        subscriptionAccessSource = subscriptionAccess.source
+        subscriptionNeedsPaywall = subscriptionAccess.shouldShowPaywall
+        subscriptionFreeSprintDaysRemaining = subscriptionAccess.daysRemaining
+        subscriptionRestoreStatus = state.subscriptionState.restoreState.status
         goalSetupComplete = !state.needsGoalSetup
         planQuestCount = state.plan.count
         availableQuestCount = state.plan.filter { $0.status == .available }.count
@@ -161,7 +188,7 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
         hasPendingProofDraft = state.proofDraft != nil
         firstEventAt = state.betaEvents.map(\.occurredAt).min()
         latestEventAt = state.betaEvents.map(\.occurredAt).max()
-        privacyNotice = "Private proof text, links, attachment paths, local file paths, and private notes are not included."
+        privacyNotice = "Private proof text, links, attachment paths, local file paths, and private notes are not included. Payment product IDs, customer identifiers, and management URLs are not included."
     }
 
     var searchableText: String {
@@ -172,6 +199,12 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
             "Total events: \(totalEvents)",
             "AI workflow runs: \(aiWorkflowRunCount)",
             "AI fallbacks: \(aiWorkflowFallbackCount)",
+            "Payment events: \(paymentEventCount)",
+            "Subscription access: \(subscriptionAccessStatus.label)",
+            "Subscription source: \(subscriptionAccessSource.label)",
+            "Subscription has access: \(subscriptionHasAccess ? "Yes" : "No")",
+            "Subscription paywall needed: \(subscriptionNeedsPaywall ? "Yes" : "No")",
+            "Subscription restore: \(subscriptionRestoreStatus.label)",
             "Plan quests: \(planQuestCount)",
             "Completed quests: \(completedQuestCount)",
             "Available quests: \(availableQuestCount)",
@@ -189,6 +222,10 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
             "Skipped today: \(skippedToday ? "Yes" : "No")",
             "Pending proof draft: \(hasPendingProofDraft ? "Yes" : "No")"
         ]
+
+        if let subscriptionFreeSprintDaysRemaining {
+            lines.append("Free sprint days remaining: \(subscriptionFreeSprintDaysRemaining)")
+        }
 
         for count in eventCounts {
             lines.append("\(count.kind.label): \(count.count)")
@@ -216,6 +253,15 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: date)
     }
+
+    private static let paymentEventKinds: Set<BetaEventKind> = [
+        .freeSprintStarted,
+        .subscriptionStatusChecked,
+        .subscriptionPaywallViewed,
+        .subscriptionRestoreRequested,
+        .subscriptionRestoreCompleted,
+        .subscriptionRestoreFailed
+    ]
 }
 
 extension JSONEncoder {

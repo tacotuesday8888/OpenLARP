@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "openlarp-dev-langqi",
+    "dev": "openlarp-dev-langqi"
+  }
+}

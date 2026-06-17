@@ -1,0 +1,59 @@
+name: iOS CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Select available iPhone simulator
+        id: simulator
+        run: |
+          DEVICE_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ && /Shutdown|Booted/ { print $2; exit }')"
+          if [ -z "$DEVICE_ID" ]; then
+            echo "No available iPhone simulator found."
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+          echo "Selected simulator: $DEVICE_ID"
+
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild \
+            -project OpenLARP.xcodeproj \
+            -scheme OpenLARP \
+            -destination generic/platform=iOS \
+            -derivedDataPath /tmp/OpenLARPDerivedDataBuild \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Run simulator tests
+        run: |
+          xcodebuild \
+            -project OpenLARP.xcodeproj \
+            -scheme OpenLARP \
+            -destination "id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath /tmp/OpenLARPDerivedDataTests \
+            CODE_SIGNING_ALLOWED=NO \
+            test

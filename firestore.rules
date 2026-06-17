@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function hasTopLevelOwner(userId) {
+      return !request.resource.data.keys().hasAny(['ownerUserID'])
+        || request.resource.data.ownerUserID == userId;
+    }
+
+    function hasMetadataOwner(userId) {
+      return !request.resource.data.keys().hasAny(['metadata'])
+        || !request.resource.data.metadata.keys().hasAny(['ownerUserID'])
+        || request.resource.data.metadata.ownerUserID == userId;
+    }
+
+    function noExternalActionWrite() {
+      return !request.resource.data.keys().hasAny(['externalActionTaken'])
+        || request.resource.data.externalActionTaken == false;
+    }
+
+    function isSafeUserDocument(userId) {
+      return hasTopLevelOwner(userId)
+        && hasMetadataOwner(userId)
+        && noExternalActionWrite();
+    }
+
+    match /users/{userId} {
+      allow read: if isUser(userId);
+      allow create, update: if isUser(userId) && isSafeUserDocument(userId);
+      allow delete: if false;
+
+      match /backendEvents/{eventId} {
+        allow read: if isUser(userId);
+        allow create, update: if isUser(userId)
+          && request.resource.data.ownerUserID == userId
+          && request.resource.data.idempotencyKey is string
+          && request.resource.data.kind is string
+          && request.resource.data.syncStatus == 'acknowledged';
+        allow delete: if false;
+      }
+
+      match /{document=**} {
+        allow read: if isUser(userId);
+        allow create, update: if isUser(userId) && isSafeUserDocument(userId);
+        allow delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -13,7 +13,9 @@ targets:
     type: application
     platform: iOS
     sources:
-      - OpenLARP
+      - path: OpenLARP
+        excludes:
+          - GoogleService-Info.plist
     scheme:
       testTargets:
         - OpenLARPTests

@@ -51,6 +51,103 @@ struct V0AISafetyRules: Codable, Equatable {
     }
 }
 
+struct V0AIBackendPrivateIdentifiers: Equatable {
+    static let none = V0AIBackendPrivateIdentifiers()
+
+    var ownerUserID: String?
+    var accountID: String?
+    var sessionID: String?
+    var email: String?
+
+    init(
+        ownerUserID: String? = nil,
+        accountID: String? = nil,
+        sessionID: String? = nil,
+        email: String? = nil
+    ) {
+        self.ownerUserID = ownerUserID
+        self.accountID = accountID
+        self.sessionID = sessionID
+        self.email = email
+    }
+}
+
+struct V0AIBackendPrivacyMetadata: Codable, Equatable {
+    var memoryMode: CareerMemoryMode
+    var allowsLongTermMemoryWrite: Bool
+    var requiresUserApprovalForExternalActions: Bool
+    var shareWins: Bool
+
+    init(
+        privacy: CareerUserPrivacySettings,
+        allowsLongTermMemoryWrite: Bool? = nil
+    ) {
+        self.memoryMode = privacy.memoryMode
+        self.allowsLongTermMemoryWrite = allowsLongTermMemoryWrite ?? V0AIWorkflowContext
+            .allowsLongTermMemoryWrite(for: privacy)
+        self.requiresUserApprovalForExternalActions = privacy.requireApprovalForExternalActions
+        self.shareWins = privacy.shareWins
+    }
+}
+
+struct V0AIBackendRequestRunMetadata: Codable, Equatable {
+    var schemaVersion: Int
+    var kind: V0AIWorkflowKind
+    var providerRoute: V0AIProviderRoute
+    var requestedAt: Date
+    var requestID: UUID
+    var privacy: V0AIBackendPrivacyMetadata
+
+    init(
+        kind: V0AIWorkflowKind,
+        providerRoute: V0AIProviderRoute,
+        requestedAt: Date,
+        requestID: UUID = UUID(),
+        privacy: CareerUserPrivacySettings = .localDefault,
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.kind = kind
+        self.providerRoute = providerRoute
+        self.requestedAt = requestedAt
+        self.requestID = requestID
+        self.privacy = V0AIBackendPrivacyMetadata(privacy: privacy)
+    }
+}
+
+struct V0AIBackendRequestEnvelope<Payload: Codable & Equatable>: Codable, Equatable {
+    var schemaVersion: Int
+    var run: V0AIBackendRequestRunMetadata
+    var safetyRules: V0AISafetyRules
+    var payload: Payload
+
+    init(
+        kind: V0AIWorkflowKind,
+        providerRoute: V0AIProviderRoute,
+        requestedAt: Date,
+        requestID: UUID = UUID(),
+        privacy: CareerUserPrivacySettings = .localDefault,
+        privateIdentifiers: V0AIBackendPrivateIdentifiers = .none,
+        payload: Payload,
+        safetyRules: V0AISafetyRules = .v0Default,
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        run = V0AIBackendRequestRunMetadata(
+            kind: kind,
+            providerRoute: providerRoute,
+            requestedAt: requestedAt,
+            requestID: requestID,
+            privacy: privacy,
+            schemaVersion: schemaVersion
+        )
+        self.safetyRules = safetyRules
+        self.payload = payload
+
+        _ = privateIdentifiers
+    }
+}
+
 struct V0AIWorkflowRun: Codable, Equatable {
     var schemaVersion: Int
     var kind: V0AIWorkflowKind
