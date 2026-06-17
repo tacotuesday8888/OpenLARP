@@ -1199,9 +1199,10 @@ struct OpenLARPState: Codable, Equatable {
     var proofDraftQualityResult: QualityCheckResult?
     var outcomeLog: [CareerOutcomeRecord]
     var betaEvents: [BetaEventRecord]
+    var aiWorkflowRuns: [AIWorkflowAuditRecord]
 
     init(
-        schemaVersion: Int = 5,
+        schemaVersion: Int = 6,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
         targetRoles: [TargetRole] = [],
@@ -1216,7 +1217,8 @@ struct OpenLARPState: Codable, Equatable {
         proofDraft: ProofSubmission? = nil,
         proofDraftQualityResult: QualityCheckResult? = nil,
         outcomeLog: [CareerOutcomeRecord] = [],
-        betaEvents: [BetaEventRecord] = []
+        betaEvents: [BetaEventRecord] = [],
+        aiWorkflowRuns: [AIWorkflowAuditRecord] = []
     ) {
         self.schemaVersion = schemaVersion
         self.userProfile = userProfile
@@ -1234,10 +1236,11 @@ struct OpenLARPState: Codable, Equatable {
         self.proofDraftQualityResult = proofDraftQualityResult
         self.outcomeLog = outcomeLog
         self.betaEvents = betaEvents
+        self.aiWorkflowRuns = aiWorkflowRuns
     }
 
     static let empty = OpenLARPState(
-        schemaVersion: 5,
+        schemaVersion: 6,
         userProfile: nil,
         goal: nil,
         targetRoles: [],
@@ -1278,12 +1281,13 @@ extension OpenLARPState {
         case proofDraftQualityResult
         case outcomeLog
         case betaEvents
+        case aiWorkflowRuns
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         _ = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        schemaVersion = 5
+        schemaVersion = 6
         userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
         goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
@@ -1299,6 +1303,7 @@ extension OpenLARPState {
         proofDraftQualityResult = try container.decodeIfPresent(QualityCheckResult.self, forKey: .proofDraftQualityResult)
         outcomeLog = try container.decodeIfPresent([CareerOutcomeRecord].self, forKey: .outcomeLog) ?? []
         betaEvents = (try? container.decodeIfPresent(LossyBetaEventRecordList.self, forKey: .betaEvents)?.records) ?? []
+        aiWorkflowRuns = (try? container.decodeIfPresent(LossyAIWorkflowAuditRecordList.self, forKey: .aiWorkflowRuns)?.records) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1319,6 +1324,16 @@ extension OpenLARPState {
         try container.encodeIfPresent(proofDraftQualityResult, forKey: .proofDraftQualityResult)
         try container.encode(outcomeLog, forKey: .outcomeLog)
         try container.encode(betaEvents, forKey: .betaEvents)
+        try container.encode(aiWorkflowRuns, forKey: .aiWorkflowRuns)
+    }
+}
+
+extension OpenLARPState {
+    mutating func recordAIWorkflowRun(_ run: V0AIWorkflowRun) {
+        aiWorkflowRuns.append(AIWorkflowAuditRecord(run: run))
+        if aiWorkflowRuns.count > AIWorkflowAuditRecord.maxStoredCount {
+            aiWorkflowRuns.removeFirst(aiWorkflowRuns.count - AIWorkflowAuditRecord.maxStoredCount)
+        }
     }
 }
 

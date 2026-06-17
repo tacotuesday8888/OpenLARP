@@ -194,6 +194,61 @@ final class BetaMeasurementTests: XCTestCase {
         XCTAssertFalse(exportedJSON.contains("ProofAttachments"))
     }
 
+    func testBetaSummaryExportIncludesAIWorkflowAggregatesWithoutPrivateData() throws {
+        var state = OpenLARPEngine.confirmGoal(privateGoal, now: localDate(year: 2026, month: 6, day: 1, hour: 9))
+        state.aiWorkflowRuns = [
+            AIWorkflowAuditRecord(
+                kind: .cookedDiagnostic,
+                providerRoute: .firebaseCallableGenkit,
+                requestedAt: localDate(year: 2026, month: 6, day: 1, hour: 9),
+                completedAt: localDate(year: 2026, month: 6, day: 1, hour: 9),
+                usedFallback: false
+            ),
+            AIWorkflowAuditRecord(
+                kind: .proofQualityCheck,
+                providerRoute: .localMock,
+                requestedAt: localDate(year: 2026, month: 6, day: 1, hour: 10),
+                completedAt: localDate(year: 2026, month: 6, day: 1, hour: 10),
+                usedFallback: true,
+                failureSummary: "Primary workflow failed; local fallback handled this run."
+            )
+        ]
+        state.progress.recentProof = [privateProof()]
+        state.progress.proofCount = 1
+
+        let content = BetaMeasurementSummaryContent(state: state)
+        let exportedText = content.searchableText
+        let exportedJSON = try String(
+            decoding: JSONEncoder.openLARPBetaExport.encode(content),
+            as: UTF8.self
+        )
+
+        XCTAssertEqual(content.aiWorkflowRunCount, 2)
+        XCTAssertEqual(content.aiWorkflowFallbackCount, 1)
+        XCTAssertEqual(content.aiWorkflowKindCounts, [
+            AIWorkflowRunCount(kind: .cookedDiagnostic, count: 1),
+            AIWorkflowRunCount(kind: .proofQualityCheck, count: 1)
+        ])
+        XCTAssertEqual(content.aiWorkflowProviderCounts, [
+            AIWorkflowProviderCount(providerRoute: .localMock, count: 1),
+            AIWorkflowProviderCount(providerRoute: .firebaseCallableGenkit, count: 1)
+        ])
+        XCTAssertTrue(exportedText.contains("AI workflow runs: 2"))
+        XCTAssertTrue(exportedText.contains("AI fallbacks: 1"))
+        XCTAssertTrue(exportedText.contains("cookedDiagnostic: 1"))
+        XCTAssertTrue(exportedText.contains("firebaseCallableGenkit: 1"))
+        XCTAssertFalse(exportedText.contains("langqi@example.com"))
+        XCTAssertFalse(exportedText.contains("Secret Project Falcon"))
+        XCTAssertFalse(exportedText.contains("private.example.com"))
+        XCTAssertFalse(exportedText.contains("sk-test-secret"))
+        XCTAssertFalse(exportedText.contains("ProofAttachments"))
+        XCTAssertFalse(exportedJSON.contains("langqi@example.com"))
+        XCTAssertFalse(exportedJSON.contains("Secret Project Falcon"))
+        XCTAssertFalse(exportedJSON.contains("private.example.com"))
+        XCTAssertFalse(exportedJSON.contains("sk-test-secret"))
+        XCTAssertFalse(exportedJSON.contains("ProofAttachments"))
+    }
+
     func testLegacyStateWithoutBetaEventsDecodesWithEmptyLog() throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

@@ -80,11 +80,29 @@ struct BetaMeasurementEventCount: Codable, Equatable, Identifiable {
     var id: BetaEventKind { kind }
 }
 
+struct AIWorkflowRunCount: Codable, Equatable, Identifiable {
+    var kind: V0AIWorkflowKind
+    var count: Int
+
+    var id: V0AIWorkflowKind { kind }
+}
+
+struct AIWorkflowProviderCount: Codable, Equatable, Identifiable {
+    var providerRoute: V0AIProviderRoute
+    var count: Int
+
+    var id: V0AIProviderRoute { providerRoute }
+}
+
 struct BetaMeasurementSummaryContent: Codable, Equatable {
     let schemaVersion: Int
     let generatedAt: Date
     let totalEvents: Int
     let eventCounts: [BetaMeasurementEventCount]
+    let aiWorkflowRunCount: Int
+    let aiWorkflowFallbackCount: Int
+    let aiWorkflowKindCounts: [AIWorkflowRunCount]
+    let aiWorkflowProviderCounts: [AIWorkflowProviderCount]
     let goalSetupComplete: Bool
     let planQuestCount: Int
     let availableQuestCount: Int
@@ -114,6 +132,16 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
             let count = state.betaEvents.filter { $0.kind == kind }.count
             return count > 0 ? BetaMeasurementEventCount(kind: kind, count: count) : nil
         }
+        aiWorkflowRunCount = state.aiWorkflowRuns.count
+        aiWorkflowFallbackCount = state.aiWorkflowRuns.filter(\.usedFallback).count
+        aiWorkflowKindCounts = V0AIWorkflowKind.allCases.compactMap { kind in
+            let count = state.aiWorkflowRuns.filter { $0.kind == kind }.count
+            return count > 0 ? AIWorkflowRunCount(kind: kind, count: count) : nil
+        }
+        aiWorkflowProviderCounts = V0AIProviderRoute.allCases.compactMap { providerRoute in
+            let count = state.aiWorkflowRuns.filter { $0.providerRoute == providerRoute }.count
+            return count > 0 ? AIWorkflowProviderCount(providerRoute: providerRoute, count: count) : nil
+        }
         goalSetupComplete = !state.needsGoalSetup
         planQuestCount = state.plan.count
         availableQuestCount = state.plan.filter { $0.status == .available }.count
@@ -142,6 +170,8 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
             "Generated: \(Self.formattedDate(generatedAt))",
             "Goal setup complete: \(goalSetupComplete ? "Yes" : "No")",
             "Total events: \(totalEvents)",
+            "AI workflow runs: \(aiWorkflowRunCount)",
+            "AI fallbacks: \(aiWorkflowFallbackCount)",
             "Plan quests: \(planQuestCount)",
             "Completed quests: \(completedQuestCount)",
             "Available quests: \(availableQuestCount)",
@@ -162,6 +192,12 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
 
         for count in eventCounts {
             lines.append("\(count.kind.label): \(count.count)")
+        }
+        for count in aiWorkflowKindCounts {
+            lines.append("\(count.kind.rawValue): \(count.count)")
+        }
+        for count in aiWorkflowProviderCounts {
+            lines.append("\(count.providerRoute.rawValue): \(count.count)")
         }
 
         if let firstEventAt {
