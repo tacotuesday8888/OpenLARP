@@ -1688,7 +1688,7 @@ final class V0EngineTests: XCTestCase {
 
         let decoded = try decoder.decode(OpenLARPState.self, from: oldData)
 
-        XCTAssertEqual(decoded.schemaVersion, 5)
+        XCTAssertEqual(decoded.schemaVersion, 6)
         XCTAssertTrue(decoded.outcomeLog.isEmpty)
     }
 
@@ -2707,6 +2707,209 @@ final class V0EngineTests: XCTestCase {
     }
 
     @MainActor
+    func testStorePersistsAIWorkflowAuditRunsForGoalSetupAndProofCheck() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+
+        await store.confirmGoal(goal)
+
+        XCTAssertEqual(store.state.aiWorkflowRuns.map(\.kind), [
+            .cookedDiagnostic,
+            .questPlan
+        ])
+        XCTAssertEqual(store.state.aiWorkflowRuns.map(\.providerRoute), [
+            .localMock,
+            .localMock
+        ])
+        XCTAssertTrue(store.state.aiWorkflowRuns.allSatisfy { !$0.usedFallback })
+        XCTAssertTrue(store.state.aiWorkflowRuns.allSatisfy { $0.failureSummary == nil })
+
+        store.startCurrentQuest()
+        await store.checkProof(
+            kind: .proof,
+            text: "I mapped target-role requirements into a concrete proof artifact.",
+            link: "https://example.com/proof"
+        )
+
+        XCTAssertEqual(store.state.aiWorkflowRuns.map(\.kind), [
+            .cookedDiagnostic,
+            .questPlan,
+            .proofQualityCheck
+        ])
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.aiWorkflowRuns, store.state.aiWorkflowRuns)
+        XCTAssertEqual(reloaded.aiWorkflowRuns.last?.kind, .proofQualityCheck)
+        XCTAssertFalse(String(describing: reloaded.aiWorkflowRuns).contains("target-role requirements"))
+        XCTAssertFalse(String(describing: reloaded.aiWorkflowRuns).contains("example.com/proof"))
+    }
+
+    @MainActor
+    func testStoreRecordsFallbackAIWorkflowAuditWithoutPrivateErrorDetails() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: FallbackV0AIWorkflowService(
+                primary: SensitiveThrowingV0AIWorkflowService(),
+                fallback: LocalMockV0AIWorkflowService()
+            )
+        )
+
+        await store.confirmGoal(goal)
+
+        XCTAssertEqual(store.state.aiWorkflowRuns.map(\.kind), [
+            .cookedDiagnostic,
+            .questPlan
+        ])
+        XCTAssertTrue(store.state.aiWorkflowRuns.allSatisfy(\.usedFallback))
+        XCTAssertEqual(Set(store.state.aiWorkflowRuns.compactMap(\.failureSummary)), [
+            "Primary workflow failed; local fallback handled this run."
+        ])
+
+        let encodedRuns = String(
+            decoding: try JSONEncoder().encode(store.state.aiWorkflowRuns),
+            as: UTF8.self
+        )
+        XCTAssertFalse(encodedRuns.contains("langqi@example.com"))
+        XCTAssertFalse(encodedRuns.contains("sk-test-secret"))
+        XCTAssertFalse(encodedRuns.contains("private-device-path"))
+        XCTAssertFalse(encodedRuns.localizedCaseInsensitiveContains("api key"))
+    }
+
+    func testLegacyStateWithoutAIWorkflowRunsDecodesWithEmptyAuditTrail() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let original = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 15_250))
+        let encoded = try encoder.encode(original)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        json.removeValue(forKey: "aiWorkflowRuns")
+        let legacyData = try JSONSerialization.data(withJSONObject: json)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(OpenLARPState.self, from: legacyData)
+
+        XCTAssertEqual(decoded.aiWorkflowRuns, [])
+    }
+
+    func testMalformedAIWorkflowRunsAreDroppedWithoutLosingState() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var original = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 15_300))
+        original.aiWorkflowRuns = [
+            AIWorkflowAuditRecord(
+                kind: .cookedDiagnostic,
+                providerRoute: .localMock,
+                requestedAt: Date(timeIntervalSince1970: 15_300),
+                completedAt: Date(timeIntervalSince1970: 15_301)
+            )
+        ]
+        let encoded = try encoder.encode(original)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        json["aiWorkflowRuns"] = [
+            [
+                "schemaVersion": 1,
+                "kind": "cookedDiagnostic",
+                "providerRoute": "localMock",
+                "requestedAt": "1970-01-01T04:15:00Z",
+                "completedAt": "1970-01-01T04:15:01Z",
+                "usedFallback": false
+            ],
+            [
+                "schemaVersion": 1,
+                "kind": "futureWorkflowKind",
+                "providerRoute": "localMock",
+                "requestedAt": "1970-01-01T04:15:00Z",
+                "completedAt": "1970-01-01T04:15:01Z",
+                "usedFallback": false
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(OpenLARPState.self, from: data)
+
+        XCTAssertEqual(decoded.goal, original.goal)
+        XCTAssertEqual(decoded.aiWorkflowRuns.count, 1)
+        XCTAssertEqual(decoded.aiWorkflowRuns.first?.kind, .cookedDiagnostic)
+    }
+
+    func testAIWorkflowAuditRecordsUseStableUniqueIDsForSameSecondRuns() throws {
+        let timestamp = Date(timeIntervalSince1970: 15_400.9)
+        let first = AIWorkflowAuditRecord(
+            kind: .proofQualityCheck,
+            providerRoute: .localMock,
+            requestedAt: timestamp,
+            completedAt: timestamp
+        )
+        let second = AIWorkflowAuditRecord(
+            kind: .proofQualityCheck,
+            providerRoute: .localMock,
+            requestedAt: timestamp,
+            completedAt: timestamp
+        )
+
+        XCTAssertNotEqual(first.id, second.id)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let encoded = try encoder.encode([first, second])
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode([AIWorkflowAuditRecord].self, from: encoded)
+
+        XCTAssertEqual(decoded.map(\.id), [first.id, second.id])
+    }
+
+    @MainActor
+    func testStorePersistsProofAuditWhenProofResponseBecomesStale() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let service = StateChangingProofReviewService()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: service
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let auditCountBeforeProof = store.state.aiWorkflowRuns.count
+        service.onReviewProof = {
+            var replacementState = OpenLARPEngine.confirmGoal(
+                self.goal,
+                now: Date(timeIntervalSince1970: 15_450)
+            )
+            replacementState.aiWorkflowRuns = store.state.aiWorkflowRuns
+            store.state = replacementState
+        }
+
+        await store.checkProof(
+            kind: .proof,
+            text: "This stale response should not attach proof to the new quest.",
+            link: "https://example.com/stale-proof"
+        )
+
+        XCTAssertEqual(store.state.aiWorkflowRuns.count, auditCountBeforeProof + 1)
+        XCTAssertEqual(store.state.aiWorkflowRuns.last?.kind, .proofQualityCheck)
+        XCTAssertNil(store.pendingProof)
+        XCTAssertNil(store.pendingQualityResult)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.aiWorkflowRuns, store.state.aiWorkflowRuns)
+    }
+
+    @MainActor
     func testStoreFallsBackToLocalPlanWhenWorkflowReturnsInvalidQuestPlan() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -3067,6 +3270,30 @@ private struct ThrowingV0AIWorkflowService: V0AIWorkflowServicing {
     }
 }
 
+private struct SensitiveThrowingV0AIWorkflowService: V0AIWorkflowServicing {
+    func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
+        throw SensitiveWorkflowError()
+    }
+
+    func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
+        throw SensitiveWorkflowError()
+    }
+
+    func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
+        throw SensitiveWorkflowError()
+    }
+
+    func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse {
+        throw SensitiveWorkflowError()
+    }
+}
+
+private struct SensitiveWorkflowError: Error, CustomStringConvertible {
+    var description: String {
+        "backend failure for langqi@example.com with sk-test-secret api key at ProofAttachments/private-device-path.png"
+    }
+}
+
 private struct InvalidPlanV0AIWorkflowService: V0AIWorkflowServicing {
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         V0DiagnosticResponse(
@@ -3099,6 +3326,28 @@ private struct InvalidPlanV0AIWorkflowService: V0AIWorkflowServicing {
 
     func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
         try await LocalMockV0AIWorkflowService().reviewProof(request)
+    }
+
+    func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse {
+        try await LocalMockV0AIWorkflowService().summarizeProgress(request)
+    }
+}
+
+private final class StateChangingProofReviewService: V0AIWorkflowServicing {
+    var onReviewProof: (() -> Void)?
+
+    func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
+        try await LocalMockV0AIWorkflowService().generateDiagnostic(request)
+    }
+
+    func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
+        try await LocalMockV0AIWorkflowService().generateQuestPlan(request)
+    }
+
+    func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
+        let response = try await LocalMockV0AIWorkflowService().reviewProof(request)
+        onReviewProof?()
+        return response
     }
 
     func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse {

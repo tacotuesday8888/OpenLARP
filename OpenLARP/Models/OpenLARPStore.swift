@@ -67,6 +67,8 @@ final class OpenLARPStore {
         let previousPrivacy = state.userProfile?.privacy
         let previousOutcomeLog = state.outcomeLog
         let previousBetaEvents = state.betaEvents
+        let previousAIWorkflowRuns = state.aiWorkflowRuns
+        var completedAIWorkflowRuns: [V0AIWorkflowRun] = []
         let requestedAt = now()
         isGoalSetupRunning = true
         defer { isGoalSetupRunning = false }
@@ -75,6 +77,7 @@ final class OpenLARPStore {
             let diagnosticResponse = try await aiWorkflowService.generateDiagnostic(
                 V0DiagnosticRequest(goal: goal, requestedAt: requestedAt)
             )
+            completedAIWorkflowRuns.append(diagnosticResponse.run)
             let planResponse = try await aiWorkflowService.generateQuestPlan(
                 V0QuestPlanRequest(
                     goal: goal,
@@ -82,6 +85,7 @@ final class OpenLARPStore {
                     requestedAt: requestedAt
                 )
             )
+            completedAIWorkflowRuns.append(planResponse.run)
             guard let plan = OpenLARPEngine.validatedInitialPlan(planResponse.quests) else {
                 throw OpenLARPError.invalidQuestPlan
             }
@@ -101,6 +105,8 @@ final class OpenLARPStore {
         }
         state.outcomeLog = previousOutcomeLog
         state.betaEvents = previousBetaEvents
+        state.aiWorkflowRuns = previousAIWorkflowRuns
+        recordAIWorkflowRuns(completedAIWorkflowRuns)
         recordBetaEvent(.goalConfirmed, occurredAt: requestedAt)
         recordBetaEvent(.diagnosticShown, occurredAt: requestedAt)
         state.agentBrief = AgentBriefFactory.makeBrief(for: state, generatedAt: requestedAt)
@@ -120,11 +126,13 @@ final class OpenLARPStore {
         existingProfile?.updatedAt = now()
         let existingOutcomeLog = state.outcomeLog
         let existingBetaEvents = state.betaEvents
+        let existingAIWorkflowRuns = state.aiWorkflowRuns
         deletePendingProofAttachments()
         state = OpenLARPEngine.resetGoal(now: now())
         state.userProfile = existingProfile
         state.outcomeLog = existingOutcomeLog
         state.betaEvents = existingBetaEvents
+        state.aiWorkflowRuns = existingAIWorkflowRuns
         pendingProof = nil
         pendingQualityResult = nil
         clearCareerGraphSyncPreview()
@@ -205,7 +213,12 @@ final class OpenLARPStore {
                     requestedAt: requestedAt
                 )
             )
-            guard state.currentQuest?.id == questID else { return }
+            recordAIWorkflowRun(response.run)
+            guard state.currentQuest?.id == questID else {
+                state.updatedAt = now()
+                save()
+                return
+            }
             let result = response.result
             deletePendingProofAttachments(excluding: proof.attachments)
             pendingProof = proof
@@ -506,6 +519,16 @@ final class OpenLARPStore {
         state.betaEvents.append(event)
         if state.betaEvents.count > 500 {
             state.betaEvents.removeFirst(state.betaEvents.count - 500)
+        }
+    }
+
+    private func recordAIWorkflowRun(_ run: V0AIWorkflowRun) {
+        state.recordAIWorkflowRun(run)
+    }
+
+    private func recordAIWorkflowRuns(_ runs: [V0AIWorkflowRun]) {
+        for run in runs {
+            recordAIWorkflowRun(run)
         }
     }
 

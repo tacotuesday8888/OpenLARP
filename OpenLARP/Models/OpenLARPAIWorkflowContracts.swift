@@ -9,10 +9,12 @@ enum V0AIWorkflowKind: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum V0AIProviderRoute: String, Codable {
+enum V0AIProviderRoute: String, Codable, CaseIterable, Identifiable {
     case localMock
     case firebaseCallableGenkit
     case cloudRunGenkit
+
+    var id: String { rawValue }
 }
 
 struct V0AISafetyRules: Codable, Equatable {
@@ -83,6 +85,108 @@ struct V0AIWorkflowRun: Codable, Equatable {
         return run
     }
 }
+
+struct AIWorkflowAuditRecord: Codable, Equatable, Identifiable {
+    static let fallbackFailureSummary = "Primary workflow failed; local fallback handled this run."
+    static let maxStoredCount = 100
+
+    var id: UUID
+    var schemaVersion: Int
+    var kind: V0AIWorkflowKind
+    var providerRoute: V0AIProviderRoute
+    var requestedAt: Date
+    var completedAt: Date
+    var usedFallback: Bool
+    var failureSummary: String?
+
+    init(
+        id: UUID = UUID(),
+        kind: V0AIWorkflowKind,
+        providerRoute: V0AIProviderRoute,
+        requestedAt: Date,
+        completedAt: Date,
+        usedFallback: Bool = false,
+        schemaVersion: Int = 1,
+        failureSummary: String? = nil
+    ) {
+        self.id = id
+        self.schemaVersion = schemaVersion
+        self.kind = kind
+        self.providerRoute = providerRoute
+        self.requestedAt = Self.persistenceStableDate(requestedAt)
+        self.completedAt = Self.persistenceStableDate(completedAt)
+        self.usedFallback = usedFallback
+        self.failureSummary = Self.safeFailureSummary(from: failureSummary, usedFallback: usedFallback)
+    }
+
+    init(run: V0AIWorkflowRun) {
+        self.init(
+            kind: run.kind,
+            providerRoute: run.providerRoute,
+            requestedAt: run.requestedAt,
+            completedAt: run.completedAt,
+            usedFallback: run.usedFallback,
+            schemaVersion: run.schemaVersion,
+            failureSummary: run.failureMessage
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case schemaVersion
+        case kind
+        case providerRoute
+        case requestedAt
+        case completedAt
+        case usedFallback
+        case failureSummary
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(),
+            kind: try container.decode(V0AIWorkflowKind.self, forKey: .kind),
+            providerRoute: try container.decode(V0AIProviderRoute.self, forKey: .providerRoute),
+            requestedAt: try container.decode(Date.self, forKey: .requestedAt),
+            completedAt: try container.decode(Date.self, forKey: .completedAt),
+            usedFallback: try container.decodeIfPresent(Bool.self, forKey: .usedFallback) ?? false,
+            schemaVersion: try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1,
+            failureSummary: try container.decodeIfPresent(String.self, forKey: .failureSummary)
+        )
+    }
+
+    private static func safeFailureSummary(from summary: String?, usedFallback: Bool) -> String? {
+        guard usedFallback else { return nil }
+        guard summary == fallbackFailureSummary else { return fallbackFailureSummary }
+        return summary
+    }
+
+    private static func persistenceStableDate(_ date: Date) -> Date {
+        Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
+    }
+}
+
+struct LossyAIWorkflowAuditRecordList: Decodable {
+    var records: [AIWorkflowAuditRecord]
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var decodedRecords: [AIWorkflowAuditRecord] = []
+
+        while !container.isAtEnd {
+            if let record = try? container.decode(AIWorkflowAuditRecord.self) {
+                decodedRecords.append(record)
+            } else if (try? container.decode(DiscardedAIWorkflowAuditRecord.self)) == nil {
+                break
+            }
+        }
+
+        records = decodedRecords
+    }
+}
+
+private struct DiscardedAIWorkflowAuditRecord: Decodable {}
 
 struct V0DiagnosticRequest: Codable, Equatable {
     var schemaVersion: Int
