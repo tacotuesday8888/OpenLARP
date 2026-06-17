@@ -260,29 +260,6 @@ struct OpenLARPSubscriptionState: Codable, Equatable {
         at timestamp: Date,
         calendar: Calendar = .autoupdatingCurrent
     ) -> OpenLARPSubscriptionAccess {
-        switch restoreState.status {
-        case .inProgress:
-            return OpenLARPSubscriptionAccess(
-                isEntitled: false,
-                status: .restoreInProgress,
-                source: .none,
-                expiresAt: nil,
-                daysRemaining: 0,
-                shouldShowPaywall: true
-            )
-        case .failed:
-            return OpenLARPSubscriptionAccess(
-                isEntitled: false,
-                status: .restoreFailed,
-                source: .none,
-                expiresAt: nil,
-                daysRemaining: 0,
-                shouldShowPaywall: true
-            )
-        case .notStarted, .restored:
-            break
-        }
-
         if let customerInfo,
            customerInfo.hasActiveEntitlement(configuration.revenueCatEntitlementID, at: timestamp) {
             return OpenLARPSubscriptionAccess(
@@ -306,6 +283,29 @@ struct OpenLARPSubscriptionState: Codable, Equatable {
                 daysRemaining: freeSprint.daysRemaining(at: timestamp, calendar: calendar),
                 shouldShowPaywall: false
             )
+        }
+
+        switch restoreState.status {
+        case .inProgress:
+            return OpenLARPSubscriptionAccess(
+                isEntitled: false,
+                status: .restoreInProgress,
+                source: .none,
+                expiresAt: nil,
+                daysRemaining: 0,
+                shouldShowPaywall: true
+            )
+        case .failed:
+            return OpenLARPSubscriptionAccess(
+                isEntitled: false,
+                status: .restoreFailed,
+                source: .none,
+                expiresAt: nil,
+                daysRemaining: 0,
+                shouldShowPaywall: true
+            )
+        case .notStarted, .restored:
+            break
         }
 
         return OpenLARPSubscriptionAccess(

@@ -281,6 +281,19 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
         failureSummary = Self.safeSyncFailureSummary
     }
 
+    mutating func assignAuthenticatedOwnerIfLocal(_ authenticatedOwnerUserID: String) {
+        guard ownerUserID.hasPrefix("local_"),
+              ownerUserID != authenticatedOwnerUserID
+        else { return }
+
+        ownerUserID = authenticatedOwnerUserID
+        idempotencyKey = Self.makeIdempotencyKey(
+            ownerUserID: authenticatedOwnerUserID,
+            kind: kind,
+            entityID: id.uuidString
+        )
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case schemaVersion

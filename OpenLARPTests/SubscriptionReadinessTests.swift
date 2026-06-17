@@ -138,6 +138,33 @@ final class SubscriptionReadinessTests: XCTestCase {
         XCTAssertTrue(access.shouldShowPaywall)
     }
 
+    func testActiveEntitlementKeepsAccessWhenRestoreFailedMetadataRemains() {
+        let now = date(year: 2026, month: 6, day: 20)
+        let expiration = date(year: 2026, month: 7, day: 20)
+        let state = OpenLARPSubscriptionState(
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: now,
+                activeEntitlementIDs: [OpenLARPSubscriptionConfiguration.placeholder.revenueCatEntitlementID],
+                activeProductIDs: [OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID],
+                entitlementExpirationDate: expiration
+            ),
+            restoreState: OpenLARPRestoreState(
+                status: .failed,
+                requestedAt: date(year: 2026, month: 6, day: 19),
+                completedAt: now
+            ),
+            lastUpdatedAt: now
+        )
+
+        let access = state.access(at: now, calendar: calendar)
+
+        XCTAssertTrue(access.isEntitled)
+        XCTAssertEqual(access.status, .active)
+        XCTAssertEqual(access.source, .revenueCatCustomerInfo)
+        XCTAssertEqual(access.expiresAt, expiration)
+        XCTAssertFalse(access.shouldShowPaywall)
+    }
+
     func testLegacyStateWithoutSubscriptionDecodesWithFreeSprintMigrationDefault() throws {
         let original = OpenLARPEngine.confirmGoal(
             goal,

@@ -73,6 +73,50 @@ final class BackendSessionReadinessTests: XCTestCase {
         XCTAssertEqual(store.careerGraphSyncPreview?.requiresAuthenticationToSync, true)
         XCTAssertEqual(store.careerGraphSyncPreview?.didContactNetwork, false)
     }
+
+    func testLocalBackendEventsAreReownedWhenUserAuthenticatesBeforeSync() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let syncService = CapturingBackendEventSyncService()
+        let sessionProvider = SwitchingBackendSessionProvider()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            backendEventSyncService: syncService,
+            backendSessionProvider: sessionProvider,
+            now: { Date(timeIntervalSince1970: 20_500) }
+        )
+
+        await store.confirmGoal(goal)
+        let localEvent = try XCTUnwrap(store.state.backendEvents.first)
+        XCTAssertTrue(localEvent.ownerUserID.hasPrefix("local_"))
+
+        sessionProvider.authenticatedSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_456",
+            accountID: "account-private",
+            email: "private@example.com"
+        )
+
+        await store.syncBackendEvents()
+
+        let request = try XCTUnwrap(syncService.requests.first)
+        let syncedRequestEvent = try XCTUnwrap(request.events.first)
+        let storedEvent = try XCTUnwrap(store.state.backendEvents.first)
+
+        XCTAssertEqual(request.session.ownerUserID, "firebase_uid_456")
+        XCTAssertEqual(syncedRequestEvent.id, localEvent.id)
+        XCTAssertEqual(syncedRequestEvent.ownerUserID, "firebase_uid_456")
+        XCTAssertEqual(syncedRequestEvent.syncStatus, .inFlight)
+        XCTAssertFalse(syncedRequestEvent.idempotencyKey.contains(localEvent.ownerUserID))
+        XCTAssertTrue(syncedRequestEvent.idempotencyKey.contains("firebase_uid_456"))
+        XCTAssertEqual(storedEvent.ownerUserID, "firebase_uid_456")
+        XCTAssertEqual(storedEvent.syncStatus, .acknowledged)
+        XCTAssertEqual(storedEvent.idempotencyKey, syncedRequestEvent.idempotencyKey)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
+    }
 }
 
 @MainActor
@@ -81,6 +125,15 @@ private struct StaticBackendSessionProvider: BackendSessionProviding {
 
     func currentSession(for state: OpenLARPState) -> BackendUserSession {
         session
+    }
+}
+
+@MainActor
+private final class SwitchingBackendSessionProvider: BackendSessionProviding {
+    var authenticatedSession: BackendUserSession?
+
+    func currentSession(for state: OpenLARPState) -> BackendUserSession {
+        authenticatedSession ?? BackendUserSession.localOnly(for: state)
     }
 }
 

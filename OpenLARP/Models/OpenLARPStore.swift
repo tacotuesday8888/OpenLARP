@@ -591,21 +591,24 @@ final class OpenLARPStore {
         )
         guard !events.isEmpty else { return }
 
+        let session = currentBackendSession()
         let eventIDs = Set(events.map(\.id))
         let previousBackendEvents = state.backendEvents
+        if session.isAuthenticated {
+            state.assignLocalBackendEvents(ids: eventIDs, toAuthenticatedOwner: session.ownerUserID)
+        }
         state.markBackendEventsInFlight(ids: eventIDs, at: requestedAt)
         guard save() else {
             state.backendEvents = previousBackendEvents
             return
         }
 
+        let eventsToSync = events.map { event in
+            state.backendEvents.first { $0.id == event.id } ?? event
+        }
         let request = BackendEventSyncRequest(
-            session: currentBackendSession(),
-            events: events.map { event in
-                var inFlightEvent = event
-                inFlightEvent.markInFlight(at: requestedAt)
-                return inFlightEvent
-            },
+            session: session,
+            events: eventsToSync,
             requestedAt: requestedAt
         )
 

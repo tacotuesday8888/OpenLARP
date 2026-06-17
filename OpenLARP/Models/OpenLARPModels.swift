@@ -1362,6 +1362,16 @@ extension OpenLARPState {
         }
     }
 
+    mutating func assignLocalBackendEvents(
+        ids: Set<UUID>,
+        toAuthenticatedOwner ownerUserID: String
+    ) {
+        guard !ids.isEmpty else { return }
+        for index in backendEvents.indices where ids.contains(backendEvents[index].id) {
+            backendEvents[index].assignAuthenticatedOwnerIfLocal(ownerUserID)
+        }
+    }
+
     mutating func applyBackendEventSyncResult(_ result: BackendEventSyncResult) {
         let receiptsByEventID = result.receipts.reduce(into: [UUID: BackendEventSyncReceipt]()) { receipts, receipt in
             receipts[receipt.eventID] = receipt
