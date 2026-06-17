@@ -73,6 +73,306 @@ typealias BackendIntegrationRouteStatus = BackendIntegrationRoute.Status
 typealias BackendIntegrationKind = BackendIntegrationRoute.Kind
 typealias BackendIntegrationStatus = BackendIntegrationRoute.Status
 
+enum BackendEventKind: String, Codable, CaseIterable, Identifiable {
+    case goalConfirmed
+    case questStarted
+    case proofReviewed
+    case proofClaimed
+    case outcomeLogged
+    case outcomeUpdated
+    case outcomeDeleted
+    case privacyUpdated
+    case syncPreviewPrepared
+
+    var id: String { rawValue }
+}
+
+enum BackendEventSyncStatus: String, Codable, CaseIterable {
+    case pending
+    case inFlight
+    case acknowledged
+    case failed
+}
+
+struct BackendEventSummary: Codable, Equatable {
+    var targetRoleTitle: String?
+    var questID: UUID?
+    var questDay: Int?
+    var proofID: UUID?
+    var outcomeID: UUID?
+    var outcomeKind: CareerOutcomeKind?
+    var readinessOverall: Int?
+    var xp: Int?
+    var proofCount: Int?
+    var qualityAccepted: Bool?
+    var qualityScore: Int?
+    var memoryMode: CareerMemoryMode?
+    var shareWins: Bool?
+    var documentCount: Int?
+    var proofUploadCount: Int?
+
+    init(
+        targetRoleTitle: String? = nil,
+        questID: UUID? = nil,
+        questDay: Int? = nil,
+        proofID: UUID? = nil,
+        outcomeID: UUID? = nil,
+        outcomeKind: CareerOutcomeKind? = nil,
+        readinessOverall: Int? = nil,
+        xp: Int? = nil,
+        proofCount: Int? = nil,
+        qualityAccepted: Bool? = nil,
+        qualityScore: Int? = nil,
+        memoryMode: CareerMemoryMode? = nil,
+        shareWins: Bool? = nil,
+        documentCount: Int? = nil,
+        proofUploadCount: Int? = nil
+    ) {
+        self.targetRoleTitle = Self.safeRoleTitle(targetRoleTitle)
+        self.questID = questID
+        self.questDay = questDay
+        self.proofID = proofID
+        self.outcomeID = outcomeID
+        self.outcomeKind = outcomeKind
+        self.readinessOverall = readinessOverall
+        self.xp = xp
+        self.proofCount = proofCount
+        self.qualityAccepted = qualityAccepted
+        self.qualityScore = qualityScore
+        self.memoryMode = memoryMode
+        self.shareWins = shareWins
+        self.documentCount = documentCount
+        self.proofUploadCount = proofUploadCount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case targetRoleTitle
+        case questID
+        case questDay
+        case proofID
+        case outcomeID
+        case outcomeKind
+        case readinessOverall
+        case xp
+        case proofCount
+        case qualityAccepted
+        case qualityScore
+        case memoryMode
+        case shareWins
+        case documentCount
+        case proofUploadCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            targetRoleTitle: try container.decodeIfPresent(String.self, forKey: .targetRoleTitle),
+            questID: try container.decodeIfPresent(UUID.self, forKey: .questID),
+            questDay: try container.decodeIfPresent(Int.self, forKey: .questDay),
+            proofID: try container.decodeIfPresent(UUID.self, forKey: .proofID),
+            outcomeID: try container.decodeIfPresent(UUID.self, forKey: .outcomeID),
+            outcomeKind: try container.decodeIfPresent(CareerOutcomeKind.self, forKey: .outcomeKind),
+            readinessOverall: try container.decodeIfPresent(Int.self, forKey: .readinessOverall),
+            xp: try container.decodeIfPresent(Int.self, forKey: .xp),
+            proofCount: try container.decodeIfPresent(Int.self, forKey: .proofCount),
+            qualityAccepted: try container.decodeIfPresent(Bool.self, forKey: .qualityAccepted),
+            qualityScore: try container.decodeIfPresent(Int.self, forKey: .qualityScore),
+            memoryMode: try container.decodeIfPresent(CareerMemoryMode.self, forKey: .memoryMode),
+            shareWins: try container.decodeIfPresent(Bool.self, forKey: .shareWins),
+            documentCount: try container.decodeIfPresent(Int.self, forKey: .documentCount),
+            proofUploadCount: try container.decodeIfPresent(Int.self, forKey: .proofUploadCount)
+        )
+    }
+
+    private static func safeRoleTitle(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+        guard !trimmed.isEmpty else { return nil }
+        guard !PrivacyFilter.looksSensitive(trimmed) else { return "career goal" }
+        return String(trimmed.prefix(80))
+    }
+}
+
+struct BackendEventRecord: Codable, Equatable, Identifiable {
+    /// Caps acknowledged history only. Pending, in-flight, and failed records are durable outbox entries.
+    static let maxStoredCount = 250
+
+    var id: UUID
+    var schemaVersion: Int
+    var kind: BackendEventKind
+    var syncStatus: BackendEventSyncStatus
+    var ownerUserID: String
+    var idempotencyKey: String
+    var occurredAt: Date
+    var retryCount: Int
+    var lastAttemptAt: Date?
+    var failureSummary: String?
+    var summary: BackendEventSummary
+
+    init(
+        id: UUID = UUID(),
+        kind: BackendEventKind,
+        syncStatus: BackendEventSyncStatus = .pending,
+        ownerUserID: String,
+        occurredAt: Date,
+        entityID: String? = nil,
+        retryCount: Int = 0,
+        lastAttemptAt: Date? = nil,
+        failureSummary: String? = nil,
+        summary: BackendEventSummary = BackendEventSummary(),
+        schemaVersion: Int = 1
+    ) {
+        self.id = id
+        self.schemaVersion = schemaVersion
+        self.kind = kind
+        self.syncStatus = syncStatus
+        self.ownerUserID = ownerUserID
+        idempotencyKey = Self.makeIdempotencyKey(
+            ownerUserID: ownerUserID,
+            kind: kind,
+            entityID: entityID ?? id.uuidString
+        )
+        self.occurredAt = Self.persistenceStableDate(occurredAt)
+        self.retryCount = retryCount
+        self.lastAttemptAt = lastAttemptAt.map(Self.persistenceStableDate)
+        self.failureSummary = Self.safeFailureSummary(failureSummary)
+        self.summary = summary
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case schemaVersion
+        case kind
+        case syncStatus
+        case ownerUserID
+        case idempotencyKey
+        case occurredAt
+        case retryCount
+        case lastAttemptAt
+        case failureSummary
+        case summary
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        kind = try container.decode(BackendEventKind.self, forKey: .kind)
+        syncStatus = try container.decodeIfPresent(BackendEventSyncStatus.self, forKey: .syncStatus) ?? .pending
+        ownerUserID = try container.decode(String.self, forKey: .ownerUserID)
+        idempotencyKey = try container.decodeIfPresent(String.self, forKey: .idempotencyKey) ??
+            Self.makeIdempotencyKey(ownerUserID: ownerUserID, kind: kind, entityID: id.uuidString)
+        occurredAt = Self.persistenceStableDate(try container.decode(Date.self, forKey: .occurredAt))
+        retryCount = try container.decodeIfPresent(Int.self, forKey: .retryCount) ?? 0
+        lastAttemptAt = try container.decodeIfPresent(Date.self, forKey: .lastAttemptAt).map(Self.persistenceStableDate)
+        failureSummary = Self.safeFailureSummary(try container.decodeIfPresent(String.self, forKey: .failureSummary))
+        summary = try container.decodeIfPresent(BackendEventSummary.self, forKey: .summary) ?? BackendEventSummary()
+    }
+
+    private static func makeIdempotencyKey(
+        ownerUserID: String,
+        kind: BackendEventKind,
+        entityID: String
+    ) -> String {
+        "\(ownerUserID)-\(kind.rawValue)-\(entityID)"
+    }
+
+    private static func safeFailureSummary(_ value: String?) -> String? {
+        guard value != nil else { return nil }
+        return "Backend event sync failed. Retry is safe because this event has an idempotency key."
+    }
+
+    private static func persistenceStableDate(_ date: Date) -> Date {
+        Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
+    }
+}
+
+struct LossyBackendEventRecordList: Decodable {
+    var records: [BackendEventRecord]
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var decodedRecords: [BackendEventRecord] = []
+
+        while !container.isAtEnd {
+            if let record = try? container.decode(BackendEventRecord.self) {
+                decodedRecords.append(record)
+            } else if (try? container.decode(DiscardedBackendEventRecord.self)) == nil {
+                break
+            }
+        }
+
+        records = decodedRecords
+    }
+}
+
+private struct DiscardedBackendEventRecord: Decodable {}
+
+private enum PrivacyFilter {
+    static func looksSensitive(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        let blockedFragments = [
+            "@",
+            "http://",
+            "https://",
+            "www.",
+            "/users/",
+            "\\users\\",
+            "api key",
+            "apikey",
+            "token",
+            "secret",
+            "password",
+            "private",
+            "sk-",
+            "ghp_",
+            "pk_live",
+            "rk_live"
+        ]
+        if blockedFragments.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+
+        if value.contains("/") || value.contains("\\") {
+            return true
+        }
+
+        let domainFragments = [
+            ".com",
+            ".org",
+            ".net",
+            ".io",
+            ".dev",
+            ".edu",
+            ".gov",
+            ".ai",
+            ".co"
+        ]
+        if domainFragments.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+
+        if value.range(
+            of: #"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"#,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+
+        if value.range(
+            of: #"\.(pdf|png|jpe?g|txt|docx?|csv|json|md|swift|py|key|pem)\b"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil {
+            return true
+        }
+
+        return false
+    }
+}
+
 struct BackendUserSession: Codable, Equatable {
     var ownerUserID: String
     var isAuthenticated: Bool

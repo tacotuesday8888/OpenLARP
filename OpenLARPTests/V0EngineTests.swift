@@ -1688,7 +1688,7 @@ final class V0EngineTests: XCTestCase {
 
         let decoded = try decoder.decode(OpenLARPState.self, from: oldData)
 
-        XCTAssertEqual(decoded.schemaVersion, 6)
+        XCTAssertEqual(decoded.schemaVersion, 7)
         XCTAssertTrue(decoded.outcomeLog.isEmpty)
     }
 
@@ -2909,6 +2909,346 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(reloaded.aiWorkflowRuns, store.state.aiWorkflowRuns)
     }
 
+    func testBackendEventRecordCreatesPrivacySafeOutboxReceipt() throws {
+        let timestamp = Date(timeIntervalSince1970: 15_500)
+        let proofID = UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!
+        let privateRole = "/Users/langqi/private/sk-test-secret-api-key.txt"
+
+        let event = BackendEventRecord(
+            kind: .proofReviewed,
+            ownerUserID: "local_user",
+            occurredAt: timestamp,
+            entityID: proofID.uuidString,
+            summary: BackendEventSummary(
+                targetRoleTitle: privateRole,
+                proofID: proofID,
+                readinessOverall: 49,
+                proofCount: 1,
+                qualityAccepted: true,
+                qualityScore: 82
+            )
+        )
+
+        XCTAssertEqual(event.schemaVersion, 1)
+        XCTAssertEqual(event.syncStatus, .pending)
+        XCTAssertEqual(event.retryCount, 0)
+        XCTAssertEqual(event.idempotencyKey, "local_user-proofReviewed-\(proofID.uuidString)")
+        XCTAssertEqual(event.summary.targetRoleTitle, "career goal")
+        XCTAssertEqual(event.summary.proofID, proofID)
+        XCTAssertEqual(event.summary.readinessOverall, 49)
+        XCTAssertTrue(event.summary.qualityAccepted ?? false)
+        XCTAssertEqual(event.summary.qualityScore, 82)
+
+        let encoded = String(
+            decoding: try JSONEncoder.openLARPPersistence.encode(event),
+            as: UTF8.self
+        )
+        XCTAssertFalse(encoded.contains("/Users"))
+        XCTAssertFalse(encoded.contains("sk-test-secret"))
+        XCTAssertFalse(encoded.localizedCaseInsensitiveContains("api key"))
+        XCTAssertFalse(encoded.contains(".txt"))
+    }
+
+    @MainActor
+    func testStorePersistsBackendEventJournalForSyncableActionsWithoutPrivatePayload() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let syncService = RecordingCareerGraphSyncService()
+        let attachment = ProofAttachment(
+            id: UUID(uuidString: "CDCDCDCD-CDCD-CDCD-CDCD-CDCDCDCDCDCD")!,
+            fileName: "local-private-proof.png",
+            originalFileName: "secret-screenshot.png",
+            contentType: "image/png",
+            byteCount: 40_000,
+            createdAt: Date(timeIntervalSince1970: 15_650),
+            localRelativePath: "ProofAttachments/private-device-path.png"
+        )
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            careerGraphSyncService: syncService,
+            now: { Date(timeIntervalSince1970: 15_600) }
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        await store.checkProof(
+            kind: .proof,
+            text: "Private proof text with langqi@example.com and sk-test-secret details.",
+            link: "https://private.example.com/proof",
+            attachments: [attachment]
+        )
+        store.claimPendingQualityResult()
+        store.logOutcome(
+            kind: .interview,
+            title: "Private recruiter screen",
+            organizationName: "Example Labs",
+            note: "Sensitive recruiter detail should not enter the backend journal.",
+            occurredAt: Date(timeIntervalSince1970: 15_600)
+        )
+        store.updateProfilePrivacy(memoryMode: .cloudReady, shareWins: true)
+        await store.prepareCareerGraphSyncPreview()
+
+        XCTAssertEqual(store.state.backendEvents.map(\.kind), [
+            .goalConfirmed,
+            .questStarted,
+            .proofReviewed,
+            .proofClaimed,
+            .outcomeLogged,
+            .privacyUpdated,
+            .syncPreviewPrepared
+        ])
+        XCTAssertTrue(store.state.backendEvents.allSatisfy { $0.syncStatus == .pending })
+        XCTAssertEqual(Set(store.state.backendEvents.map(\.idempotencyKey)).count, store.state.backendEvents.count)
+        XCTAssertEqual(store.state.backendEvents.first?.summary.targetRoleTitle, goal.targetRole)
+        XCTAssertEqual(store.state.backendEvents.first { $0.kind == .proofClaimed }?.summary.proofCount, 1)
+        XCTAssertEqual(store.state.backendEvents.first { $0.kind == .outcomeLogged }?.summary.outcomeKind, .interview)
+        XCTAssertEqual(store.state.backendEvents.first { $0.kind == .privacyUpdated }?.summary.memoryMode, .cloudReady)
+        XCTAssertEqual(store.state.backendEvents.first { $0.kind == .syncPreviewPrepared }?.summary.documentCount, store.careerGraphSyncPreview?.documentCount)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
+
+        let encodedJournal = String(
+            decoding: try JSONEncoder.openLARPPersistence.encode(reloaded.backendEvents),
+            as: UTF8.self
+        )
+        XCTAssertFalse(encodedJournal.contains("Private proof text"))
+        XCTAssertFalse(encodedJournal.contains("langqi@example.com"))
+        XCTAssertFalse(encodedJournal.contains("private.example.com"))
+        XCTAssertFalse(encodedJournal.contains("secret-screenshot"))
+        XCTAssertFalse(encodedJournal.contains("private-device-path"))
+        XCTAssertFalse(encodedJournal.contains("Sensitive recruiter detail"))
+        XCTAssertFalse(encodedJournal.contains("sk-test-secret"))
+    }
+
+    @MainActor
+    func testRepeatedPrivacyUpdatesCreateDistinctBackendEvents() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        var clock = Date(timeIntervalSince1970: 15_625)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { clock }
+        )
+
+        await store.confirmGoal(goal)
+        store.updateProfilePrivacy(memoryMode: .cloudReady, shareWins: false)
+        clock = clock.addingTimeInterval(1)
+        store.updateProfilePrivacy(memoryMode: .localOnly, shareWins: true)
+
+        let privacyEvents = store.state.backendEvents.filter { $0.kind == .privacyUpdated }
+        XCTAssertEqual(privacyEvents.count, 2)
+        XCTAssertEqual(Set(privacyEvents.map(\.idempotencyKey)).count, 2)
+        XCTAssertEqual(privacyEvents.map(\.summary.memoryMode), [.cloudReady, .localOnly])
+        XCTAssertEqual(privacyEvents.map(\.summary.shareWins), [false, true])
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
+    }
+
+    @MainActor
+    func testStoreJournalsOutcomeUpdateAndDeleteWithoutPrivatePayload() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        var clock = Date(timeIntervalSince1970: 15_640)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { clock }
+        )
+
+        await store.confirmGoal(goal)
+        store.logOutcome(
+            kind: .applied,
+            title: "Applied with private referral note",
+            organizationName: "Private Example Labs",
+            note: "Recruiter email langqi@example.com and token sk-test-secret",
+            occurredAt: clock,
+            isPrivate: true
+        )
+        let outcomeID = try XCTUnwrap(store.state.outcomeLog.first?.id)
+        clock = clock.addingTimeInterval(1)
+        store.updateOutcome(
+            id: outcomeID,
+            kind: .interview,
+            title: "Interview with private.example.com",
+            organizationName: "private.example.com",
+            note: "Private device path /Users/langqi/private-outcome-note.md",
+            occurredAt: clock,
+            isPrivate: false
+        )
+        clock = clock.addingTimeInterval(1)
+        store.deleteOutcome(id: outcomeID)
+
+        let outcomeEvents = store.state.backendEvents.filter {
+            [.outcomeLogged, .outcomeUpdated, .outcomeDeleted].contains($0.kind)
+        }
+        XCTAssertEqual(outcomeEvents.map(\.kind), [.outcomeLogged, .outcomeUpdated, .outcomeDeleted])
+        XCTAssertEqual(Set(outcomeEvents.map(\.idempotencyKey)).count, 3)
+        XCTAssertEqual(Set(outcomeEvents.compactMap { $0.summary.outcomeID }), [outcomeID])
+        XCTAssertEqual(outcomeEvents.compactMap { $0.summary.outcomeKind }, [.applied, .interview, .interview])
+
+        let encodedJournal = String(
+            decoding: try JSONEncoder.openLARPPersistence.encode(store.state.backendEvents),
+            as: UTF8.self
+        )
+        XCTAssertFalse(encodedJournal.contains("Applied with private referral note"))
+        XCTAssertFalse(encodedJournal.contains("Private Example Labs"))
+        XCTAssertFalse(encodedJournal.contains("langqi@example.com"))
+        XCTAssertFalse(encodedJournal.contains("sk-test-secret"))
+        XCTAssertFalse(encodedJournal.contains("private.example.com"))
+        XCTAssertFalse(encodedJournal.contains("private-outcome-note"))
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
+    }
+
+    func testBackendEventJournalMigratesLossilyAndPreservesPendingOutboxEvents() throws {
+        let now = Date(timeIntervalSince1970: 15_700)
+        let encoder = JSONEncoder.openLARPPersistence
+        var original = OpenLARPEngine.confirmGoal(goal, now: now)
+        original.backendEvents = [
+            BackendEventRecord(
+                kind: .goalConfirmed,
+                ownerUserID: "local_user",
+                occurredAt: now,
+                entityID: "current-goal",
+                summary: BackendEventSummary(targetRoleTitle: goal.targetRole)
+            )
+        ]
+        let encoded = try encoder.encode(original)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        json["backendEvents"] = [
+            [
+                "schemaVersion": 1,
+                "id": UUID().uuidString,
+                "kind": "goalConfirmed",
+                "syncStatus": "pending",
+                "ownerUserID": "local_user",
+                "idempotencyKey": "local_user-goalConfirmed-current-goal",
+                "occurredAt": "1970-01-01T04:21:40Z",
+                "retryCount": 0,
+                "summary": [
+                    "targetRoleTitle": "iOS engineering internship"
+                ]
+            ],
+            [
+                "schemaVersion": 1,
+                "id": UUID().uuidString,
+                "kind": "futureBackendEvent",
+                "syncStatus": "pending",
+                "ownerUserID": "local_user",
+                "idempotencyKey": "local_user-futureBackendEvent-current-goal",
+                "occurredAt": "1970-01-01T04:21:40Z",
+                "retryCount": 0,
+                "summary": [:]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let decoder = JSONDecoder.openLARPPersistence
+        let decoded = try decoder.decode(OpenLARPState.self, from: data)
+
+        XCTAssertEqual(decoded.goal, original.goal)
+        XCTAssertEqual(decoded.backendEvents.count, 1)
+        XCTAssertEqual(decoded.backendEvents.first?.kind, .goalConfirmed)
+
+        var cappedState = OpenLARPState.empty
+        for index in 0..<(BackendEventRecord.maxStoredCount + 12) {
+            cappedState.recordBackendEvent(
+                BackendEventRecord(
+                    kind: .questStarted,
+                    ownerUserID: "local_user",
+                    occurredAt: now.addingTimeInterval(TimeInterval(index)),
+                    entityID: "quest-\(index)",
+                    summary: BackendEventSummary(questDay: index)
+                )
+            )
+        }
+
+        XCTAssertEqual(cappedState.backendEvents.count, BackendEventRecord.maxStoredCount + 12)
+        XCTAssertEqual(cappedState.backendEvents.first?.summary.questDay, 0)
+        XCTAssertEqual(cappedState.backendEvents.last?.summary.questDay, BackendEventRecord.maxStoredCount + 11)
+
+        for index in 0..<(BackendEventRecord.maxStoredCount + 12) {
+            cappedState.recordBackendEvent(
+                BackendEventRecord(
+                    kind: .syncPreviewPrepared,
+                    syncStatus: .acknowledged,
+                    ownerUserID: "local_user",
+                    occurredAt: now.addingTimeInterval(TimeInterval(index)),
+                    entityID: "preview-\(index)",
+                    summary: BackendEventSummary(documentCount: index)
+                )
+            )
+        }
+
+        let acknowledgedEvents = cappedState.backendEvents.filter { $0.syncStatus == .acknowledged }
+        let pendingEvents = cappedState.backendEvents.filter { $0.syncStatus == .pending }
+        XCTAssertEqual(acknowledgedEvents.count, BackendEventRecord.maxStoredCount)
+        XCTAssertEqual(acknowledgedEvents.first?.summary.documentCount, 12)
+        XCTAssertEqual(acknowledgedEvents.last?.summary.documentCount, BackendEventRecord.maxStoredCount + 11)
+        XCTAssertEqual(pendingEvents.count, BackendEventRecord.maxStoredCount + 12)
+        XCTAssertEqual(pendingEvents.first?.summary.questDay, 0)
+    }
+
+    func testLegacyStateWithoutBackendEventsDecodesWithEmptyOutbox() throws {
+        let encoder = JSONEncoder.openLARPPersistence
+        let original = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 15_760))
+        let encoded = try encoder.encode(original)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        json.removeValue(forKey: "backendEvents")
+        let legacyData = try JSONSerialization.data(withJSONObject: json)
+
+        let decoded = try JSONDecoder.openLARPPersistence.decode(OpenLARPState.self, from: legacyData)
+
+        XCTAssertEqual(decoded.backendEvents, [])
+    }
+
+    @MainActor
+    func testStoreDoesNotJournalProofReviewWhenProofResponseBecomesStale() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let service = StateChangingProofReviewService()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: service
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let backendEventKindsBeforeProof = store.state.backendEvents.map(\.kind)
+        service.onReviewProof = {
+            var replacementState = OpenLARPEngine.confirmGoal(
+                self.goal,
+                now: Date(timeIntervalSince1970: 15_780)
+            )
+            replacementState.aiWorkflowRuns = store.state.aiWorkflowRuns
+            replacementState.backendEvents = store.state.backendEvents
+            store.state = replacementState
+        }
+
+        await store.checkProof(
+            kind: .proof,
+            text: "This stale response should not create a backend proof event.",
+            link: "https://example.com/stale-proof"
+        )
+
+        XCTAssertEqual(store.state.backendEvents.map(\.kind), backendEventKindsBeforeProof)
+        XCTAssertFalse(store.state.backendEvents.map(\.kind).contains(.proofReviewed))
+        XCTAssertNil(store.pendingProof)
+        XCTAssertNil(store.pendingQualityResult)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
+    }
+
     @MainActor
     func testStoreFallsBackToLocalPlanWhenWorkflowReturnsInvalidQuestPlan() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -3098,6 +3438,47 @@ final class V0EngineTests: XCTestCase {
         XCTAssertTrue(store.state.needsGoalSetup)
         XCTAssertEqual(store.state.userProfile?.privacy.memoryMode, .off)
         XCTAssertEqual(store.state.userProfile?.privacy.shareWins, false)
+    }
+
+    @MainActor
+    func testReconfirmingGoalPreservesLocalOwnerIdentityForBackendJournal() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+        let secondGoal = CareerGoal(
+            currentStatus: .careerSwitcher,
+            targetRole: "AI product analyst",
+            timeline: "45 days",
+            background: "Former support specialist with SQL coursework and two customer research projects.",
+            existingProof: "Support analytics dashboard and customer interview notes",
+            confidence: 4,
+            biggestBlocker: "I need stronger proof that my analytics work can translate into product roles."
+        )
+
+        await store.confirmGoal(goal)
+        let originalProfile = try XCTUnwrap(store.state.userProfile)
+        let originalOwnerID = BackendUserSession.localOnly(for: store.state).ownerUserID
+        store.updateProfilePrivacy(memoryMode: .cloudReady, shareWins: true)
+        let updatedPrivacy = try XCTUnwrap(store.state.userProfile?.privacy)
+        store.resetGoal()
+        await store.confirmGoal(secondGoal)
+
+        let refreshedProfile = try XCTUnwrap(store.state.userProfile)
+        XCTAssertEqual(refreshedProfile.id, originalProfile.id)
+        XCTAssertEqual(refreshedProfile.createdAt, originalProfile.createdAt)
+        XCTAssertEqual(refreshedProfile.privacy, updatedPrivacy)
+        XCTAssertEqual(refreshedProfile.segment, secondGoal.currentStatus)
+        XCTAssertEqual(refreshedProfile.backgroundSummary, secondGoal.background)
+        XCTAssertEqual(store.state.goal, secondGoal)
+        XCTAssertTrue(store.state.backendEvents.allSatisfy { $0.ownerUserID == originalOwnerID })
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.userProfile?.id, originalProfile.id)
+        XCTAssertTrue(reloaded.backendEvents.allSatisfy { $0.ownerUserID == originalOwnerID })
     }
 
     func testAppTabsMatchProductSurfaces() {

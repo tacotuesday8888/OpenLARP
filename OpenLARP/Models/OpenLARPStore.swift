@@ -64,10 +64,11 @@ final class OpenLARPStore {
 
     func confirmGoal(_ goal: CareerGoal) async {
         guard !isGoalSetupRunning else { return }
-        let previousPrivacy = state.userProfile?.privacy
+        let previousProfile = state.userProfile
         let previousOutcomeLog = state.outcomeLog
         let previousBetaEvents = state.betaEvents
         let previousAIWorkflowRuns = state.aiWorkflowRuns
+        let previousBackendEvents = state.backendEvents
         var completedAIWorkflowRuns: [V0AIWorkflowRun] = []
         let requestedAt = now()
         isGoalSetupRunning = true
@@ -100,13 +101,32 @@ final class OpenLARPStore {
             state = OpenLARPEngine.confirmGoal(goal, now: requestedAt)
             errorMessage = "OpenLARP built a local plan on this device because the agent service was unavailable."
         }
-        if let previousPrivacy {
-            state.userProfile?.privacy = previousPrivacy
+        if let previousProfile, var refreshedProfile = state.userProfile {
+            refreshedProfile.id = previousProfile.id
+            refreshedProfile.accountID = previousProfile.accountID
+            refreshedProfile.email = previousProfile.email
+            refreshedProfile.displayName = previousProfile.displayName
+            refreshedProfile.minutesPerDay = previousProfile.minutesPerDay
+            refreshedProfile.networkingComfort = previousProfile.networkingComfort
+            refreshedProfile.privacy = previousProfile.privacy
+            refreshedProfile.createdAt = previousProfile.createdAt
+            state.userProfile = refreshedProfile
         }
         state.outcomeLog = previousOutcomeLog
         state.betaEvents = previousBetaEvents
         state.aiWorkflowRuns = previousAIWorkflowRuns
+        state.backendEvents = previousBackendEvents
         recordAIWorkflowRuns(completedAIWorkflowRuns)
+        recordBackendEvent(
+            .goalConfirmed,
+            occurredAt: requestedAt,
+            summary: BackendEventSummary(
+                targetRoleTitle: goal.targetRole,
+                readinessOverall: state.progress.readiness.overall,
+                xp: state.progress.xp,
+                proofCount: state.progress.proofCount
+            )
+        )
         recordBetaEvent(.goalConfirmed, occurredAt: requestedAt)
         recordBetaEvent(.diagnosticShown, occurredAt: requestedAt)
         state.agentBrief = AgentBriefFactory.makeBrief(for: state, generatedAt: requestedAt)
@@ -127,12 +147,14 @@ final class OpenLARPStore {
         let existingOutcomeLog = state.outcomeLog
         let existingBetaEvents = state.betaEvents
         let existingAIWorkflowRuns = state.aiWorkflowRuns
+        let existingBackendEvents = state.backendEvents
         deletePendingProofAttachments()
         state = OpenLARPEngine.resetGoal(now: now())
         state.userProfile = existingProfile
         state.outcomeLog = existingOutcomeLog
         state.betaEvents = existingBetaEvents
         state.aiWorkflowRuns = existingAIWorkflowRuns
+        state.backendEvents = existingBackendEvents
         pendingProof = nil
         pendingQualityResult = nil
         clearCareerGraphSyncPreview()
@@ -149,6 +171,21 @@ final class OpenLARPStore {
         do {
             state = try OpenLARPEngine.startCurrentQuest(in: state, now: now())
             if shouldRecordStart {
+                if let currentQuest {
+                    recordBackendEvent(
+                        .questStarted,
+                        occurredAt: now(),
+                        entityID: currentQuest.id.uuidString,
+                        summary: BackendEventSummary(
+                            targetRoleTitle: state.goal?.targetRole,
+                            questID: currentQuest.id,
+                            questDay: currentQuest.day,
+                            readinessOverall: state.progress.readiness.overall,
+                            xp: state.progress.xp,
+                            proofCount: state.progress.proofCount
+                        )
+                    )
+                }
                 recordBetaEvent(
                     isFirstQuestStart ? .firstQuestStarted : .questStarted,
                     day: currentQuest?.day
@@ -223,6 +260,22 @@ final class OpenLARPStore {
             deletePendingProofAttachments(excluding: proof.attachments)
             pendingProof = proof
             pendingQualityResult = result
+            recordBackendEvent(
+                .proofReviewed,
+                occurredAt: requestedAt,
+                entityID: proof.id.uuidString,
+                summary: BackendEventSummary(
+                    targetRoleTitle: state.goal?.targetRole,
+                    questID: questID,
+                    questDay: questDay,
+                    proofID: proof.id,
+                    readinessOverall: state.progress.readiness.overall,
+                    xp: state.progress.xp,
+                    proofCount: state.progress.proofCount,
+                    qualityAccepted: result.isAccepted,
+                    qualityScore: result.qualityScore
+                )
+            )
             recordBetaEvent(.proofSubmitted, occurredAt: requestedAt, day: questDay)
             recordBetaEvent(result.isAccepted ? .proofAccepted : .proofNeedsImprovement, occurredAt: requestedAt, day: questDay)
             errorMessage = nil
@@ -242,6 +295,21 @@ final class OpenLARPStore {
                 in: state,
                 now: now(),
                 calendar: calendar
+            )
+            recordBackendEvent(
+                .proofClaimed,
+                entityID: pendingProof.id.uuidString,
+                summary: BackendEventSummary(
+                    targetRoleTitle: state.goal?.targetRole,
+                    questID: quest?.id,
+                    questDay: quest?.day,
+                    proofID: pendingProof.id,
+                    readinessOverall: state.progress.readiness.overall,
+                    xp: state.progress.xp,
+                    proofCount: state.progress.proofCount,
+                    qualityAccepted: pendingQualityResult.isAccepted,
+                    qualityScore: pendingQualityResult.qualityScore
+                )
             )
             recordBetaEvent(.xpClaimed, day: quest?.day)
             self.pendingProof = nil
@@ -281,6 +349,14 @@ final class OpenLARPStore {
         profile.updatedAt = now()
         state.userProfile = profile
         clearCareerGraphSyncPreview()
+        recordBackendEvent(
+            .privacyUpdated,
+            summary: BackendEventSummary(
+                targetRoleTitle: state.goal?.targetRole,
+                memoryMode: profile.privacy.memoryMode,
+                shareWins: profile.privacy.shareWins
+            )
+        )
         state.updatedAt = now()
         save()
     }
@@ -331,6 +407,19 @@ final class OpenLARPStore {
         )
 
         state = OpenLARPEngine.logOutcome(outcome, in: state, now: timestamp)
+        recordBackendEvent(
+            .outcomeLogged,
+            occurredAt: timestamp,
+            entityID: outcome.id.uuidString,
+            summary: BackendEventSummary(
+                targetRoleTitle: targetRoleTitle,
+                outcomeID: outcome.id,
+                outcomeKind: outcome.kind,
+                readinessOverall: state.progress.readiness.overall,
+                xp: state.progress.xp,
+                proofCount: state.progress.proofCount
+            )
+        )
         recordBetaEvent(.outcomeLogged, occurredAt: timestamp)
         clearCareerGraphSyncPreview()
         errorMessage = nil
@@ -381,18 +470,43 @@ final class OpenLARPStore {
         )
 
         state = OpenLARPEngine.updateOutcome(updatedOutcome, in: state, now: timestamp)
+        recordBackendEvent(
+            .outcomeUpdated,
+            occurredAt: timestamp,
+            summary: BackendEventSummary(
+                targetRoleTitle: updatedOutcome.targetRoleTitle,
+                outcomeID: updatedOutcome.id,
+                outcomeKind: updatedOutcome.kind,
+                readinessOverall: state.progress.readiness.overall,
+                xp: state.progress.xp,
+                proofCount: state.progress.proofCount
+            )
+        )
         clearCareerGraphSyncPreview()
         errorMessage = nil
         save()
     }
 
     func deleteOutcome(id: UUID) {
-        guard state.outcomeLog.contains(where: { $0.id == id }) else {
+        guard let existingOutcome = state.outcomeLog.first(where: { $0.id == id }) else {
             errorMessage = "That outcome could not be found."
             return
         }
 
-        state = OpenLARPEngine.deleteOutcome(id: id, in: state, now: now())
+        let timestamp = now()
+        state = OpenLARPEngine.deleteOutcome(id: id, in: state, now: timestamp)
+        recordBackendEvent(
+            .outcomeDeleted,
+            occurredAt: timestamp,
+            summary: BackendEventSummary(
+                targetRoleTitle: existingOutcome.targetRoleTitle,
+                outcomeID: existingOutcome.id,
+                outcomeKind: existingOutcome.kind,
+                readinessOverall: state.progress.readiness.overall,
+                xp: state.progress.xp,
+                proofCount: state.progress.proofCount
+            )
+        )
         clearCareerGraphSyncPreview()
         errorMessage = nil
         save()
@@ -423,6 +537,18 @@ final class OpenLARPStore {
             let result = try await careerGraphSyncService.prepareSync(request)
             guard previewGeneration == careerGraphSyncPreviewGeneration else { return }
             careerGraphSyncPreview = CareerGraphSyncPreview(request: request, result: result)
+            recordBackendEvent(
+                .syncPreviewPrepared,
+                occurredAt: requestedAt,
+                summary: BackendEventSummary(
+                    targetRoleTitle: state.goal?.targetRole,
+                    readinessOverall: state.progress.readiness.overall,
+                    xp: state.progress.xp,
+                    proofCount: state.progress.proofCount,
+                    documentCount: result.firestoreDocumentPaths.count,
+                    proofUploadCount: result.uploadIntents.count
+                )
+            )
             recordBetaEvent(.syncPreviewPrepared, occurredAt: requestedAt)
             errorMessage = nil
             save()
@@ -530,6 +656,23 @@ final class OpenLARPStore {
         for run in runs {
             recordAIWorkflowRun(run)
         }
+    }
+
+    private func recordBackendEvent(
+        _ kind: BackendEventKind,
+        occurredAt: Date? = nil,
+        entityID: String? = nil,
+        summary: BackendEventSummary = BackendEventSummary()
+    ) {
+        state.recordBackendEvent(
+            BackendEventRecord(
+                kind: kind,
+                ownerUserID: BackendUserSession.localOnly(for: state).ownerUserID,
+                occurredAt: occurredAt ?? now(),
+                entityID: entityID,
+                summary: summary
+            )
+        )
     }
 
     private func recordNextDayReturnIfNeeded(
