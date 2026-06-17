@@ -134,8 +134,8 @@ struct BackendUserSession: Codable, Equatable {
             ownerUserID: "local_\(localID)",
             isAuthenticated: false,
             authProvider: .localMock,
-            accountID: state.userProfile?.accountID,
-            email: state.userProfile?.email,
+            accountID: nil,
+            email: nil,
             auth: BackendIntegrationRoute(kind: .firebaseAuth, status: .notConnected),
             firestore: BackendIntegrationRoute(kind: .firestore, status: .notConnected),
             storage: BackendIntegrationRoute(kind: .firebaseStorage, status: .notConnected),
@@ -144,6 +144,13 @@ struct BackendUserSession: Codable, Equatable {
             genkit: BackendIntegrationRoute(kind: .genkit, status: .localMock),
             requiresUserApprovalForExternalActions: privacy.requireApprovalForExternalActions
         )
+    }
+
+    func redactedForCareerGraphSync() -> BackendUserSession {
+        var session = self
+        session.accountID = nil
+        session.email = nil
+        return session
     }
 }
 
@@ -177,14 +184,16 @@ struct CareerGraphSyncPreparationRequest: Codable, Equatable {
 
         self.schemaVersion = schemaVersion
         self.requestedAt = requestedAt
-        self.session = session
+        let syncSession = session.redactedForCareerGraphSync()
+
+        self.session = syncSession
         self.snapshot = LocalCareerGraphCloudMapper().makeSnapshot(
             from: state,
             policy: policy,
             generatedAt: requestedAt
         )
         self.includePrivateEvidence = resolvedIncludePrivateEvidence
-        self.integrationRoutes = session.integrationRoutes
+        self.integrationRoutes = syncSession.integrationRoutes
     }
 }
 
@@ -213,6 +222,9 @@ struct CareerGraphSyncUploadIntent: Codable, Equatable, Identifiable {
     var contentType: String
     var byteCount: Int
     var storagePath: String
+    var proofDocumentPath: String
+    var attachmentDocumentPath: String
+    var idempotencyKey: String
 
     init(
         proofID: String,
@@ -224,10 +236,76 @@ struct CareerGraphSyncUploadIntent: Codable, Equatable, Identifiable {
         contentType = attachment.contentType
         byteCount = attachment.byteCount
         storagePath = attachment.storagePath
+        proofDocumentPath = "users/\(attachment.metadata.ownerUserID)/proofRecords/\(proofID)"
+        attachmentDocumentPath = attachment.documentPath
+        idempotencyKey = "\(attachment.metadata.ownerUserID)-\(attachment.metadata.localID)"
     }
 }
 
 typealias CareerGraphUploadIntent = CareerGraphSyncUploadIntent
+
+enum CareerGraphSyncDocumentType: String, Codable, CaseIterable {
+    case profile
+    case goal
+    case targetRole
+    case proofRecord
+    case proofAttachment
+    case outcome
+    case readinessSnapshot
+}
+
+enum CareerGraphSyncOperation: String, Codable, CaseIterable {
+    case upsert
+}
+
+struct CareerGraphSyncDocumentWrite: Codable, Equatable, Identifiable {
+    var id: String { documentPath }
+
+    var documentType: CareerGraphSyncDocumentType
+    var operation: CareerGraphSyncOperation
+    var collectionPath: String
+    var documentPath: String
+
+    init(
+        documentType: CareerGraphSyncDocumentType,
+        operation: CareerGraphSyncOperation = .upsert,
+        collectionPath: String,
+        documentPath: String
+    ) {
+        self.documentType = documentType
+        self.operation = operation
+        self.collectionPath = collectionPath
+        self.documentPath = documentPath
+    }
+}
+
+struct CareerGraphSyncManifest: Codable, Equatable {
+    var schemaVersion: Int
+    var ownerUserID: String
+    var firestoreRootPath: String
+    var generatedAt: Date
+    var documentWrites: [CareerGraphSyncDocumentWrite]
+    var storageUploads: [CareerGraphSyncUploadIntent]
+    var requiredRoutes: [BackendIntegrationRoute]
+
+    init(
+        ownerUserID: String,
+        firestoreRootPath: String,
+        generatedAt: Date,
+        documentWrites: [CareerGraphSyncDocumentWrite],
+        storageUploads: [CareerGraphSyncUploadIntent],
+        requiredRoutes: [BackendIntegrationRoute],
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.ownerUserID = ownerUserID
+        self.firestoreRootPath = firestoreRootPath
+        self.generatedAt = generatedAt
+        self.documentWrites = documentWrites
+        self.storageUploads = storageUploads
+        self.requiredRoutes = requiredRoutes
+    }
+}
 
 struct CareerGraphSyncResult: Codable, Equatable {
     var schemaVersion: Int
@@ -239,6 +317,7 @@ struct CareerGraphSyncResult: Codable, Equatable {
     var firestoreRootPath: String
     var firestoreDocumentPaths: [String]
     var uploadIntents: [CareerGraphSyncUploadIntent]
+    var syncManifest: CareerGraphSyncManifest
     var integrationRoutes: [BackendIntegrationRoute]
 
     init(
@@ -249,6 +328,7 @@ struct CareerGraphSyncResult: Codable, Equatable {
         requiresAuthenticationToSync: Bool? = nil,
         firestoreDocumentPaths: [String],
         uploadIntents: [CareerGraphSyncUploadIntent],
+        syncManifest: CareerGraphSyncManifest,
         schemaVersion: Int = 1
     ) {
         self.schemaVersion = schemaVersion
@@ -260,7 +340,8 @@ struct CareerGraphSyncResult: Codable, Equatable {
         firestoreRootPath = request.firestoreRootPath
         self.firestoreDocumentPaths = firestoreDocumentPaths
         self.uploadIntents = uploadIntents
-        integrationRoutes = request.integrationRoutes
+        self.syncManifest = syncManifest
+        integrationRoutes = syncManifest.requiredRoutes
     }
 }
 
@@ -318,7 +399,7 @@ struct CareerGraphSyncPreview: Codable, Equatable {
             allowsLongTermMemoryWrite: request.snapshot.policy.allowsLongTermMemoryWrite,
             didContactNetwork: result.didContactNetwork,
             requiresAuthenticationToSync: result.requiresAuthenticationToSync,
-            integrationRoutes: result.integrationRoutes
+            integrationRoutes: result.syncManifest.requiredRoutes
         )
     }
 }
@@ -332,31 +413,87 @@ struct LocalMockCareerGraphSyncService: CareerGraphSyncServicing {
     init() {}
 
     func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
-        CareerGraphSyncResult(
+        let uploadIntents = uploadIntents(in: request.snapshot)
+        let manifest = syncManifest(for: request, uploadIntents: uploadIntents)
+
+        return CareerGraphSyncResult(
             status: .preparedLocally,
             request: request,
             didContactNetwork: false,
-            firestoreDocumentPaths: firestoreDocumentPaths(in: request.snapshot),
-            uploadIntents: uploadIntents(in: request.snapshot)
+            firestoreDocumentPaths: manifest.documentWrites.map(\.documentPath),
+            uploadIntents: uploadIntents,
+            syncManifest: manifest
         )
     }
 
-    private func firestoreDocumentPaths(in snapshot: CloudCareerGraphSnapshot) -> [String] {
-        var paths: [String] = []
+    private func syncManifest(
+        for request: CareerGraphSyncPreparationRequest,
+        uploadIntents: [CareerGraphSyncUploadIntent]
+    ) -> CareerGraphSyncManifest {
+        CareerGraphSyncManifest(
+            ownerUserID: request.session.ownerUserID,
+            firestoreRootPath: request.firestoreRootPath,
+            generatedAt: request.requestedAt,
+            documentWrites: documentWrites(in: request.snapshot),
+            storageUploads: uploadIntents,
+            requiredRoutes: requiredRoutes(
+                from: request.integrationRoutes,
+                needsStorage: !uploadIntents.isEmpty
+            )
+        )
+    }
+
+    private func requiredRoutes(
+        from routes: [BackendIntegrationRoute],
+        needsStorage: Bool
+    ) -> [BackendIntegrationRoute] {
+        let requiredKinds: [BackendIntegrationRoute.Kind] = needsStorage
+            ? [.firebaseAuth, .firestore, .firebaseStorage]
+            : [.firebaseAuth, .firestore]
+        return requiredKinds.compactMap { kind in
+            routes.first { $0.kind == kind }
+        }
+    }
+
+    private func documentWrites(in snapshot: CloudCareerGraphSnapshot) -> [CareerGraphSyncDocumentWrite] {
+        var writes: [CareerGraphSyncDocumentWrite] = []
 
         if let userProfile = snapshot.userProfile {
-            paths.append(userProfile.documentPath)
+            writes.append(write(.profile, collectionPath: userProfile.collectionPath, documentPath: userProfile.documentPath))
         }
-        paths.append(contentsOf: snapshot.targetRoles.map(\.documentPath))
+        if let goal = snapshot.goal {
+            writes.append(write(.goal, collectionPath: goal.collectionPath, documentPath: goal.documentPath))
+        }
+        writes.append(contentsOf: snapshot.targetRoles.map {
+            write(.targetRole, collectionPath: $0.collectionPath, documentPath: $0.documentPath)
+        })
         for proof in snapshot.proofRecords {
-            paths.append(proof.documentPath)
-            paths.append(contentsOf: proof.attachments.map(\.documentPath))
+            writes.append(write(.proofRecord, collectionPath: proof.collectionPath, documentPath: proof.documentPath))
+            writes.append(contentsOf: proof.attachments.map {
+                write(.proofAttachment, collectionPath: $0.collectionPath, documentPath: $0.documentPath)
+            })
         }
-        paths.append(contentsOf: snapshot.outcomes.map(\.documentPath))
-        paths.append(contentsOf: snapshot.readinessSnapshots.map(\.documentPath))
+        writes.append(contentsOf: snapshot.outcomes.map {
+            write(.outcome, collectionPath: $0.collectionPath, documentPath: $0.documentPath)
+        })
+        writes.append(contentsOf: snapshot.readinessSnapshots.map {
+            write(.readinessSnapshot, collectionPath: $0.collectionPath, documentPath: $0.documentPath)
+        })
 
         var seen: Set<String> = []
-        return paths.filter { seen.insert($0).inserted }
+        return writes.filter { seen.insert($0.documentPath).inserted }
+    }
+
+    private func write(
+        _ documentType: CareerGraphSyncDocumentType,
+        collectionPath: String,
+        documentPath: String
+    ) -> CareerGraphSyncDocumentWrite {
+        CareerGraphSyncDocumentWrite(
+            documentType: documentType,
+            collectionPath: collectionPath,
+            documentPath: documentPath
+        )
     }
 
     private func uploadIntents(in snapshot: CloudCareerGraphSnapshot) -> [CareerGraphSyncUploadIntent] {

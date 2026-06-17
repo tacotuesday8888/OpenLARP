@@ -62,7 +62,7 @@ struct CloudCareerGraphSnapshot: Codable, Equatable {
     var ownerUserID: String
     var generatedAt: Date
     var userProfile: CloudUserProfileDocument?
-    var goal: CareerGoal?
+    var goal: CloudCareerGoalDocument?
     var targetRoles: [CloudTargetRoleDocument]
     var proofRecords: [CloudProofRecordDocument]
     var outcomes: [CloudCareerOutcomeDocument]
@@ -70,18 +70,32 @@ struct CloudCareerGraphSnapshot: Codable, Equatable {
     var currentReadiness: ReadinessMetrics
     var policy: CloudExportPolicy
 
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case ownerUserID
+        case generatedAt
+        case userProfile
+        case goal
+        case targetRoles
+        case proofRecords
+        case outcomes
+        case readinessSnapshots
+        case currentReadiness
+        case policy
+    }
+
     init(
         ownerUserID: String,
         generatedAt: Date,
         userProfile: CloudUserProfileDocument? = nil,
-        goal: CareerGoal? = nil,
+        goal: CloudCareerGoalDocument? = nil,
         targetRoles: [CloudTargetRoleDocument] = [],
         proofRecords: [CloudProofRecordDocument] = [],
         outcomes: [CloudCareerOutcomeDocument] = [],
         readinessSnapshots: [CloudReadinessSnapshotDocument] = [],
         currentReadiness: ReadinessMetrics,
         policy: CloudExportPolicy,
-        schemaVersion: Int = 1
+        schemaVersion: Int = 2
     ) {
         self.schemaVersion = schemaVersion
         self.ownerUserID = ownerUserID
@@ -94,6 +108,78 @@ struct CloudCareerGraphSnapshot: Codable, Equatable {
         self.readinessSnapshots = readinessSnapshots
         self.currentReadiness = currentReadiness
         self.policy = policy
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        ownerUserID = try container.decode(String.self, forKey: .ownerUserID)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        userProfile = try container.decodeIfPresent(CloudUserProfileDocument.self, forKey: .userProfile)
+        targetRoles = try container.decodeIfPresent([CloudTargetRoleDocument].self, forKey: .targetRoles) ?? []
+        proofRecords = try container.decodeIfPresent([CloudProofRecordDocument].self, forKey: .proofRecords) ?? []
+        outcomes = try container.decodeIfPresent([CloudCareerOutcomeDocument].self, forKey: .outcomes) ?? []
+        readinessSnapshots = try container.decodeIfPresent([CloudReadinessSnapshotDocument].self, forKey: .readinessSnapshots) ?? []
+        currentReadiness = try container.decode(ReadinessMetrics.self, forKey: .currentReadiness)
+        policy = try container.decode(CloudExportPolicy.self, forKey: .policy)
+
+        do {
+            goal = try container.decodeIfPresent(CloudCareerGoalDocument.self, forKey: .goal)
+        } catch {
+            if let legacyGoal = try? container.decodeIfPresent(CareerGoal.self, forKey: .goal) {
+                goal = CloudCareerGoalDocument(
+                    goal: legacyGoal,
+                    ownerUserID: ownerUserID,
+                    includePrivateEvidence: false
+                )
+            } else {
+                throw error
+            }
+        }
+    }
+}
+
+struct CloudCareerGoalPrivateContext: Codable, Equatable {
+    var background: String
+    var existingProof: String
+    var confidence: Int
+    var biggestBlocker: String
+}
+
+struct CloudCareerGoalDocument: Codable, Equatable {
+    var schemaVersion: Int
+    var ownerUserID: String
+    var localID: String
+    var currentStatus: CurrentStatus
+    var targetRole: String
+    var timeline: String
+    var privateContext: CloudCareerGoalPrivateContext?
+    var collectionPath: String
+    var documentPath: String
+
+    init(
+        goal: CareerGoal,
+        ownerUserID: String,
+        includePrivateEvidence: Bool,
+        localID: String = "current",
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.ownerUserID = ownerUserID
+        self.localID = localID
+        currentStatus = goal.currentStatus
+        targetRole = goal.targetRole
+        timeline = goal.timeline
+        privateContext = includePrivateEvidence
+            ? CloudCareerGoalPrivateContext(
+                background: goal.background,
+                existingProof: goal.existingProof,
+                confidence: goal.confidence,
+                biggestBlocker: goal.biggestBlocker
+            )
+            : nil
+        collectionPath = "users/\(ownerUserID)/goals"
+        documentPath = "\(collectionPath)/\(localID)"
     }
 }
 
@@ -117,11 +203,11 @@ struct CloudUserProfileDocument: Codable, Equatable {
             createdAt: profile.createdAt,
             updatedAt: profile.updatedAt
         )
-        accountID = profile.accountID
-        email = profile.email
+        accountID = nil
+        email = nil
         displayName = profile.displayName
         segment = profile.segment
-        backgroundSummary = profile.backgroundSummary
+        backgroundSummary = ""
         minutesPerDay = profile.minutesPerDay
         networkingComfort = profile.networkingComfort
         privacy = profile.privacy
@@ -338,7 +424,13 @@ struct LocalCareerGraphCloudMapper: CareerGraphCloudMapping {
             ownerUserID: ownerUserID,
             generatedAt: generatedAt,
             userProfile: state.userProfile.map { CloudUserProfileDocument(profile: $0, ownerUserID: ownerUserID) },
-            goal: state.goal,
+            goal: state.goal.map {
+                CloudCareerGoalDocument(
+                    goal: $0,
+                    ownerUserID: ownerUserID,
+                    includePrivateEvidence: policy.includePrivateEvidence
+                )
+            },
             targetRoles: state.targetRoles.map { CloudTargetRoleDocument(role: $0, ownerUserID: ownerUserID) },
             proofRecords: proofRecords,
             outcomes: outcomes,
