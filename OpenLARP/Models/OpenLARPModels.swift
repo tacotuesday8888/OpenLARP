@@ -1344,6 +1344,61 @@ extension OpenLARPState {
 
     mutating func recordBackendEvent(_ event: BackendEventRecord) {
         backendEvents.append(event)
+        trimAcknowledgedBackendEventsIfNeeded()
+    }
+
+    mutating func markBackendEventsInFlight(ids: Set<UUID>, at timestamp: Date) {
+        guard !ids.isEmpty else { return }
+        for index in backendEvents.indices where ids.contains(backendEvents[index].id) {
+            backendEvents[index].markInFlight(at: timestamp)
+        }
+    }
+
+    mutating func applyBackendEventSyncResult(_ result: BackendEventSyncResult) {
+        let receiptsByEventID = result.receipts.reduce(into: [UUID: BackendEventSyncReceipt]()) { receipts, receipt in
+            receipts[receipt.eventID] = receipt
+        }
+        for index in backendEvents.indices {
+            guard let receipt = receiptsByEventID[backendEvents[index].id],
+                  receipt.idempotencyKey == backendEvents[index].idempotencyKey
+            else {
+                continue
+            }
+
+            switch receipt.status {
+            case .acknowledged:
+                backendEvents[index].markAcknowledged(at: receipt.acceptedAt)
+            case .failed:
+                backendEvents[index].markFailed(at: receipt.acceptedAt)
+            case .pending, .inFlight:
+                continue
+            }
+        }
+        trimAcknowledgedBackendEventsIfNeeded()
+    }
+
+    mutating func markBackendEventsFailed(ids: Set<UUID>, at timestamp: Date) {
+        guard !ids.isEmpty else { return }
+        for index in backendEvents.indices where ids.contains(backendEvents[index].id) {
+            backendEvents[index].markFailed(at: timestamp)
+        }
+    }
+
+    func syncableBackendEvents(
+        at timestamp: Date,
+        retryDelay: TimeInterval,
+        staleInFlightAge: TimeInterval
+    ) -> [BackendEventRecord] {
+        backendEvents.filter {
+            $0.isEligibleForSync(
+                at: timestamp,
+                retryDelay: retryDelay,
+                staleInFlightAge: staleInFlightAge
+            )
+        }
+    }
+
+    private mutating func trimAcknowledgedBackendEventsIfNeeded() {
         let acknowledgedIndexes = backendEvents.indices.filter { backendEvents[$0].syncStatus == .acknowledged }
         let acknowledgedOverflow = acknowledgedIndexes.count - BackendEventRecord.maxStoredCount
         if acknowledgedOverflow > 0 {

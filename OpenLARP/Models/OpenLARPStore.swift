@@ -9,8 +9,11 @@ final class OpenLARPStore {
     private let aiWorkflowService: any V0AIWorkflowServicing
     private let agentService: CareerAgentBriefServicing
     private let careerGraphSyncService: any CareerGraphSyncServicing
+    private let backendEventSyncService: any BackendEventSyncServicing
     private let now: () -> Date
     private let calendar: Calendar
+    private let backendEventRetryDelay: TimeInterval
+    private let staleBackendEventInFlightAge: TimeInterval
 
     var state: OpenLARPState
     var pendingProof: ProofSubmission?
@@ -20,6 +23,7 @@ final class OpenLARPStore {
     var isGoalSetupRunning = false
     var isProofChecking = false
     var isPreparingCareerGraphSyncPreview = false
+    var isSyncingBackendEvents = false
     var careerGraphSyncPreview: CareerGraphSyncPreview?
     private var careerGraphSyncPreviewGeneration = 0
 
@@ -29,16 +33,22 @@ final class OpenLARPStore {
         aiWorkflowService: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService(),
         agentService: CareerAgentBriefServicing = MockCareerAgentService(),
         careerGraphSyncService: any CareerGraphSyncServicing = LocalMockCareerGraphSyncService(),
+        backendEventSyncService: any BackendEventSyncServicing = LocalMockBackendEventSyncService(),
         now: @escaping () -> Date = { Date() },
-        calendar: Calendar = .autoupdatingCurrent
+        calendar: Calendar = .autoupdatingCurrent,
+        backendEventRetryDelay: TimeInterval = 300,
+        staleBackendEventInFlightAge: TimeInterval = 900
     ) {
         self.persistence = persistence
         self.attachmentStore = attachmentStore
         self.aiWorkflowService = aiWorkflowService
         self.agentService = agentService
         self.careerGraphSyncService = careerGraphSyncService
+        self.backendEventSyncService = backendEventSyncService
         self.now = now
         self.calendar = calendar
+        self.backendEventRetryDelay = backendEventRetryDelay
+        self.staleBackendEventInFlightAge = staleBackendEventInFlightAge
         do {
             let loadedState = try persistence.load()
             let refreshedState = OpenLARPEngine.refreshDailyAvailability(
@@ -559,6 +569,52 @@ final class OpenLARPStore {
         }
     }
 
+    func syncBackendEvents(limit: Int = 25) async {
+        guard !isSyncingBackendEvents else { return }
+        let requestedAt = now()
+        let events = Array(
+            state.syncableBackendEvents(
+                at: requestedAt,
+                retryDelay: backendEventRetryDelay,
+                staleInFlightAge: staleBackendEventInFlightAge
+            )
+            .prefix(max(0, limit))
+        )
+        guard !events.isEmpty else { return }
+
+        let eventIDs = Set(events.map(\.id))
+        let previousBackendEvents = state.backendEvents
+        state.markBackendEventsInFlight(ids: eventIDs, at: requestedAt)
+        guard save() else {
+            state.backendEvents = previousBackendEvents
+            return
+        }
+
+        let request = BackendEventSyncRequest(
+            session: BackendUserSession.localOnly(for: state),
+            events: events.map { event in
+                var inFlightEvent = event
+                inFlightEvent.markInFlight(at: requestedAt)
+                return inFlightEvent
+            },
+            requestedAt: requestedAt
+        )
+
+        isSyncingBackendEvents = true
+        defer { isSyncingBackendEvents = false }
+
+        do {
+            let result = try await backendEventSyncService.syncEvents(request)
+            state.applyBackendEventSyncResult(result)
+            errorMessage = nil
+            save()
+        } catch {
+            state.markBackendEventsFailed(ids: eventIDs, at: requestedAt)
+            errorMessage = "Backend event sync could not finish. OpenLARP will retry later."
+            save()
+        }
+    }
+
     func recordCookedCardPrepared() {
         recordBetaEvent(.cookedCardPrepared)
         save()
@@ -691,11 +747,14 @@ final class OpenLARPStore {
         recordBetaEvent(.nextDayReturn, occurredAt: timestamp, day: refreshedState.currentQuest?.day)
     }
 
-    private func save() {
+    @discardableResult
+    private func save() -> Bool {
         do {
             try persistence.save(state)
+            return true
         } catch {
             errorMessage = "Local progress could not be saved."
+            return false
         }
     }
 
