@@ -256,6 +256,13 @@ struct OpenLARPSubscriptionState: Codable, Equatable {
         localFreeSprint(startedAt: startedAt)
     }
 
+    var hasStartedAccessLifecycle: Bool {
+        freeSprint != nil ||
+            customerInfo != nil ||
+            connectionStatus != .notConfigured ||
+            restoreState.status != .notStarted
+    }
+
     func access(
         at timestamp: Date,
         calendar: Calendar = .autoupdatingCurrent
@@ -306,6 +313,17 @@ struct OpenLARPSubscriptionState: Codable, Equatable {
             )
         case .notStarted, .restored:
             break
+        }
+
+        if !hasStartedAccessLifecycle {
+            return OpenLARPSubscriptionAccess(
+                isEntitled: false,
+                status: .notStarted,
+                source: .none,
+                expiresAt: nil,
+                daysRemaining: 0,
+                shouldShowPaywall: false
+            )
         }
 
         return OpenLARPSubscriptionAccess(

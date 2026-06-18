@@ -5,7 +5,10 @@ on:
   push:
     branches:
       - main
-      - "codex/**"
+
+concurrency:
+  group: ios-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -15,7 +18,34 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Set up Java for Firebase emulators
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Typecheck Genkit backend
+        run: npm run typecheck:backend
+
+      - name: Test Genkit backend
+        run: npm run test:backend
+
+      - name: Build Firebase Functions backend
+        run: npm run build:backend
+
+      - name: Test Firebase security rules
+        run: npm run test:rules:emulators
 
       - name: Install XcodeGen
         run: |

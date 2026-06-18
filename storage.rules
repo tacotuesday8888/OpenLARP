@@ -12,7 +12,7 @@ service firebase.storage {
 
     match /users/{userId}/proofAttachments/{attachmentId} {
       allow read: if isUser(userId);
-      allow write: if isUser(userId)
+      allow create, update: if isUser(userId)
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/.*|application/pdf|text/plain');
       allow delete: if false;

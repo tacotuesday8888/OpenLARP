@@ -121,12 +121,18 @@ struct AppRootView: View {
         .tint(.openLARPBlue)
         .onAppear {
             store.refreshDailyAvailability()
-            Task { await store.syncBackendEvents() }
+            Task {
+                await store.refreshSubscriptionStatus()
+                await store.syncBackendEvents()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             store.refreshDailyAvailability()
-            Task { await store.syncBackendEvents() }
+            Task {
+                await store.refreshSubscriptionStatus()
+                await store.syncBackendEvents()
+            }
         }
         .onChange(of: selectedTab) {
             store.refreshDailyAvailability()

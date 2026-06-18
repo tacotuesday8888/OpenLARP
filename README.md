@@ -55,6 +55,18 @@ xcodebuild test \
 
 Signed device builds and TestFlight uploads require Apple Developer account setup in Xcode.
 
+## Backend Checks
+
+```bash
+npm install
+npm run typecheck:backend
+npm run test:backend
+npm run build:backend
+npm run test:rules:emulators
+```
+
+The Firebase rules emulator command requires Java. Provider keys and Firebase private plist files are intentionally not committed.
+
 ## Repository Hygiene
 
 Do not commit:

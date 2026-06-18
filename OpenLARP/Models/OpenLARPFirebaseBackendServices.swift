@@ -39,6 +39,7 @@ struct FirebaseBackendSessionProvider: BackendSessionProviding {
         #if canImport(FirebaseAuth) && canImport(FirebaseCore)
         guard FirebaseApp.app() != nil else {
             var session = BackendUserSession.localOnly(for: state)
+            session.authProvider = .firebaseAuth
             session.auth = BackendIntegrationRoute(
                 kind: .firebaseAuth,
                 status: .notConnected,
@@ -62,6 +63,7 @@ struct FirebaseBackendSessionProvider: BackendSessionProviding {
 
         guard let user = Auth.auth().currentUser else {
             var session = BackendUserSession.localOnly(for: state)
+            session.authProvider = .firebaseAuth
             session.auth = BackendIntegrationRoute(kind: .firebaseAuth, status: .needsAuthentication)
             session.firestore = BackendIntegrationRoute(kind: .firestore, status: .configured)
             session.storage = BackendIntegrationRoute(kind: .firebaseStorage, status: .configured)
@@ -167,6 +169,27 @@ struct FirebaseFirestoreBackendEventSyncService: BackendEventSyncServicing {
         #else
         throw FirebaseBackendServiceError.sdkUnavailable
         #endif
+    }
+}
+
+struct FirebaseReadyBackendEventSyncService: BackendEventSyncServicing {
+    private let firebaseService: FirebaseFirestoreBackendEventSyncService
+    private let localFallbackService: LocalMockBackendEventSyncService
+
+    init(
+        firebaseService: FirebaseFirestoreBackendEventSyncService = FirebaseFirestoreBackendEventSyncService(),
+        localFallbackService: LocalMockBackendEventSyncService = LocalMockBackendEventSyncService()
+    ) {
+        self.firebaseService = firebaseService
+        self.localFallbackService = localFallbackService
+    }
+
+    func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult {
+        guard request.session.isAuthenticated else {
+            return try await localFallbackService.syncEvents(request)
+        }
+
+        return try await firebaseService.syncEvents(request)
     }
 }
 

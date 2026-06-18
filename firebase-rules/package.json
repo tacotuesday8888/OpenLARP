@@ -1,0 +1,16 @@
+{
+  "name": "@openlarp/firebase-rules-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@firebase/rules-unit-testing": "5.0.1",
+    "firebase": "12.15.0"
+  },
+  "devDependencies": {
+    "vitest": "4.1.9"
+  }
+}
