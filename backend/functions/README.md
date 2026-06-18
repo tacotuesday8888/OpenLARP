@@ -7,10 +7,29 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 ## Current Status
 
 - Callable export: `runOpenLARPWorkflow`
+- Callable export: `reconcileProofUploads`
 - Runtime: Node.js 22
 - Live model calls: disabled
 - Provider secrets: not required locally and must never be committed
 - Workflow contracts: imported from `backend/ai`
+
+## Proof Upload Reconciliation
+
+`reconcileProofUploads` is an authenticated Firebase callable for the rare case
+where proof bytes were uploaded to Storage but the later Firestore metadata write
+did not complete.
+
+The callable is conservative by default:
+
+- signed-in user required
+- scans only `users/{uid}/proofAttachments/{attachmentId}`
+- compares Storage custom metadata against the signed-in owner and attachment ID
+- compares existing Firestore proof attachment receipts against Storage metadata
+- defaults to `reportOnly`
+- refuses to delete very recent uploads while Firestore metadata may still retry; callers may increase but not lower the server age window
+- deletes with the inspected Storage generation precondition so a rewritten object is not removed
+- deletes only safe orphaned Storage objects when called with
+  `mode: "deleteOrphans"` and `confirmDeletion: true`
 
 ## Local Commands
 
