@@ -709,10 +709,23 @@ struct CareerGraphSyncUploadIntent: Codable, Equatable, Identifiable {
     var fileName: String
     var contentType: String
     var byteCount: Int
+    var localRelativePath: String
     var storagePath: String
     var proofDocumentPath: String
     var attachmentDocumentPath: String
     var idempotencyKey: String
+
+    private enum CodingKeys: String, CodingKey {
+        case proofID
+        case attachmentID
+        case fileName
+        case contentType
+        case byteCount
+        case storagePath
+        case proofDocumentPath
+        case attachmentDocumentPath
+        case idempotencyKey
+    }
 
     init(
         proofID: String,
@@ -723,14 +736,112 @@ struct CareerGraphSyncUploadIntent: Codable, Equatable, Identifiable {
         fileName = attachment.fileName
         contentType = attachment.contentType
         byteCount = attachment.byteCount
+        localRelativePath = attachment.localRelativePath
         storagePath = attachment.storagePath
         proofDocumentPath = "users/\(attachment.metadata.ownerUserID)/proofRecords/\(proofID)"
         attachmentDocumentPath = attachment.documentPath
         idempotencyKey = "\(attachment.metadata.ownerUserID)-\(attachment.metadata.localID)"
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        proofID = try container.decode(String.self, forKey: .proofID)
+        attachmentID = try container.decode(String.self, forKey: .attachmentID)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        contentType = try container.decode(String.self, forKey: .contentType)
+        byteCount = try container.decode(Int.self, forKey: .byteCount)
+        localRelativePath = ""
+        storagePath = try container.decode(String.self, forKey: .storagePath)
+        proofDocumentPath = try container.decode(String.self, forKey: .proofDocumentPath)
+        attachmentDocumentPath = try container.decode(String.self, forKey: .attachmentDocumentPath)
+        idempotencyKey = try container.decode(String.self, forKey: .idempotencyKey)
+    }
 }
 
 typealias CareerGraphUploadIntent = CareerGraphSyncUploadIntent
+
+enum CareerGraphSyncUploadStatus: String, Codable, CaseIterable {
+    case pendingUpload
+    case uploaded
+    case missingLocalFile
+    case failed
+}
+
+struct CareerGraphSyncUploadReceipt: Codable, Equatable, Identifiable {
+    var id: String { attachmentID }
+
+    var schemaVersion: Int
+    var proofID: String
+    var attachmentID: String
+    var storagePath: String
+    var contentType: String
+    var byteCount: Int
+    var status: CareerGraphSyncUploadStatus
+    var uploadedAt: Date?
+    var storageBucket: String?
+    var storageGeneration: Int64?
+    var metadataGeneration: Int64?
+    var md5Hash: String?
+    var idempotencyKey: String
+
+    init(
+        intent: CareerGraphSyncUploadIntent,
+        status: CareerGraphSyncUploadStatus,
+        uploadedAt: Date? = nil,
+        storageBucket: String? = nil,
+        storageGeneration: Int64? = nil,
+        metadataGeneration: Int64? = nil,
+        md5Hash: String? = nil,
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        proofID = intent.proofID
+        attachmentID = intent.attachmentID
+        storagePath = intent.storagePath
+        contentType = intent.contentType
+        byteCount = intent.byteCount
+        self.status = status
+        self.uploadedAt = uploadedAt
+        self.storageBucket = storageBucket
+        self.storageGeneration = storageGeneration
+        self.metadataGeneration = metadataGeneration
+        self.md5Hash = md5Hash
+        idempotencyKey = intent.idempotencyKey
+    }
+}
+
+enum CareerGraphProofAttachmentDataError: Error, Equatable {
+    case missingLocalAttachment
+    case byteCountMismatch
+    case unsafeLocalPath
+}
+
+protocol CareerGraphProofAttachmentDataProviding: Sendable {
+    func data(for uploadIntent: CareerGraphSyncUploadIntent) async throws -> Data
+}
+
+struct CareerGraphProofAttachmentUploadRequest: Sendable {
+    var requestedAt: Date
+    var session: BackendUserSession
+    var uploadIntent: CareerGraphSyncUploadIntent
+    var data: Data
+
+    init(
+        requestedAt: Date,
+        session: BackendUserSession,
+        uploadIntent: CareerGraphSyncUploadIntent,
+        data: Data
+    ) {
+        self.requestedAt = requestedAt
+        self.session = session.redactedForCareerGraphSync()
+        self.uploadIntent = uploadIntent
+        self.data = data
+    }
+}
+
+protocol CareerGraphProofAttachmentUploading: Sendable {
+    func upload(_ request: CareerGraphProofAttachmentUploadRequest) async throws -> CareerGraphSyncUploadReceipt
+}
 
 enum CareerGraphSyncDocumentType: String, Codable, CaseIterable {
     case profile
@@ -805,6 +916,7 @@ struct CareerGraphSyncResult: Codable, Equatable {
     var firestoreRootPath: String
     var firestoreDocumentPaths: [String]
     var uploadIntents: [CareerGraphSyncUploadIntent]
+    var uploadReceipts: [CareerGraphSyncUploadReceipt]
     var syncManifest: CareerGraphSyncManifest
     var integrationRoutes: [BackendIntegrationRoute]
 
@@ -816,6 +928,7 @@ struct CareerGraphSyncResult: Codable, Equatable {
         requiresAuthenticationToSync: Bool? = nil,
         firestoreDocumentPaths: [String],
         uploadIntents: [CareerGraphSyncUploadIntent],
+        uploadReceipts: [CareerGraphSyncUploadReceipt] = [],
         syncManifest: CareerGraphSyncManifest,
         schemaVersion: Int = 1
     ) {
@@ -828,6 +941,7 @@ struct CareerGraphSyncResult: Codable, Equatable {
         firestoreRootPath = request.firestoreRootPath
         self.firestoreDocumentPaths = firestoreDocumentPaths
         self.uploadIntents = uploadIntents
+        self.uploadReceipts = uploadReceipts
         self.syncManifest = syncManifest
         integrationRoutes = syncManifest.requiredRoutes
     }
@@ -840,6 +954,7 @@ struct CareerGraphSyncPreview: Codable, Equatable {
     var preparedAt: Date
     var documentCount: Int
     var proofUploadCount: Int
+    var proofUploadedCount: Int
     var proofUploadByteCount: Int
     var includedPrivateEvidence: Bool
     var allowsLongTermMemoryWrite: Bool
@@ -853,6 +968,7 @@ struct CareerGraphSyncPreview: Codable, Equatable {
         preparedAt: Date,
         documentCount: Int,
         proofUploadCount: Int,
+        proofUploadedCount: Int = 0,
         proofUploadByteCount: Int,
         includedPrivateEvidence: Bool,
         allowsLongTermMemoryWrite: Bool,
@@ -867,6 +983,7 @@ struct CareerGraphSyncPreview: Codable, Equatable {
         self.preparedAt = preparedAt
         self.documentCount = documentCount
         self.proofUploadCount = proofUploadCount
+        self.proofUploadedCount = proofUploadedCount
         self.proofUploadByteCount = proofUploadByteCount
         self.includedPrivateEvidence = includedPrivateEvidence
         self.allowsLongTermMemoryWrite = allowsLongTermMemoryWrite
@@ -882,6 +999,7 @@ struct CareerGraphSyncPreview: Codable, Equatable {
             preparedAt: result.preparedAt,
             documentCount: result.firestoreDocumentPaths.count,
             proofUploadCount: result.uploadIntents.count,
+            proofUploadedCount: result.uploadReceipts.filter { $0.status == .uploaded }.count,
             proofUploadByteCount: result.uploadIntents.reduce(0) { $0 + $1.byteCount },
             includedPrivateEvidence: request.includePrivateEvidence,
             allowsLongTermMemoryWrite: request.snapshot.policy.allowsLongTermMemoryWrite,

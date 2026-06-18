@@ -10,11 +10,25 @@ service firebase.storage {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function hasOpenLARPProofMetadata() {
+      return request.resource.metadata.keys().hasAll([
+        'ownerUserID',
+        'proofID',
+        'attachmentID',
+        'idempotencyKey'
+      ]);
+    }
+
     match /users/{userId}/proofAttachments/{attachmentId} {
       allow read: if isUser(userId);
       allow create, update: if isUser(userId)
         && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*|application/pdf|text/plain');
+        && request.resource.contentType.matches('image/.*|application/pdf|text/plain')
+        && hasOpenLARPProofMetadata()
+        && request.resource.metadata.ownerUserID == userId
+        && request.resource.metadata.proofID is string
+        && request.resource.metadata.attachmentID == attachmentId
+        && request.resource.metadata.idempotencyKey == userId + "-" + attachmentId;
       allow delete: if false;
     }
 

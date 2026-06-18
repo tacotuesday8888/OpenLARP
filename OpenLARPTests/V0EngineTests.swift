@@ -855,6 +855,50 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: attachment).path))
     }
 
+    func testAttachmentStoreRejectsUploadIntentOutsideProofAttachmentDirectory() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let privateFileData = Data("do-not-upload".utf8)
+        let outsideFileName = "\(directory.lastPathComponent)-private-file.txt"
+        let outsideFileURL = directory
+            .deletingLastPathComponent()
+            .appendingPathComponent(outsideFileName)
+        try privateFileData.write(to: outsideFileURL)
+        defer {
+            try? FileManager.default.removeItem(at: outsideFileURL)
+        }
+        let store = OpenLARPAttachmentStore(directory: directory)
+        let proofID = UUID(uuidString: "B1B1B1B1-B1B1-B1B1-B1B1-B1B1B1B1B1B1")!
+        let attachment = ProofAttachment(
+            id: UUID(uuidString: "B2B2B2B2-B2B2-B2B2-B2B2-B2B2B2B2B2B2")!,
+            fileName: outsideFileName,
+            originalFileName: outsideFileName,
+            contentType: "text/plain",
+            byteCount: privateFileData.count,
+            createdAt: Date(timeIntervalSince1970: 3_700),
+            localRelativePath: "../\(outsideFileName)"
+        )
+        let cloudAttachment = CloudProofAttachmentDocument(
+            attachment: attachment,
+            ownerUserID: "firebase_uid_attachment_escape",
+            proofID: proofID
+        )
+        let uploadIntent = CareerGraphSyncUploadIntent(
+            proofID: proofID.uuidString,
+            attachment: cloudAttachment
+        )
+
+        do {
+            _ = try await store.data(for: uploadIntent)
+            XCTFail("Attachment uploads must not read files outside the proof attachments directory.")
+        } catch let error as CareerGraphProofAttachmentDataError {
+            XCTAssertEqual(error, .unsafeLocalPath)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     @MainActor
     func testDiscardPendingQualityResultDeletesPendingProofAttachments() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())

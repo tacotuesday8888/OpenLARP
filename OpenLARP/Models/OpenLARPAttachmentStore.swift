@@ -1,6 +1,6 @@
 import Foundation
 
-struct OpenLARPAttachmentStore {
+struct OpenLARPAttachmentStore: CareerGraphProofAttachmentDataProviding, Sendable {
     let directory: URL
 
     private var attachmentsDirectory: URL {
@@ -39,6 +39,25 @@ struct OpenLARPAttachmentStore {
 
     func data(for attachment: ProofAttachment) throws -> Data {
         try Data(contentsOf: url(for: attachment))
+    }
+
+    func data(for uploadIntent: CareerGraphSyncUploadIntent) async throws -> Data {
+        let fileURL = directory
+            .appendingPathComponent(uploadIntent.localRelativePath)
+            .standardizedFileURL
+        let safeDirectory = attachmentsDirectory.standardizedFileURL
+        guard fileURL.path.hasPrefix(safeDirectory.path + "/") else {
+            throw CareerGraphProofAttachmentDataError.unsafeLocalPath
+        }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw CareerGraphProofAttachmentDataError.missingLocalAttachment
+        }
+
+        let data = try Data(contentsOf: fileURL)
+        guard data.count == uploadIntent.byteCount else {
+            throw CareerGraphProofAttachmentDataError.byteCountMismatch
+        }
+        return data
     }
 
     func url(for attachment: ProofAttachment) -> URL {

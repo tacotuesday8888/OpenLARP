@@ -24,9 +24,12 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `OpenLARPStore` now owns authentication state through `OpenLARPAuthenticationServicing`, restores previous sessions on app launch/foreground, forwards auth callback URLs, updates local profile account fields, and uses the same authenticated session source for backend events and career graph previews.
 - `ProfileView` exposes account status, Google sign-in, restore, and sign-out controls while preserving local/mock mode.
 - `FirebaseReadyCareerGraphSyncService` routes signed-in users to a Firestore-backed career graph metadata sync and keeps signed-out users in local preview mode.
-- `FirebaseFirestoreCareerGraphSyncService` writes account-owned career graph metadata for profiles, goals, target roles, proof records, proof attachment metadata, outcomes, and readiness snapshots in one Firestore write batch. Proof file bytes are not uploaded yet; `CareerGraphSyncUploadIntent` still records the future Storage paths.
+- `FirebaseFirestoreCareerGraphSyncService` uploads available proof attachment bytes to Firebase Storage before writing account-owned Firestore metadata for profiles, goals, target roles, proof records, proof attachment receipts, outcomes, and readiness snapshots.
+- `FirebaseStorageProofAttachmentUploader` writes proof bytes to deterministic `users/{uid}/proofAttachments/{attachmentId}` paths with owner, proof, attachment, and idempotency custom metadata.
+- `CareerGraphSyncUploadIntent.localRelativePath` is runtime-only and is intentionally omitted from encoded sync manifests and Firestore documents.
+- Cloud proof records do not embed attachment documents. Attachment metadata and upload receipts live under `users/{uid}/proofAttachments/{attachmentId}` so local file paths cannot leak through nested proof-record payloads.
 
-The Firebase adapters also check that `FirebaseApp` is configured before touching Auth or Firestore. This lets CI and local mock builds continue safely when Firebase SDKs are linked but private runtime configuration has not been bundled.
+The Firebase adapters also check that `FirebaseApp` is configured before touching Auth, Firestore, or Storage. This lets CI and local mock builds continue safely when Firebase SDKs are linked but private runtime configuration has not been bundled.
 
 Firebase Apple SDK products are now linked through Swift Package Manager via `project.yml`:
 
@@ -54,7 +57,16 @@ Storage rules currently reserve this path:
 users/{uid}/proofAttachments/{attachmentId}
 ```
 
-Only the signed-in owner can read/write proof attachments, and uploads are limited to images, PDFs, and plain text under 10 MB.
+Only the signed-in owner can read/write proof attachments, and uploads are limited to images, PDFs, and plain text under 10 MB. Uploads must include OpenLARP custom metadata: owner ID, proof ID, attachment ID, and idempotency key. Storage rules enforce the owner, attachment ID, and idempotency key against the signed-in user and path; the proof ID is carried forward into the Firestore upload receipt contract.
+
+Top-level proof attachment Firestore documents now require:
+
+- matching `users/{uid}/proofAttachments/{attachmentId}` document and Storage paths
+- no local device file path fields
+- `pendingUpload` without a receipt, or `uploaded` with a receipt
+- uploaded receipts that match the same proof, attachment, content type, byte count, Storage path, and owner-scoped idempotency key
+
+Proof record Firestore documents cannot embed attachment arrays. Attachment metadata must be written through the dedicated proof-attachment collection. The iOS sync adapter replaces proof-record documents instead of merge-writing them so older local beta records with embedded attachments are cleaned up on the next sync.
 
 Firestore rules now prevent backend event documents from bypassing the dedicated `backendEvents` rule through the broad user-tree rule. This keeps career graph metadata flexible while requiring backend event outbox records to use the acknowledged event shape.
 
@@ -64,17 +76,19 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Storage rules are tracked locally, but Firebase CLI currently reports that Firebase Storage still needs product setup in the Firebase console before rules can be released.
 - The Firebase MCP environment has been authenticated locally, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
 - Security rules validate through Firebase MCP.
-- Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, and proof attachment storage constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
+- Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22 and `runOpenLARPWorkflow` as the callable AI workflow boundary.
 
 ## Next Backend Steps
 
 1. Enable Firebase Auth providers in the Firebase console, starting with Sign in with Apple and Google Sign-In.
 2. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
-3. Add Firebase Storage proof attachment byte uploads behind a narrow local attachment-byte provider, then reconcile completed upload receipts with proof attachment metadata.
-4. Deploy Cloud Functions only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
-5. Keep provider model IDs and API keys only on the backend.
-6. Add App Check enforcement after local device and TestFlight auth flows are verified.
+3. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
+4. Test live Google sign-in, Firestore career graph sync, and Storage proof attachment upload on a simulator or device with the ignored local Firebase plist.
+5. Add a backend reconciliation job or callable repair flow for rare orphaned Storage objects if upload succeeds but a later upload or Firestore batch write fails.
+6. Deploy Cloud Functions only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
+7. Keep provider model IDs and API keys only on the backend.
+8. Add App Check enforcement after local device and TestFlight auth flows are verified.
 
 ## Local Commands
 

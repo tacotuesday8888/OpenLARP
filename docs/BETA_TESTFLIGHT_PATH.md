@@ -17,13 +17,14 @@ This document tracks the practical path from the current local product foundatio
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
 - Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled.
 - Google Sign-In auth service boundary exists for restore, sign-in, sign-out, missing-config states, and future URL handling.
-- Firebase security rules tests exist for Firestore and Storage owner boundaries.
+- Firebase Storage proof attachment upload adapter exists and writes owner-scoped upload receipts before Firestore metadata sync.
+- Firebase security rules tests exist for Firestore and Storage owner boundaries, upload metadata, proof attachment receipt shape, and nested local-path leak prevention.
 - Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
 
 ## Required Before TestFlight
 
 1. Enable Firebase Auth providers and add real sign-in UI plus `.onOpenURL` forwarding.
-2. Test account-backed event sync, Firestore career graph writes, and Storage proof attachment uploads on device.
+2. Test account-backed event sync, Firestore career graph writes, and Storage proof attachment uploads on device with live Firebase configuration.
 3. Deploy the backend Genkit Cloud Functions or Cloud Run service for AI workflows and keep LLM providers server-side.
 4. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
 5. Add privacy policy, support URL, App Store screenshots, and TestFlight notes.

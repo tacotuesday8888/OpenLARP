@@ -35,12 +35,56 @@ service cloud.firestore {
       return !request.resource.data.keys().hasAny(['idempotencyKey']);
     }
 
+    function noLocalFilePathWrite() {
+      return !request.resource.data.keys().hasAny(['localRelativePath']);
+    }
+
     function isSafeUserDocument(userId) {
       return hasTopLevelOwner(userId)
         && hasMetadataOwner(userId)
         && noExternalActionWrite()
         && noUnsafeBackendSyncStatusWrite()
-        && noBackendEventBypassWrite();
+        && noBackendEventBypassWrite()
+        && noLocalFilePathWrite();
+    }
+
+    function hasProofAttachmentPath(userId, attachmentId) {
+      return request.resource.data.storagePath == "users/" + userId + "/proofAttachments/" + attachmentId
+        && request.resource.data.collectionPath == "users/" + userId + "/proofAttachments"
+        && request.resource.data.documentPath == "users/" + userId + "/proofAttachments/" + attachmentId
+        && request.resource.data.metadata.localID == attachmentId;
+    }
+
+    function hasSafeProofUploadReceipt(userId, attachmentId) {
+      return (
+          request.resource.data.uploadStatus == 'pendingUpload'
+          && !request.resource.data.keys().hasAny(['uploadReceipt'])
+        )
+        || (
+          request.resource.data.uploadStatus == 'uploaded'
+          && request.resource.data.keys().hasAll(['uploadReceipt'])
+          && request.resource.data.uploadReceipt.proofID == request.resource.data.proofID
+          && request.resource.data.uploadReceipt.attachmentID == attachmentId
+          && request.resource.data.uploadReceipt.storagePath == request.resource.data.storagePath
+          && request.resource.data.uploadReceipt.contentType == request.resource.data.contentType
+          && request.resource.data.uploadReceipt.byteCount == request.resource.data.byteCount
+          && request.resource.data.uploadReceipt.status == 'uploaded'
+          && request.resource.data.uploadReceipt.idempotencyKey == userId + "-" + attachmentId
+        );
+    }
+
+    function isSafeProofAttachmentDocument(userId, attachmentId) {
+      return isSafeUserDocument(userId)
+        && hasProofAttachmentPath(userId, attachmentId)
+        && request.resource.data.contentType is string
+        && request.resource.data.byteCount is int
+        && request.resource.data.uploadStatus in ['pendingUpload', 'uploaded']
+        && hasSafeProofUploadReceipt(userId, attachmentId);
+    }
+
+    function isSafeProofRecordDocument(userId) {
+      return isSafeUserDocument(userId)
+        && !request.resource.data.keys().hasAny(['attachments']);
     }
 
     match /users/{userId} {
@@ -58,10 +102,26 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /proofAttachments/{attachmentId} {
+        allow read: if isUser(userId);
+        allow create, update: if isUser(userId)
+          && isSafeProofAttachmentDocument(userId, attachmentId);
+        allow delete: if false;
+      }
+
+      match /proofRecords/{proofId} {
+        allow read: if isUser(userId);
+        allow create, update: if isUser(userId)
+          && isSafeProofRecordDocument(userId);
+        allow delete: if false;
+      }
+
       match /{document=**} {
         allow read: if isUser(userId);
         allow create, update: if isUser(userId)
           && document[0] != 'backendEvents'
+          && document[0] != 'proofAttachments'
+          && document[0] != 'proofRecords'
           && isSafeUserDocument(userId);
         allow delete: if false;
       }

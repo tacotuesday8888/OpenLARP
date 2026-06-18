@@ -74,7 +74,9 @@ struct CareerGraphSetupStatusContent: Equatable {
             CareerGraphSetupStatusRow(
                 title: "File backup",
                 value: Self.proofUploadValue(for: session.storage.status),
-                detail: session.storage.status == .connected ? "File backup is available" : "Files stay on this device",
+                detail: session.storage.status == .connected || session.storage.status == .configured
+                    ? "Proof file backup is available after sign-in"
+                    : "Files stay on this device",
                 systemImage: "folder.fill",
                 isComplete: session.storage.status == .connected || session.storage.status == .configured
             ),
@@ -145,10 +147,14 @@ struct CareerGraphSyncPreviewContent: Equatable {
         title = preview.status == .failed
             ? "Career graph preview needs retry"
             : "Career graph preview ready"
-        subtitle = "OpenLARP prepared your saved career graph locally. This preview did not upload or sync anything."
+        subtitle = preview.didContactNetwork
+            ? "OpenLARP synced metadata and uploaded available proof files through the backend-ready Firebase route."
+            : "OpenLARP prepared your saved career graph locally. This preview did not upload or sync anything."
         nextStep = preview.requiresAuthenticationToSync
             ? "Sign in will be required before any real account backup."
-            : "Account backup can run once the backend route is connected."
+            : preview.didContactNetwork
+                ? "Your backed-up proof files now have upload receipts in the career graph metadata."
+                : "Account backup can run once the backend route is connected."
 
         rows = [
             CareerGraphSetupStatusRow(
@@ -160,12 +166,16 @@ struct CareerGraphSyncPreviewContent: Equatable {
             ),
             CareerGraphSetupStatusRow(
                 title: "Local files",
-                value: Self.fileCountText(preview.proofUploadCount),
-                detail: preview.proofUploadCount > 0
-                    ? "\(Self.byteCountText(preview.proofUploadByteCount)) would need backup later"
+                value: preview.proofUploadedCount > 0
+                    ? "\(preview.proofUploadedCount)/\(preview.proofUploadCount) backed up"
+                    : Self.fileCountText(preview.proofUploadCount),
+                detail: preview.didContactNetwork && preview.proofUploadedCount == preview.proofUploadCount
+                    ? "\(Self.byteCountText(preview.proofUploadByteCount)) backed up to Firebase Storage"
+                    : preview.proofUploadCount > 0
+                    ? "\(Self.byteCountText(preview.proofUploadByteCount)) needs backup"
                     : "No proof files need backup",
                 systemImage: "folder.fill",
-                isComplete: preview.proofUploadCount > 0
+                isComplete: preview.proofUploadedCount == preview.proofUploadCount
             ),
             CareerGraphSetupStatusRow(
                 title: "Privacy",
@@ -178,12 +188,12 @@ struct CareerGraphSyncPreviewContent: Equatable {
             ),
             CareerGraphSetupStatusRow(
                 title: "Network",
-                value: preview.didContactNetwork ? "Backend adapter" : "No network contact",
+                value: preview.didContactNetwork ? "Firebase adapter" : "No network contact",
                 detail: preview.didContactNetwork
-                    ? "A backend adapter handled this preview"
+                    ? "Firestore and Storage handled this account sync"
                     : "This preview was built on this device",
                 systemImage: "antenna.radiowaves.left.and.right",
-                isComplete: !preview.didContactNetwork
+                isComplete: preview.didContactNetwork
             )
         ]
     }
