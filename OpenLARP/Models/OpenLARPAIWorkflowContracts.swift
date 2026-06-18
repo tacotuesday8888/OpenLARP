@@ -526,6 +526,10 @@ struct V0ProgressSummaryResponse: Codable, Equatable {
     }
 }
 
+protocol LocalAIWorkflowFallbackEligibleError: Error {
+    var allowsLocalWorkflowFallback: Bool { get }
+}
+
 // TODO: Future adapters should route to Firebase callable Genkit or Cloud Run,
 // keeping provider SDKs, credentials, and direct LLM calls out of this app target.
 @MainActor
@@ -596,6 +600,7 @@ struct FallbackV0AIWorkflowService: V0AIWorkflowServicing {
         do {
             return try await primary.generateDiagnostic(request)
         } catch {
+            guard shouldUseLocalFallback(for: error) else { throw error }
             var response = try await fallback.generateDiagnostic(request)
             response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
             return response
@@ -606,6 +611,7 @@ struct FallbackV0AIWorkflowService: V0AIWorkflowServicing {
         do {
             return try await primary.generateQuestPlan(request)
         } catch {
+            guard shouldUseLocalFallback(for: error) else { throw error }
             var response = try await fallback.generateQuestPlan(request)
             response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
             return response
@@ -616,6 +622,7 @@ struct FallbackV0AIWorkflowService: V0AIWorkflowServicing {
         do {
             return try await primary.reviewProof(request)
         } catch {
+            guard shouldUseLocalFallback(for: error) else { throw error }
             var response = try await fallback.reviewProof(request)
             response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
             return response
@@ -626,10 +633,16 @@ struct FallbackV0AIWorkflowService: V0AIWorkflowServicing {
         do {
             return try await primary.summarizeProgress(request)
         } catch {
+            guard shouldUseLocalFallback(for: error) else { throw error }
             var response = try await fallback.summarizeProgress(request)
             response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
             return response
         }
+    }
+
+    private func shouldUseLocalFallback(for error: Error) -> Bool {
+        guard let eligibleError = error as? any LocalAIWorkflowFallbackEligibleError else { return false }
+        return eligibleError.allowsLocalWorkflowFallback
     }
 }
 

@@ -1006,6 +1006,21 @@ private struct ResultSignalRow: View {
     }
 }
 
+private enum ProofImageContentPolicy {
+    static let allowedContentTypes = Set([
+        "image/png",
+        "image/jpeg",
+        "image/heic",
+        "image/heif"
+    ])
+
+    static func supportedContentType(for item: PhotosPickerItem) -> String? {
+        item.supportedContentTypes
+            .compactMap(\.preferredMIMEType)
+            .first { allowedContentTypes.contains($0.lowercased()) }
+    }
+}
+
 private struct ProofComposer: View {
     let store: OpenLARPStore
     @State private var kind: ProofKind = .proof
@@ -1131,7 +1146,10 @@ private struct ProofComposer: View {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     continue
                 }
-                let contentType = item.supportedContentTypes.first?.preferredMIMEType ?? "image/jpeg"
+                guard let contentType = ProofImageContentPolicy.supportedContentType(for: item) else {
+                    store.errorMessage = OpenLARPError.unsupportedProofImageType.localizedDescription
+                    continue
+                }
                 let originalFileName = item.itemIdentifier ?? "selected-proof-image"
                 let attachment = try store.saveProofImage(
                     data: data,

@@ -45,6 +45,11 @@ describe("Firestore rules", () => {
       ownerUserID: "alice",
       externalActionTaken: true
     }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/agentActivities/activity2"), {
+      ownerUserID: "alice",
+      title: "Arbitrary client-owned collection should not be writable"
+    }));
   });
 
   it("rejects unsafe sync status on regular user-tree documents", async () => {
@@ -65,14 +70,22 @@ describe("Firestore rules", () => {
       ownerUserID: "alice",
       kind: "questStarted",
       syncStatus: "pending",
-      idempotencyKey: "alice-questStarted-event1"
+      entityID: "quest1",
+      idempotencyKey: "alice-questStarted-quest1"
     }));
 
     await assertSucceeds(setDoc(eventRef, {
+      schemaVersion: 1,
+      eventID: "event1",
       ownerUserID: "alice",
       kind: "questStarted",
       syncStatus: "acknowledged",
-      idempotencyKey: "alice-questStarted-event1"
+      entityID: "quest1",
+      idempotencyKey: "alice-questStarted-quest1",
+      occurredAt: new Date("2026-06-18T00:00:00.000Z"),
+      retryCount: 0,
+      summary: {},
+      acceptedAt: new Date("2026-06-18T00:00:00.000Z")
     }));
 
     await assertFails(deleteDoc(eventRef));
@@ -190,7 +203,9 @@ describe("Firestore rules", () => {
       kind: "proof",
       text: "Mapped real postings to shipped SwiftUI work.",
       link: "https://example.com/proof",
-      submittedAt: timestamp
+      submittedAt: timestamp,
+      collectionPath: "users/alice/proofRecords",
+      documentPath: "users/alice/proofRecords/proof1"
     }));
 
     await assertFails(updateDoc(proofRef, { "metadata.ownerUserID": "bob" }));
@@ -357,6 +372,7 @@ describe("Firestore rules", () => {
       schemaVersion: 1,
       eventID: "event1",
       ownerUserID: "alice",
+      entityID: "event1",
       kind: "proofClaimed",
       syncStatus: "acknowledged",
       idempotencyKey: "alice-proofClaimed-event1",
@@ -369,6 +385,7 @@ describe("Firestore rules", () => {
 
     await assertFails(setDoc(doc(alice, "users/alice/backendEvents/bad-owner"), {
       ownerUserID: "bob",
+      entityID: "event1",
       kind: "proofClaimed",
       syncStatus: "acknowledged",
       idempotencyKey: "bob-proofClaimed-event1"
@@ -376,13 +393,72 @@ describe("Firestore rules", () => {
 
     await assertFails(setDoc(doc(alice, "users/alice/backendEvents/bad-kind"), {
       ownerUserID: "alice",
+      entityID: "event1",
       kind: 123,
       syncStatus: "acknowledged",
       idempotencyKey: "alice-proofClaimed-event1"
     }));
 
+    await assertFails(setDoc(doc(alice, "users/alice/backendEvents/unknown-kind"), {
+      schemaVersion: 1,
+      eventID: "unknown-kind",
+      ownerUserID: "alice",
+      entityID: "unknown-kind",
+      kind: "inventedEvent",
+      syncStatus: "acknowledged",
+      idempotencyKey: "alice-inventedEvent-unknown-kind",
+      occurredAt: timestamp,
+      retryCount: 0,
+      summary: {},
+      acceptedAt: timestamp
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/backendEvents/bad-last-attempt"), {
+      schemaVersion: 1,
+      eventID: "bad-last-attempt",
+      ownerUserID: "alice",
+      entityID: "bad-last-attempt",
+      kind: "proofClaimed",
+      syncStatus: "acknowledged",
+      idempotencyKey: "alice-proofClaimed-bad-last-attempt",
+      occurredAt: timestamp,
+      retryCount: 0,
+      lastAttemptAt: "not-a-timestamp",
+      summary: {},
+      acceptedAt: timestamp
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/backendEvents/bad-summary-key"), {
+      schemaVersion: 1,
+      eventID: "bad-summary-key",
+      ownerUserID: "alice",
+      entityID: "bad-summary-key",
+      kind: "proofClaimed",
+      syncStatus: "acknowledged",
+      idempotencyKey: "alice-proofClaimed-bad-summary-key",
+      occurredAt: timestamp,
+      retryCount: 0,
+      summary: { proofCount: 1, privateRawPayload: "nope" },
+      acceptedAt: timestamp
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/backendEvents/bad-summary-type"), {
+      schemaVersion: 1,
+      eventID: "bad-summary-type",
+      ownerUserID: "alice",
+      entityID: "bad-summary-type",
+      kind: "proofClaimed",
+      syncStatus: "acknowledged",
+      idempotencyKey: "alice-proofClaimed-bad-summary-type",
+      occurredAt: timestamp,
+      retryCount: 0,
+      summary: { proofCount: "one" },
+      acceptedAt: timestamp
+    }));
+
     await assertFails(setDoc(doc(alice, "users/alice/backendEvents/missing-key"), {
       ownerUserID: "alice",
+      entityID: "event1",
       kind: "proofClaimed",
       syncStatus: "acknowledged"
     }));
@@ -392,6 +468,7 @@ describe("Firestore rules", () => {
       schemaVersion: 1,
       eventID: "removable-key",
       ownerUserID: "alice",
+      entityID: "removable-key",
       kind: "proofClaimed",
       syncStatus: "acknowledged",
       idempotencyKey: "alice-proofClaimed-removable-key",

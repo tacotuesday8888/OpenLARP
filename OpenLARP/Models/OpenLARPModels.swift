@@ -1431,6 +1431,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
     case questNotAvailable
     case emptyProof
     case attachmentStorageFailed
+    case unsupportedProofImageType
     case invalidQuestPlan
 
     var errorDescription: String? {
@@ -1439,6 +1440,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
         case .questNotAvailable: "This quest is not available yet."
         case .emptyProof: "Add a short proof note, link, photo, or screenshot before checking quality."
         case .attachmentStorageFailed: "That image could not be saved locally. Try another screenshot or photo."
+        case .unsupportedProofImageType: "Use a PNG, JPEG, HEIC, or HEIF screenshot or photo for proof uploads."
         case .invalidQuestPlan: "The generated plan was not usable, so OpenLARP switched to a local plan."
         }
     }

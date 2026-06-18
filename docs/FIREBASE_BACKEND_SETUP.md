@@ -28,7 +28,7 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `FirebaseStorageProofAttachmentUploader` writes proof bytes to deterministic `users/{uid}/proofAttachments/{attachmentId}` paths with owner, proof, attachment, and idempotency custom metadata.
 - `CareerGraphSyncUploadIntent.localRelativePath` is runtime-only and is intentionally omitted from encoded sync manifests and Firestore documents.
 - Cloud proof records do not embed attachment documents. Attachment metadata and upload receipts live under `users/{uid}/proofAttachments/{attachmentId}` so local file paths cannot leak through nested proof-record payloads.
-- `FirebaseCallableV0AIWorkflowService` calls the authenticated `runOpenLARPWorkflow` Firebase callable for diagnostic, quest-plan, proof-quality, and progress-summary workflows, then falls back to local mock AI when Firebase is missing, signed out, or unavailable.
+- `FirebaseCallableV0AIWorkflowService` calls the authenticated `runOpenLARPWorkflow` Firebase callable for diagnostic, quest-plan, proof-quality, and progress-summary workflows, then falls back to local mock AI only for known recoverable setup/auth states such as missing SDK/configuration or signed-out Firebase Auth.
 - The callable AI adapter sends narrow backend DTOs and does not send local proof attachment filenames, UUIDs, or `localRelativePath`.
 
 The Firebase adapters also check that `FirebaseApp` is configured before touching Auth, Firestore, or Storage. This lets CI and local mock builds continue safely when Firebase SDKs are linked but private runtime configuration has not been bundled.
@@ -52,7 +52,9 @@ The generated project includes the public `GOOGLE_REVERSED_CLIENT_ID` callback U
 
 ## Security Rules
 
-Firestore rules currently allow signed-in users to read/write only under their own `users/{uid}` tree and prevent client writes that claim external actions were taken.
+Firestore rules currently allow signed-in users to read only their own `users/{uid}` tree. Client writes are limited to the account root, named career graph collections, proof records, proof attachment metadata, and beta backend event history; arbitrary user subcollections are denied.
+
+Firestore rules enforce owner/path consistency, block client-written external action claims, block embedded proof attachment arrays, and require backend event idempotency keys to match the persisted entity ID. This is still a beta client-sync model, not a server-trusted career graph. Production trust requires Cloud Functions or Cloud Run to verify uploaded proof receipts, own backend event acknowledgements, and write derived readiness/history fields server-side.
 
 Storage rules currently reserve this path:
 
@@ -60,7 +62,7 @@ Storage rules currently reserve this path:
 users/{uid}/proofAttachments/{attachmentId}
 ```
 
-Only the signed-in owner can read proof attachments and create new proof attachment objects. Client-side proof attachment uploads are write-once: an existing object cannot be overwritten or deleted by the client. Repeated syncs stay safe because the iOS Firebase Storage adapter accepts an existing object only when its path, content type, byte count, owner ID, proof ID, attachment ID, and idempotency key exactly match the intended upload, then repairs the Firestore upload receipt. Uploads are limited to images, PDFs, and plain text under 10 MB. Uploads must include only OpenLARP custom metadata: owner ID, proof ID, attachment ID, and idempotency key. Storage rules enforce the owner, attachment ID, and idempotency key against the signed-in user and path; the proof ID is carried forward into the Firestore upload receipt contract.
+Only the signed-in owner can read proof attachments and create new proof attachment objects. Client-side proof attachment uploads are write-once: an existing object cannot be overwritten or deleted by the client. Repeated syncs stay safe because the iOS Firebase Storage adapter accepts an existing object only when its path, content type, byte count, owner ID, proof ID, attachment ID, and idempotency key exactly match the intended upload, then repairs the Firestore upload receipt. Uploads are limited to PNG, JPEG, HEIC, HEIF, PDF, and plain text under 10 MB. Uploads must include only OpenLARP custom metadata: owner ID, proof ID, attachment ID, and idempotency key. Storage rules enforce the owner, attachment ID, and idempotency key against the signed-in user and path; the proof ID is carried forward into the Firestore upload receipt contract.
 
 Top-level proof attachment Firestore documents now require:
 
@@ -71,7 +73,9 @@ Top-level proof attachment Firestore documents now require:
 
 Proof record Firestore documents cannot embed attachment arrays. Attachment metadata must be written through the dedicated proof-attachment collection. The iOS sync adapter replaces proof-record documents instead of merge-writing them so older local beta records with embedded attachments are cleaned up on the next sync.
 
-Firestore rules now prevent backend event documents from bypassing the dedicated `backendEvents` rule through the broad user-tree rule. This keeps career graph metadata flexible while requiring backend event outbox records to use the acknowledged event shape.
+Current beta limitation: client-written proof attachment receipts are shape-checked against the owner, path, byte count, content type, and idempotency key, but Firestore rules cannot prove a Storage object exists. Before production trust, move uploaded proof receipt promotion into a callable or Storage finalize backend that verifies Storage metadata with the Admin SDK and writes the Firestore receipt server-side.
+
+Firestore rules now prevent backend event documents from bypassing the dedicated `backendEvents` rule through a broad user-tree rule. The broad recursive user write path has been removed; only named beta sync collections accept client writes. Backend event documents require an exact event shape, matching `eventID`, owner, entity ID, known event kind, idempotency key, timestamp fields, and known typed summary fields. Current iOS beta sync still writes acknowledged event history from the client; before production trust, route event acknowledgement through a backend endpoint.
 
 ## Current Setup Status
 
@@ -117,10 +121,11 @@ A clean run should finish without missing Google OAuth ID or missing Storage buc
 
 1. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
 2. Test Firestore career graph sync, Storage proof attachment upload, and authenticated Firebase callable AI fallback behavior on a simulator or device.
-3. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
-4. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
-5. Keep provider model IDs and API keys only on the backend.
-6. Add App Check enforcement after local device and TestFlight auth flows are verified.
+3. Move server-trusted proof upload receipt promotion and backend event acknowledgement into Cloud Functions or Cloud Run before treating cloud data as authoritative.
+4. Add App Check enforcement and per-user callable quota/budget controls before enabling live AI or broad external beta traffic.
+5. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
+6. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
+7. Keep provider model IDs and API keys only on the backend.
 
 ## Local Commands
 

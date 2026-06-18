@@ -3981,7 +3981,9 @@ private struct SensitiveThrowingV0AIWorkflowService: V0AIWorkflowServicing {
     }
 }
 
-private struct SensitiveWorkflowError: Error, CustomStringConvertible {
+private struct SensitiveWorkflowError: LocalAIWorkflowFallbackEligibleError, CustomStringConvertible {
+    var allowsLocalWorkflowFallback: Bool { true }
+
     var description: String {
         "backend failure for langqi@example.com with sk-test-secret api key at ProofAttachments/private-device-path.png"
     }
@@ -4048,8 +4050,10 @@ private final class StateChangingProofReviewService: V0AIWorkflowServicing {
     }
 }
 
-private enum TestWorkflowError: Error {
+private enum TestWorkflowError: LocalAIWorkflowFallbackEligibleError {
     case expectedFailure
+
+    var allowsLocalWorkflowFallback: Bool { true }
 }
 
 private struct SensitiveBackendEventSyncError: LocalizedError {

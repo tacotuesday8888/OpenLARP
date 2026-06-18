@@ -74,6 +74,12 @@ describe("Storage rules", () => {
       storageMetadata("alice", "proof1", "proof1.zip", "application/zip")
     ));
     await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/proof1.svg"),
+      "<svg></svg>",
+      "raw",
+      storageMetadata("alice", "proof1", "proof1.svg", "image/svg+xml")
+    ));
+    await assertFails(uploadString(
       ref(alice, "users/alice/proofAttachments/missing-metadata.txt"),
       "proof-bytes",
       "raw",

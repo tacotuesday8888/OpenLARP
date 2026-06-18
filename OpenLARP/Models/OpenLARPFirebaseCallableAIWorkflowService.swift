@@ -17,7 +17,7 @@ import FirebaseFunctions
 import FirebaseSharedSwift
 #endif
 
-enum FirebaseCallableAIWorkflowServiceError: Error, LocalizedError, Equatable {
+enum FirebaseCallableAIWorkflowServiceError: LocalAIWorkflowFallbackEligibleError, LocalizedError, Equatable {
     case sdkUnavailable
     case configurationMissing
     case authenticationRequired
@@ -39,6 +39,15 @@ enum FirebaseCallableAIWorkflowServiceError: Error, LocalizedError, Equatable {
             "The Firebase callable AI workflow response did not match the app contract."
         case .contractMismatch(let detail):
             detail
+        }
+    }
+
+    var allowsLocalWorkflowFallback: Bool {
+        switch self {
+        case .sdkUnavailable, .configurationMissing, .authenticationRequired:
+            true
+        case .payloadEncodingFailed, .responseDecodingFailed, .contractMismatch:
+            false
         }
     }
 }
@@ -116,14 +125,14 @@ struct FirebaseFunctionsCallableInvoker: FirebaseCallableInvoking {
 struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
     private let configuration: OpenLARPFirebaseCallableAIConfiguration
     private let invoker: any FirebaseCallableInvoking
-    private let preflight: @MainActor () throws -> Void
+    private let preflight: @MainActor () throws -> String
     private let makeRequestID: @MainActor () -> UUID
 
     init(
         configuration: OpenLARPFirebaseCallableAIConfiguration = .production,
         invoker: (any FirebaseCallableInvoking)? = nil,
         requestID: @MainActor @escaping () -> UUID = { UUID() },
-        preflight: @MainActor @escaping () throws -> Void = FirebaseCallableV0AIWorkflowService.requireConfiguredAuthenticatedFirebase
+        preflight: @MainActor @escaping () throws -> String = FirebaseCallableV0AIWorkflowService.requireConfiguredAuthenticatedFirebase
     ) {
         self.configuration = configuration
         self.invoker = invoker ?? FirebaseFunctionsCallableInvoker(configuration: configuration)
@@ -194,7 +203,7 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
         privacy: CareerUserPrivacySettings,
         payload: Payload
     ) async throws -> FirebaseCallableAIWorkflowResponse<Result> {
-        try preflight()
+        let expectedUserID = try preflight()
         let requestID = makeRequestID()
         let envelope = V0AIBackendRequestEnvelope(
             kind: kind,
@@ -210,18 +219,20 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
             responseType: FirebaseCallableAIWorkflowResponse<Result>.self
         )
         try response.validateRequestID(requestID)
+        try response.validateUserID(expectedUserID)
         return response
     }
 
     @MainActor
-    private static func requireConfiguredAuthenticatedFirebase() throws {
+    private static func requireConfiguredAuthenticatedFirebase() throws -> String {
         #if canImport(FirebaseCore) && canImport(FirebaseAuth)
         guard FirebaseApp.app() != nil else {
             throw FirebaseCallableAIWorkflowServiceError.configurationMissing
         }
-        guard Auth.auth().currentUser != nil else {
+        guard let currentUser = Auth.auth().currentUser else {
             throw FirebaseCallableAIWorkflowServiceError.authenticationRequired
         }
+        return currentUser.uid
         #else
         throw FirebaseCallableAIWorkflowServiceError.sdkUnavailable
         #endif
@@ -243,6 +254,12 @@ struct FirebaseCallableAIWorkflowResponse<Result: Decodable>: Decodable, @unchec
     func validateRequestID(_ expectedRequestID: UUID) throws {
         guard requestID == expectedRequestID else {
             throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflow response did not match the request ID.")
+        }
+    }
+
+    func validateUserID(_ expectedUserID: String) throws {
+        guard userID == expectedUserID else {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflow response did not match the authenticated user.")
         }
     }
 
