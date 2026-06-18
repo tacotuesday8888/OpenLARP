@@ -808,6 +808,66 @@ struct CareerGraphSyncUploadReceipt: Codable, Equatable, Identifiable {
         self.md5Hash = md5Hash
         idempotencyKey = intent.idempotencyKey
     }
+
+    init?(
+        existingObject metadata: CareerGraphStorageObjectMetadata,
+        intent: CareerGraphSyncUploadIntent,
+        session: BackendUserSession,
+        uploadedAtFallback: Date? = nil
+    ) {
+        let expectedCustomMetadata = CareerGraphStorageObjectMetadata.expectedCustomMetadata(
+            ownerUserID: session.ownerUserID,
+            intent: intent
+        )
+        guard metadata.storagePath == intent.storagePath,
+              metadata.contentType == intent.contentType,
+              metadata.byteCount == intent.byteCount,
+              metadata.customMetadata == expectedCustomMetadata
+        else {
+            return nil
+        }
+
+        self.init(
+            intent: intent,
+            status: .uploaded,
+            uploadedAt: metadata.updatedAt ?? uploadedAtFallback,
+            storageBucket: metadata.storageBucket,
+            storageGeneration: metadata.storageGeneration,
+            metadataGeneration: metadata.metadataGeneration,
+            md5Hash: metadata.md5Hash
+        )
+    }
+}
+
+struct CareerGraphStorageObjectMetadata: Equatable, Sendable {
+    static let allowedCustomMetadataKeys: Set<String> = [
+        "ownerUserID",
+        "proofID",
+        "attachmentID",
+        "idempotencyKey"
+    ]
+
+    var storagePath: String
+    var contentType: String?
+    var byteCount: Int
+    var customMetadata: [String: String]
+    var updatedAt: Date?
+    var storageBucket: String?
+    var storageGeneration: Int64?
+    var metadataGeneration: Int64?
+    var md5Hash: String?
+
+    static func expectedCustomMetadata(
+        ownerUserID: String,
+        intent: CareerGraphSyncUploadIntent
+    ) -> [String: String] {
+        [
+            "ownerUserID": ownerUserID,
+            "proofID": intent.proofID,
+            "attachmentID": intent.attachmentID,
+            "idempotencyKey": intent.idempotencyKey
+        ]
+    }
 }
 
 enum CareerGraphProofAttachmentDataError: Error, Equatable {

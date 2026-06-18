@@ -60,7 +60,7 @@ Storage rules currently reserve this path:
 users/{uid}/proofAttachments/{attachmentId}
 ```
 
-Only the signed-in owner can read/write proof attachments, and uploads are limited to images, PDFs, and plain text under 10 MB. Uploads must include OpenLARP custom metadata: owner ID, proof ID, attachment ID, and idempotency key. Storage rules enforce the owner, attachment ID, and idempotency key against the signed-in user and path; the proof ID is carried forward into the Firestore upload receipt contract.
+Only the signed-in owner can read proof attachments and create new proof attachment objects. Client-side proof attachment uploads are write-once: an existing object cannot be overwritten or deleted by the client. Repeated syncs stay safe because the iOS Firebase Storage adapter accepts an existing object only when its path, content type, byte count, owner ID, proof ID, attachment ID, and idempotency key exactly match the intended upload, then repairs the Firestore upload receipt. Uploads are limited to images, PDFs, and plain text under 10 MB. Uploads must include only OpenLARP custom metadata: owner ID, proof ID, attachment ID, and idempotency key. Storage rules enforce the owner, attachment ID, and idempotency key against the signed-in user and path; the proof ID is carried forward into the Firestore upload receipt contract.
 
 Top-level proof attachment Firestore documents now require:
 
@@ -76,7 +76,8 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 ## Current Setup Status
 
 - Firestore rules are deployed to `openlarp-dev-langqi`.
-- Storage rules are tracked locally, but Firebase CLI currently reports that Firebase Storage still needs product setup in the Firebase console before rules can be released.
+- Firebase Storage is initialized for `openlarp-dev-langqi` with the default bucket `openlarp-dev-langqi.firebasestorage.app` in `US-CENTRAL1`.
+- Storage rules are deployed to `openlarp-dev-langqi`.
 - The Firebase CLI environment has been authenticated locally, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
 - Security rules validate through Firebase MCP.
 - Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
@@ -90,6 +91,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
 - Google Sign-In is enabled in Firebase Auth for `openlarp-dev-langqi`.
 - A fresh Firebase iOS SDK config can be retrieved by CLI and now includes `CLIENT_ID` and `REVERSED_CLIENT_ID`. The ignored local `OpenLARP/GoogleService-Info.plist` has been refreshed on this workstation.
+- `npm run firebase:live-readiness` now passes Firestore, Functions, callable auth rejection, iOS config, Google OAuth IDs, Storage bucket existence, and Artifact Registry cleanup checks.
 
 ## Live Readiness Check
 
@@ -109,17 +111,16 @@ The check verifies:
 - Storage default bucket existence when `gcloud` is available
 - Functions Artifact Registry cleanup policies when `gcloud` is available
 
-Warnings for missing Storage bucket are expected until the remaining console setup is complete. Missing Google OAuth IDs are no longer expected after the Auth deploy.
+A clean run should finish without missing Google OAuth ID or missing Storage bucket warnings. This script confirms the live project shape, but it does not replace a signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage upload/read rules, or callable AI fallback behavior.
 
 ## Next Backend Steps
 
-1. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
-2. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
-3. Test Firestore career graph sync, Storage proof attachment upload, and authenticated Firebase callable AI fallback behavior on a simulator or device.
-4. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
-5. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
-6. Keep provider model IDs and API keys only on the backend.
-7. Add App Check enforcement after local device and TestFlight auth flows are verified.
+1. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
+2. Test Firestore career graph sync, Storage proof attachment upload, and authenticated Firebase callable AI fallback behavior on a simulator or device.
+3. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
+4. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
+5. Keep provider model IDs and API keys only on the backend.
+6. Add App Check enforcement after local device and TestFlight auth flows are verified.
 
 ## Local Commands
 

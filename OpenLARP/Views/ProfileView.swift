@@ -276,6 +276,11 @@ struct ProfileView: View {
             state: store.state,
             session: session
         )
+        let syncAction = CareerGraphSyncActionContent(
+            isAuthenticated: session.isAuthenticated,
+            shareWinsEnabled: store.state.userProfile?.privacy.shareWins ?? false,
+            proofFileCount: shareableProofFileCount
+        )
 
         return Card {
             VStack(alignment: .leading, spacing: 14) {
@@ -321,12 +326,12 @@ struct ProfileView: View {
                         HStack {
                             ProgressView()
                                 .tint(.white)
-                            Text(session.isAuthenticated ? "Syncing Metadata" : "Building Preview")
+                            Text(syncAction.progressLabel)
                         }
                     } else {
                         Label(
-                            session.isAuthenticated ? "Sync Career Graph Metadata" : "Preview Saved Career Graph",
-                            systemImage: session.isAuthenticated ? "icloud.and.arrow.up" : "arrow.triangle.2.circlepath"
+                            syncAction.title,
+                            systemImage: syncAction.systemImage
                         )
                     }
                 }
@@ -336,7 +341,7 @@ struct ProfileView: View {
 
                 Text(store.state.needsGoalSetup
                     ? "Set a career goal before previewing your career graph."
-                    : careerGraphActionFootnote(isAuthenticated: session.isAuthenticated))
+                    : syncAction.footnote)
                     .font(.caption)
                     .foregroundStyle(Color.openLARPSoftInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -344,12 +349,10 @@ struct ProfileView: View {
         }
     }
 
-    private func careerGraphActionFootnote(isAuthenticated: Bool) -> String {
-        if isAuthenticated {
-            return "This writes account-owned career graph metadata to Firestore. Proof file bytes stay local until Storage uploads are enabled."
+    private var shareableProofFileCount: Int {
+        store.state.progress.recentProof.reduce(0) { count, proof in
+            count + proof.attachments.count
         }
-
-        return "This prepares a local preview only. It does not upload or sync anything."
     }
 
     @ViewBuilder

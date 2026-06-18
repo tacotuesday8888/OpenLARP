@@ -36,6 +36,25 @@ describe("Storage rules", () => {
     await assertSucceeds(getBytes(attachment));
   });
 
+  it("blocks overwriting existing proof attachment bytes", async () => {
+    const alice = testEnv.authenticatedContext("alice").storage();
+    const attachment = ref(alice, "users/alice/proofAttachments/write-once.txt");
+
+    await assertSucceeds(uploadString(
+      attachment,
+      "original-proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "write-once.txt", "text/plain")
+    ));
+
+    await assertFails(uploadString(
+      attachment,
+      "replacement-proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "write-once.txt", "text/plain")
+    ));
+  });
+
   it("blocks cross-user reads, unsupported content types, missing metadata, and deletes", async () => {
     const alice = testEnv.authenticatedContext("alice").storage();
     const bob = testEnv.authenticatedContext("bob").storage();
@@ -134,6 +153,32 @@ describe("Storage rules", () => {
           idempotencyKey: "wrong-key"
         }
       }
+    ));
+  });
+
+  it("blocks extra or oversized proof attachment upload metadata", async () => {
+    const alice = testEnv.authenticatedContext("alice").storage();
+    const withExtraMetadata = storageMetadata("alice", "proof1", "extra-metadata.txt", "text/plain");
+    withExtraMetadata.customMetadata.localRelativePath = "ProofAttachments/private-local-path.txt";
+
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/extra-metadata.txt"),
+      "proof",
+      "raw",
+      withExtraMetadata
+    ));
+
+    const oversizedProofID = storageMetadata(
+      "alice",
+      "p".repeat(129),
+      "oversized-metadata.txt",
+      "text/plain"
+    );
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/oversized-metadata.txt"),
+      "proof",
+      "raw",
+      oversizedProofID
     ));
   });
 });

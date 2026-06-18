@@ -284,30 +284,21 @@ struct FirebaseStorageProofAttachmentUploader: CareerGraphProofAttachmentUploadi
             throw FirebaseBackendServiceError.configurationMissing
         }
 
-        let metadata = StorageMetadata()
-        metadata.contentType = request.uploadIntent.contentType
-        metadata.customMetadata = [
-            "ownerUserID": request.session.ownerUserID,
-            "proofID": request.uploadIntent.proofID,
-            "attachmentID": request.uploadIntent.attachmentID,
-            "idempotencyKey": request.uploadIntent.idempotencyKey
-        ]
-
-        let uploadedMetadata = try await Storage
+        let reference = Storage
             .storage()
             .reference()
             .child(request.uploadIntent.storagePath)
-            .putDataAsync(request.data, metadata: metadata)
+        let uploadedMetadata = try await uploadOrReuseExistingObject(request, reference: reference)
 
-        return CareerGraphSyncUploadReceipt(
+        guard let receipt = CareerGraphSyncUploadReceipt(
+            existingObject: storageObjectMetadata(from: uploadedMetadata, reference: reference),
             intent: request.uploadIntent,
-            status: .uploaded,
-            uploadedAt: uploadedMetadata.updated ?? request.requestedAt,
-            storageBucket: uploadedMetadata.bucket,
-            storageGeneration: uploadedMetadata.generation == 0 ? nil : uploadedMetadata.generation,
-            metadataGeneration: uploadedMetadata.metageneration == 0 ? nil : uploadedMetadata.metageneration,
-            md5Hash: uploadedMetadata.md5Hash
-        )
+            session: request.session,
+            uploadedAtFallback: request.requestedAt
+        ) else {
+            throw FirebaseBackendServiceError.invalidUploadReceipt
+        }
+        return receipt
         #else
         throw FirebaseBackendServiceError.sdkUnavailable
         #endif
@@ -316,6 +307,53 @@ struct FirebaseStorageProofAttachmentUploader: CareerGraphProofAttachmentUploadi
     private func expectedStoragePath(for request: CareerGraphProofAttachmentUploadRequest) -> String {
         "users/\(request.session.ownerUserID)/proofAttachments/\(request.uploadIntent.attachmentID)"
     }
+
+    #if canImport(FirebaseStorage) && canImport(FirebaseCore)
+    private func uploadOrReuseExistingObject(
+        _ request: CareerGraphProofAttachmentUploadRequest,
+        reference: StorageReference
+    ) async throws -> StorageMetadata {
+        do {
+            return try await reference.putDataAsync(
+                request.data,
+                metadata: uploadMetadata(for: request)
+            )
+        } catch let uploadError {
+            do {
+                return try await reference.getMetadata()
+            } catch {
+                throw uploadError
+            }
+        }
+    }
+
+    private func uploadMetadata(for request: CareerGraphProofAttachmentUploadRequest) -> StorageMetadata {
+        let metadata = StorageMetadata()
+        metadata.contentType = request.uploadIntent.contentType
+        metadata.customMetadata = CareerGraphStorageObjectMetadata.expectedCustomMetadata(
+            ownerUserID: request.session.ownerUserID,
+            intent: request.uploadIntent
+        )
+        return metadata
+    }
+
+    private func storageObjectMetadata(
+        from metadata: StorageMetadata,
+        reference: StorageReference
+    ) -> CareerGraphStorageObjectMetadata {
+        CareerGraphStorageObjectMetadata(
+            storagePath: metadata.path ?? reference.fullPath,
+            contentType: metadata.contentType,
+            byteCount: Int(exactly: metadata.size) ?? -1,
+            customMetadata: metadata.customMetadata ?? [:],
+            updatedAt: metadata.updated,
+            storageBucket: metadata.bucket.isEmpty ? nil : metadata.bucket,
+            storageGeneration: metadata.generation == 0 ? nil : metadata.generation,
+            metadataGeneration: metadata.metageneration == 0 ? nil : metadata.metageneration,
+            md5Hash: metadata.md5Hash
+        )
+    }
+    #endif
 }
 
 struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
