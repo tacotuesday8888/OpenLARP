@@ -1,0 +1,408 @@
+import Foundation
+
+struct OpenLARPSubscriptionConfiguration: Codable, Equatable {
+    var revenueCatEntitlementID: String
+    var monthlyProductID: String
+    var defaultOfferingID: String
+    var studentMonthlyProductID: String
+    var freeSprintDurationDays: Int
+
+    var revenueCatOfferingID: String { defaultOfferingID }
+
+    static let placeholder = OpenLARPSubscriptionConfiguration(
+        revenueCatEntitlementID: "openlarp_beta_sprint_entitlement_placeholder",
+        monthlyProductID: "openlarp_beta_monthly_placeholder",
+        defaultOfferingID: "openlarp_beta_offering_placeholder",
+        studentMonthlyProductID: "openlarp_beta_student_monthly_placeholder",
+        freeSprintDurationDays: 14
+    )
+
+    init(
+        revenueCatEntitlementID: String,
+        monthlyProductID: String,
+        defaultOfferingID: String,
+        studentMonthlyProductID: String = "openlarp_beta_student_monthly_placeholder",
+        freeSprintDurationDays: Int = 14
+    ) {
+        self.revenueCatEntitlementID = revenueCatEntitlementID
+        self.monthlyProductID = monthlyProductID
+        self.defaultOfferingID = defaultOfferingID
+        self.studentMonthlyProductID = studentMonthlyProductID
+        self.freeSprintDurationDays = freeSprintDurationDays
+    }
+}
+
+struct OpenLARPFreeSprintEntitlement: Codable, Equatable {
+    var startedAt: Date
+    var durationDays: Int
+
+    init(startedAt: Date, durationDays: Int = 14) {
+        self.startedAt = startedAt
+        self.durationDays = durationDays
+    }
+
+    func expiresAt(calendar: Calendar) -> Date {
+        calendar.date(byAdding: .day, value: durationDays, to: startedAt) ??
+            startedAt.addingTimeInterval(TimeInterval(durationDays * 86_400))
+    }
+
+    func isActive(at timestamp: Date, calendar: Calendar) -> Bool {
+        timestamp < expiresAt(calendar: calendar)
+    }
+
+    func daysRemaining(at timestamp: Date, calendar: Calendar) -> Int {
+        guard isActive(at: timestamp, calendar: calendar) else { return 0 }
+        let seconds = expiresAt(calendar: calendar).timeIntervalSince(timestamp)
+        return max(1, Int(ceil(seconds / 86_400)))
+    }
+}
+
+struct RevenueCatCustomerInfoSnapshot: Codable, Equatable {
+    var fetchedAt: Date
+    var activeEntitlementIDs: [String]
+    var activeProductIDs: [String]
+    var entitlementExpirationDate: Date?
+    var managementURLString: String?
+    var isOfflineEntitlement: Bool
+
+    init(
+        fetchedAt: Date,
+        activeEntitlementIDs: [String] = [],
+        activeProductIDs: [String] = [],
+        entitlementExpirationDate: Date? = nil,
+        managementURLString: String? = nil,
+        isOfflineEntitlement: Bool = false
+    ) {
+        self.fetchedAt = fetchedAt
+        self.activeEntitlementIDs = activeEntitlementIDs
+        self.activeProductIDs = activeProductIDs
+        self.entitlementExpirationDate = entitlementExpirationDate
+        self.managementURLString = managementURLString
+        self.isOfflineEntitlement = isOfflineEntitlement
+    }
+
+    func hasActiveEntitlement(
+        _ entitlementID: String,
+        at timestamp: Date
+    ) -> Bool {
+        guard activeEntitlementIDs.contains(entitlementID) else { return false }
+        guard let entitlementExpirationDate else { return true }
+        return timestamp < entitlementExpirationDate
+    }
+}
+
+enum OpenLARPSubscriptionConnectionStatus: String, Codable, Equatable {
+    case notConfigured
+    case online
+    case offline
+    case failed
+}
+
+enum OpenLARPRestoreStatus: String, Codable, Equatable {
+    case notStarted
+    case inProgress
+    case restored
+    case failed
+
+    var label: String {
+        switch self {
+        case .notStarted: "Not requested"
+        case .inProgress: "In progress"
+        case .restored: "Restored"
+        case .failed: "Failed"
+        }
+    }
+}
+
+typealias OpenLARPSubscriptionRestoreStatus = OpenLARPRestoreStatus
+
+struct OpenLARPRestoreState: Codable, Equatable {
+    var status: OpenLARPRestoreStatus
+    var requestedAt: Date?
+    var completedAt: Date?
+
+    static let empty = OpenLARPRestoreState(status: .notStarted)
+    static let idle = OpenLARPRestoreState(status: .notStarted)
+}
+
+typealias OpenLARPSubscriptionRestoreState = OpenLARPRestoreState
+
+enum OpenLARPSubscriptionAccessStatus: String, Codable, Equatable {
+    case notStarted
+    case active
+    case freeSprint
+    case expired
+    case offline
+    case restoreInProgress
+    case restoreFailed
+
+    var label: String {
+        switch self {
+        case .notStarted: "Not started"
+        case .active: "Active"
+        case .freeSprint: "Free sprint"
+        case .expired: "Expired"
+        case .offline: "Offline access"
+        case .restoreInProgress: "Restore in progress"
+        case .restoreFailed: "Restore failed"
+        }
+    }
+}
+
+enum OpenLARPSubscriptionAccessSource: String, Codable, Equatable {
+    case revenueCatCustomerInfo
+    case revenueCatOfflineEntitlement
+    case localFreeSprint
+    case none
+
+    var label: String {
+        switch self {
+        case .revenueCatCustomerInfo: "RevenueCat customer info"
+        case .revenueCatOfflineEntitlement: "RevenueCat offline entitlement"
+        case .localFreeSprint: "Local free sprint"
+        case .none: "None"
+        }
+    }
+}
+
+struct RevenueCatProductSnapshot: Codable, Equatable, Identifiable {
+    var id: String { productID }
+    var productID: String
+    var displayName: String
+    var displayPrice: String
+    var subscriptionPeriod: String?
+}
+
+struct RevenueCatPackageSnapshot: Codable, Equatable, Identifiable {
+    var id: String { identifier }
+    var identifier: String
+    var product: RevenueCatProductSnapshot
+}
+
+struct RevenueCatOfferingSnapshot: Codable, Equatable, Identifiable {
+    var id: String { identifier }
+    var identifier: String
+    var packages: [RevenueCatPackageSnapshot]
+}
+
+protocol RevenueCatCustomerInfoProviding {
+    func customerInfoSnapshot() async throws -> RevenueCatCustomerInfoSnapshot
+}
+
+protocol RevenueCatOfferingProviding {
+    func currentOfferingSnapshot() async throws -> RevenueCatOfferingSnapshot?
+}
+
+protocol RevenueCatPurchaseRestoring {
+    func restorePurchasesSnapshot() async throws -> RevenueCatCustomerInfoSnapshot
+}
+
+protocol RevenueCatSubscriptionServicing:
+    RevenueCatCustomerInfoProviding,
+    RevenueCatOfferingProviding,
+    RevenueCatPurchaseRestoring {}
+
+struct OpenLARPSubscriptionAccess: Codable, Equatable {
+    var isEntitled: Bool
+    var status: OpenLARPSubscriptionAccessStatus
+    var source: OpenLARPSubscriptionAccessSource
+    var expiresAt: Date?
+    var daysRemaining: Int
+    var shouldShowPaywall: Bool
+}
+
+struct OpenLARPSubscriptionState: Codable, Equatable {
+    var schemaVersion: Int
+    var configuration: OpenLARPSubscriptionConfiguration
+    var freeSprint: OpenLARPFreeSprintEntitlement?
+    var customerInfo: RevenueCatCustomerInfoSnapshot?
+    var connectionStatus: OpenLARPSubscriptionConnectionStatus
+    var restoreState: OpenLARPRestoreState
+    var lastUpdatedAt: Date
+
+    init(
+        schemaVersion: Int = 1,
+        configuration: OpenLARPSubscriptionConfiguration = .placeholder,
+        freeSprint: OpenLARPFreeSprintEntitlement? = nil,
+        customerInfo: RevenueCatCustomerInfoSnapshot? = nil,
+        connectionStatus: OpenLARPSubscriptionConnectionStatus = .notConfigured,
+        restoreState: OpenLARPRestoreState = .empty,
+        lastUpdatedAt: Date
+    ) {
+        self.schemaVersion = schemaVersion
+        self.configuration = configuration
+        self.freeSprint = freeSprint
+        self.customerInfo = customerInfo
+        self.connectionStatus = connectionStatus
+        self.restoreState = restoreState
+        self.lastUpdatedAt = lastUpdatedAt
+    }
+
+    static func localFreeSprint(startedAt: Date) -> OpenLARPSubscriptionState {
+        OpenLARPSubscriptionState(
+            freeSprint: OpenLARPFreeSprintEntitlement(
+                startedAt: startedAt,
+                durationDays: OpenLARPSubscriptionConfiguration.placeholder.freeSprintDurationDays
+            ),
+            lastUpdatedAt: startedAt
+        )
+    }
+
+    static func notStarted() -> OpenLARPSubscriptionState {
+        OpenLARPSubscriptionState(lastUpdatedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    static func migrationDefault(startedAt: Date) -> OpenLARPSubscriptionState {
+        localFreeSprint(startedAt: startedAt)
+    }
+
+    func access(
+        at timestamp: Date,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> OpenLARPSubscriptionAccess {
+        if let customerInfo,
+           customerInfo.hasActiveEntitlement(configuration.revenueCatEntitlementID, at: timestamp) {
+            return OpenLARPSubscriptionAccess(
+                isEntitled: true,
+                status: connectionStatus == .offline || customerInfo.isOfflineEntitlement ? .offline : .active,
+                source: connectionStatus == .offline || customerInfo.isOfflineEntitlement
+                    ? .revenueCatOfflineEntitlement
+                    : .revenueCatCustomerInfo,
+                expiresAt: customerInfo.entitlementExpirationDate,
+                daysRemaining: daysRemaining(until: customerInfo.entitlementExpirationDate, at: timestamp),
+                shouldShowPaywall: false
+            )
+        }
+
+        if let freeSprint, freeSprint.isActive(at: timestamp, calendar: calendar) {
+            return OpenLARPSubscriptionAccess(
+                isEntitled: true,
+                status: .freeSprint,
+                source: .localFreeSprint,
+                expiresAt: freeSprint.expiresAt(calendar: calendar),
+                daysRemaining: freeSprint.daysRemaining(at: timestamp, calendar: calendar),
+                shouldShowPaywall: false
+            )
+        }
+
+        switch restoreState.status {
+        case .inProgress:
+            return OpenLARPSubscriptionAccess(
+                isEntitled: false,
+                status: .restoreInProgress,
+                source: .none,
+                expiresAt: nil,
+                daysRemaining: 0,
+                shouldShowPaywall: true
+            )
+        case .failed:
+            return OpenLARPSubscriptionAccess(
+                isEntitled: false,
+                status: .restoreFailed,
+                source: .none,
+                expiresAt: nil,
+                daysRemaining: 0,
+                shouldShowPaywall: true
+            )
+        case .notStarted, .restored:
+            break
+        }
+
+        return OpenLARPSubscriptionAccess(
+            isEntitled: false,
+            status: .expired,
+            source: .none,
+            expiresAt: nil,
+            daysRemaining: 0,
+            shouldShowPaywall: true
+        )
+    }
+
+    func restoreRequested(at timestamp: Date) -> OpenLARPSubscriptionState {
+        var state = self
+        state.restoreState = OpenLARPRestoreState(
+            status: .inProgress,
+            requestedAt: timestamp,
+            completedAt: nil
+        )
+        state.lastUpdatedAt = timestamp
+        return state
+    }
+
+    func restoreSucceeded(
+        with customerInfo: RevenueCatCustomerInfoSnapshot,
+        at timestamp: Date
+    ) -> OpenLARPSubscriptionState {
+        var state = self
+        state.customerInfo = customerInfo
+        state.connectionStatus = .online
+        state.restoreState = OpenLARPRestoreState(
+            status: .restored,
+            requestedAt: restoreState.requestedAt,
+            completedAt: timestamp
+        )
+        state.lastUpdatedAt = timestamp
+        return state
+    }
+
+    func restoreFailed(at timestamp: Date) -> OpenLARPSubscriptionState {
+        var state = self
+        state.restoreState = OpenLARPRestoreState(
+            status: .failed,
+            requestedAt: restoreState.requestedAt,
+            completedAt: timestamp
+        )
+        state.lastUpdatedAt = timestamp
+        return state
+    }
+
+    private func daysRemaining(until expiration: Date?, at timestamp: Date) -> Int {
+        guard let expiration, timestamp < expiration else { return 0 }
+        return max(1, Int(ceil(expiration.timeIntervalSince(timestamp) / 86_400)))
+    }
+}
+
+@MainActor
+protocol OpenLARPSubscriptionServicing {
+    func refreshSubscriptionState(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState
+
+    func restorePurchases(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState
+}
+
+struct MockOpenLARPSubscriptionService: OpenLARPSubscriptionServicing {
+    var refreshedState: OpenLARPSubscriptionState?
+    var restoredCustomerInfo: RevenueCatCustomerInfoSnapshot?
+
+    init(
+        refreshedState: OpenLARPSubscriptionState? = nil,
+        restoredCustomerInfo: RevenueCatCustomerInfoSnapshot? = nil
+    ) {
+        self.refreshedState = refreshedState
+        self.restoredCustomerInfo = restoredCustomerInfo
+    }
+
+    func refreshSubscriptionState(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        refreshedState ?? currentState
+    }
+
+    func restorePurchases(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        guard let restoredCustomerInfo else {
+            return currentState.restoreFailed(at: timestamp)
+        }
+        return currentState
+            .restoreRequested(at: timestamp)
+            .restoreSucceeded(with: restoredCustomerInfo, at: timestamp)
+    }
+}
