@@ -407,6 +407,71 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
         )
     }
 
+    func testFirebaseCareerGraphSyncPromotesReceiptsServerSideAndSkipsClientAttachmentWrites() async throws {
+        let now = Date(timeIntervalSince1970: 43_750)
+        let state = careerGraphStateWithProof(now: now)
+        let session = BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_promote")
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let writer = CapturingCareerGraphDocumentWriter()
+        let uploader = CapturingProofAttachmentUploader()
+        let promoter = CapturingProofAttachmentReceiptPromoter(writesProofAttachmentDocuments: true)
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: StaticProofAttachmentDataProvider(),
+            proofAttachmentUploader: uploader,
+            proofAttachmentReceiptPromoter: promoter
+        )
+
+        let result = try await service.prepareSync(request)
+
+        XCTAssertEqual(uploader.requests.count, 1)
+        XCTAssertEqual(promoter.requests.count, 1)
+        XCTAssertEqual(promoter.requests.first?.session.ownerUserID, "firebase_uid_promote")
+        XCTAssertEqual(promoter.requests.first?.uploadIntent.storagePath, result.uploadIntents.first?.storagePath)
+        XCTAssertEqual(promoter.requests.first?.uploadReceipt.storageBucket, "openlarp-test.appspot.com")
+        XCTAssertEqual(result.uploadReceipts.first?.storageBucket, "openlarp-server-promoted.appspot.com")
+        XCTAssertEqual(result.uploadReceipts.first?.storageGeneration, 202)
+        XCTAssertTrue(result.firestoreDocumentPaths.contains {
+            $0 == "users/firebase_uid_promote/proofAttachments/E1E1E1E1-E1E1-E1E1-E1E1-E1E1E1E1E1E1"
+        })
+        XCTAssertFalse(writer.writes.map(\.documentType).contains(.proofAttachment))
+        XCTAssertTrue(writer.writes.contains { $0.documentType == .proofRecord })
+        XCTAssertTrue(writer.writes.contains { $0.documentType == .readinessSnapshot })
+    }
+
+    func testFirebaseCareerGraphSyncDoesNotWriteMetadataWhenPromotionReceiptMismatchesIntent() async {
+        let now = Date(timeIntervalSince1970: 43_900)
+        let state = careerGraphStateWithProof(now: now)
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_bad_promotion"),
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let writer = CapturingCareerGraphDocumentWriter()
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: StaticProofAttachmentDataProvider(),
+            proofAttachmentUploader: CapturingProofAttachmentUploader(),
+            proofAttachmentReceiptPromoter: InvalidProofAttachmentReceiptPromoter(byteCountOverride: 12)
+        )
+
+        do {
+            _ = try await service.prepareSync(request)
+            XCTFail("A mismatched server promotion receipt should stop Firestore metadata writes.")
+        } catch let error as FirebaseBackendServiceError {
+            XCTAssertEqual(error, .invalidUploadReceipt)
+            XCTAssertTrue(writer.writes.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     private func careerGraphStateWithProof(now: Date) -> OpenLARPState {
         let attachment = ProofAttachment(
             id: UUID(uuidString: "E1E1E1E1-E1E1-E1E1-E1E1-E1E1E1E1E1E1")!,
@@ -516,6 +581,41 @@ private final class ExistingObjectProofAttachmentUploader: CareerGraphProofAttac
             session: request.session
         ) else {
             throw FirebaseBackendServiceError.invalidUploadReceipt
+        }
+        return receipt
+    }
+}
+
+private final class CapturingProofAttachmentReceiptPromoter: CareerGraphProofAttachmentReceiptPromoting, @unchecked Sendable {
+    var writesProofAttachmentDocuments: Bool
+    private(set) var requests: [CareerGraphProofAttachmentPromotionRequest] = []
+
+    init(writesProofAttachmentDocuments: Bool = false) {
+        self.writesProofAttachmentDocuments = writesProofAttachmentDocuments
+    }
+
+    func promote(_ request: CareerGraphProofAttachmentPromotionRequest) async throws -> CareerGraphSyncUploadReceipt {
+        requests.append(request)
+        return CareerGraphSyncUploadReceipt(
+            intent: request.uploadIntent,
+            status: .uploaded,
+            uploadedAt: request.requestedAt,
+            storageBucket: "openlarp-server-promoted.appspot.com",
+            storageGeneration: 202,
+            metadataGeneration: 3,
+            md5Hash: "server-promoted-md5"
+        )
+    }
+}
+
+private struct InvalidProofAttachmentReceiptPromoter: CareerGraphProofAttachmentReceiptPromoting {
+    var writesProofAttachmentDocuments: Bool = true
+    var byteCountOverride: Int?
+
+    func promote(_ request: CareerGraphProofAttachmentPromotionRequest) async throws -> CareerGraphSyncUploadReceipt {
+        var receipt = request.uploadReceipt
+        if let byteCountOverride {
+            receipt.byteCount = byteCountOverride
         }
         return receipt
     }

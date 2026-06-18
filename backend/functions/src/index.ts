@@ -2,6 +2,7 @@ import { getApps, initializeApp } from "firebase-admin/app";
 import { onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import { toHttpsError } from "./errors.js";
+import { handleProofUploadPromotionRequest } from "./proofUploadPromotion.js";
 import { handleProofUploadReconciliationRequest } from "./proofUploadReconciliation.js";
 import { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
 
@@ -54,8 +55,37 @@ export const reconcileProofUploads = onCall(
   }
 );
 
+export const promoteProofUploadReceipt = onCall(
+  {
+    cors: true,
+    timeoutSeconds: 60,
+    memory: "512MiB"
+  },
+  async (request) => {
+    const response = await handleProofUploadPromotionRequest({
+      auth: request.auth ? { uid: request.auth.uid } : null,
+      data: request.data
+    });
+
+    if (!response.ok) {
+      throw toHttpsError(response);
+    }
+
+    return response;
+  }
+);
+
 export { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
+export { handleProofUploadPromotionRequest } from "./proofUploadPromotion.js";
 export { handleProofUploadReconciliationRequest } from "./proofUploadReconciliation.js";
+export type {
+  OpenLARPProofUploadPromotionRequest,
+  ProofUploadPromotionIntent,
+  ProofUploadPromotionReceipt,
+  ProofUploadPromotionResponse,
+  ProofUploadPromotionStorageObject,
+  ProofUploadPromotionSuccess
+} from "./proofUploadPromotion.js";
 export type {
   OpenLARPProofUploadReconciliationRequest,
   ProofUploadReconciliationCandidate,

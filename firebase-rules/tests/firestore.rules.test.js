@@ -155,8 +155,7 @@ describe("Firestore rules", () => {
       byteCount: 32000,
       createdAt: timestamp,
       storagePath: "users/alice/proofAttachments/attachment1",
-      uploadStatus: "uploaded",
-      uploadReceipt: safeUploadedReceipt("alice", "proof1", "attachment1", "image/png", 32000, timestamp),
+      uploadStatus: "pendingUpload",
       collectionPath: "users/alice/proofAttachments",
       documentPath: "users/alice/proofAttachments/attachment1"
     }));
@@ -246,10 +245,10 @@ describe("Firestore rules", () => {
     }));
   });
 
-  it("requires proof attachment metadata to match the account-owned storage receipt", async () => {
+  it("allows only pending client proof attachment metadata before server receipt promotion", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
     const timestamp = new Date("2026-06-18T00:00:00.000Z");
-    const validAttachment = {
+    const pendingAttachment = {
       metadata: safeMetadata("alice", "attachment1", timestamp),
       proofID: "proof1",
       fileName: "proof.png",
@@ -258,109 +257,87 @@ describe("Firestore rules", () => {
       byteCount: 32000,
       createdAt: timestamp,
       storagePath: "users/alice/proofAttachments/attachment1",
-      uploadStatus: "uploaded",
-      uploadReceipt: safeUploadedReceipt("alice", "proof1", "attachment1", "image/png", 32000, timestamp),
+      uploadStatus: "pendingUpload",
       collectionPath: "users/alice/proofAttachments",
       documentPath: "users/alice/proofAttachments/attachment1"
     };
 
-    await assertSucceeds(setDoc(doc(alice, "users/alice/proofAttachments/attachment1"), validAttachment));
+    await assertSucceeds(setDoc(doc(alice, "users/alice/proofAttachments/attachment1"), pendingAttachment));
 
-    const pendingAttachment = {
-      ...validAttachment,
-      metadata: safeMetadata("alice", "pending1", timestamp),
-      storagePath: "users/alice/proofAttachments/pending1",
-      uploadStatus: "pendingUpload",
-      collectionPath: "users/alice/proofAttachments",
-      documentPath: "users/alice/proofAttachments/pending1"
-    };
-    delete pendingAttachment.uploadReceipt;
-    await assertSucceeds(setDoc(doc(alice, "users/alice/proofAttachments/pending1"), pendingAttachment));
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/client-uploaded"), {
+      ...pendingAttachment,
+      metadata: safeMetadata("alice", "client-uploaded", timestamp),
+      storagePath: "users/alice/proofAttachments/client-uploaded",
+      uploadStatus: "uploaded",
+      uploadReceipt: safeUploadedReceipt("alice", "proof1", "client-uploaded", "image/png", 32000, timestamp),
+      documentPath: "users/alice/proofAttachments/client-uploaded"
+    }));
 
-    const uploadedWithoutReceipt = {
-      ...validAttachment,
-      metadata: safeMetadata("alice", "no-receipt", timestamp),
-      storagePath: "users/alice/proofAttachments/no-receipt",
-      documentPath: "users/alice/proofAttachments/no-receipt"
-    };
-    delete uploadedWithoutReceipt.uploadReceipt;
-    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/no-receipt"), uploadedWithoutReceipt));
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/pending-with-receipt"), {
+      ...pendingAttachment,
+      metadata: safeMetadata("alice", "pending-with-receipt", timestamp),
+      storagePath: "users/alice/proofAttachments/pending-with-receipt",
+      uploadReceipt: safeUploadedReceipt("alice", "proof1", "pending-with-receipt", "image/png", 32000, timestamp),
+      documentPath: "users/alice/proofAttachments/pending-with-receipt"
+    }));
 
     await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment2"), {
-      ...validAttachment,
+      ...pendingAttachment,
       metadata: safeMetadata("alice", "attachment2", timestamp),
       storagePath: "users/alice/proofAttachments/attachment1",
       documentPath: "users/alice/proofAttachments/attachment2"
     }));
 
     await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment3"), {
-      ...validAttachment,
+      ...pendingAttachment,
       metadata: safeMetadata("alice", "attachment3", timestamp),
       storagePath: "users/bob/proofAttachments/attachment3",
-      uploadReceipt: safeUploadedReceipt("alice", "proof1", "attachment3", "image/png", 32000, timestamp),
       documentPath: "users/alice/proofAttachments/attachment3"
     }));
 
-    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment4"), {
-      ...validAttachment,
-      metadata: safeMetadata("alice", "attachment4", timestamp),
-      storagePath: "users/alice/proofAttachments/attachment4",
-      uploadReceipt: {
-        ...safeUploadedReceipt("alice", "proof1", "attachment4", "image/png", 32000, timestamp),
-        status: "failed"
-      },
-      documentPath: "users/alice/proofAttachments/attachment4"
-    }));
-
-    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment6"), {
-      ...validAttachment,
-      metadata: safeMetadata("alice", "attachment6", timestamp),
-      proofID: "proof1",
-      storagePath: "users/alice/proofAttachments/attachment6",
-      uploadReceipt: {
-        ...safeUploadedReceipt("alice", "other-proof", "attachment6", "image/png", 32000, timestamp)
-      },
-      documentPath: "users/alice/proofAttachments/attachment6"
-    }));
-
-    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment7"), {
-      ...validAttachment,
-      metadata: safeMetadata("alice", "attachment7", timestamp),
-      storagePath: "users/alice/proofAttachments/attachment7",
-      uploadReceipt: {
-        ...safeUploadedReceipt("alice", "proof1", "attachment7", "application/pdf", 32000, timestamp)
-      },
-      documentPath: "users/alice/proofAttachments/attachment7"
-    }));
-
-    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment8"), {
-      ...validAttachment,
-      metadata: safeMetadata("alice", "attachment8", timestamp),
-      storagePath: "users/alice/proofAttachments/attachment8",
-      uploadReceipt: {
-        ...safeUploadedReceipt("alice", "proof1", "attachment8", "image/png", 12, timestamp)
-      },
-      documentPath: "users/alice/proofAttachments/attachment8"
-    }));
-
-    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment9"), {
-      ...validAttachment,
-      metadata: safeMetadata("alice", "attachment9", timestamp),
-      storagePath: "users/alice/proofAttachments/attachment9",
-      uploadReceipt: {
-        ...safeUploadedReceipt("alice", "proof1", "attachment9", "image/png", 32000, timestamp),
-        idempotencyKey: "wrong-key"
-      },
-      documentPath: "users/alice/proofAttachments/attachment9"
-    }));
-
     await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment5"), {
-      ...validAttachment,
+      ...pendingAttachment,
       metadata: safeMetadata("alice", "attachment5", timestamp),
       storagePath: "users/alice/proofAttachments/attachment5",
-      uploadReceipt: safeUploadedReceipt("alice", "proof1", "attachment5", "image/png", 32000, timestamp),
       documentPath: "users/alice/proofAttachments/attachment5",
       localRelativePath: "ProofAttachments/proof.png"
+    }));
+  });
+
+  it("prevents clients from overwriting server-promoted proof attachment receipts", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+    const attachmentRef = doc(alice, "users/alice/proofAttachments/server-promoted");
+    const serverPromotedAttachment = {
+      metadata: safeMetadata("alice", "server-promoted", timestamp),
+      proofID: "proof1",
+      fileName: "proof.png",
+      originalFileName: "proof.png",
+      contentType: "image/png",
+      byteCount: 32000,
+      createdAt: timestamp,
+      storagePath: "users/alice/proofAttachments/server-promoted",
+      uploadStatus: "uploaded",
+      uploadReceipt: safeUploadedReceipt("alice", "proof1", "server-promoted", "image/png", 32000, timestamp),
+      collectionPath: "users/alice/proofAttachments",
+      documentPath: "users/alice/proofAttachments/server-promoted"
+    };
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "users/alice/proofAttachments/server-promoted"),
+        serverPromotedAttachment
+      );
+    });
+
+    const downgradedAttachment = {
+      ...serverPromotedAttachment,
+      uploadStatus: "pendingUpload"
+    };
+    delete downgradedAttachment.uploadReceipt;
+    await assertFails(setDoc(attachmentRef, downgradedAttachment));
+    await assertFails(updateDoc(attachmentRef, {
+      uploadStatus: "pendingUpload"
     }));
   });
 

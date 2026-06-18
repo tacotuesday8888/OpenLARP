@@ -65,7 +65,8 @@ const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const functions = payload.result ?? [];
 const required = new Map([
   ["runOpenLARPWorkflow", "nodejs22"],
-  ["reconcileProofUploads", "nodejs22"]
+  ["reconcileProofUploads", "nodejs22"],
+  ["promoteProofUploadReceipt", "nodejs22"]
 ]);
 for (const [id, runtime] of required) {
   const entry = functions.find((item) => item.id === id);
@@ -101,6 +102,26 @@ if (payload.error?.status !== "UNAUTHENTICATED") {
 }
 NODE
 pass "Callable endpoint rejects unauthenticated workflow requests"
+
+promotion_response="$tmp_dir/promotion-response.txt"
+promotion_http_status="$(
+  curl -sS -o "$promotion_response" -w '%{http_code}' \
+    -X POST "https://${FUNCTION_REGION}-${PROJECT_ID}.cloudfunctions.net/promoteProofUploadReceipt" \
+    -H 'Content-Type: application/json' \
+    -d '{"data":{"schemaVersion":1,"proofID":"proof_123","attachmentID":"attachment_123","fileName":"proof.png","contentType":"image/png","byteCount":32000,"storagePath":"users/user_123/proofAttachments/attachment_123","proofDocumentPath":"users/user_123/proofRecords/proof_123","attachmentDocumentPath":"users/user_123/proofAttachments/attachment_123","idempotencyKey":"user_123-attachment_123"}}'
+)"
+if [[ "$promotion_http_status" != "401" ]]; then
+  fail "Unauthenticated proof upload promotion callable returned HTTP $promotion_http_status instead of 401"
+fi
+node --input-type=module - "$promotion_response" <<'NODE'
+import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (payload.error?.status !== "UNAUTHENTICATED") {
+  throw new Error(`Unexpected proof promotion callable error: ${JSON.stringify(payload)}`);
+}
+NODE
+pass "Proof upload promotion callable rejects unauthenticated requests"
 
 sdk_config="$tmp_dir/GoogleService-Info.plist"
 $FIREBASE apps:sdkconfig IOS "$IOS_APP_ID" --project "$PROJECT_ID" > "$sdk_config"
