@@ -34,6 +34,9 @@ Packages/
 *.provisionprofile
 GoogleService-Info.plist
 
+# Private founder/application working material
+docs/accelerator/
+
 # Logs and temporary files
 *.log
 tmp/
