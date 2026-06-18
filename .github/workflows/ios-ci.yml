@@ -110,6 +110,7 @@ jobs:
 
       - name: Run simulator tests
         if: steps.simulator.outputs.has_simulator == 'true'
+        timeout-minutes: 20
         run: |
           xcodebuild \
             -project OpenLARP.xcodeproj \

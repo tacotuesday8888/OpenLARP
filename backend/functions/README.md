@@ -9,9 +9,20 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 - Callable export: `runOpenLARPWorkflow`
 - Callable export: `reconcileProofUploads`
 - Runtime: Node.js 22
+- Firebase Admin: pinned to `13.10.0` to satisfy
+  `firebase-functions@7.2.5` peer dependencies
 - Live model calls: disabled
 - Provider secrets: not required locally and must never be committed
 - Workflow contracts: imported from `backend/ai`
+- Deploy package: intentionally does not depend on Genkit while live model calls
+  are disabled
+- Deploy lockfile: `backend/functions/package-lock.json` is committed so
+  Firebase Cloud Build installs the same deploy-source dependency graph
+
+The deployable Functions runtime validates shared request/response contracts with
+direct Zod imports. Genkit stays isolated in `backend/ai` so deterministic
+callable functions can be built and deployed without bundling the current
+Genkit/OpenTelemetry dependency tree.
 
 ## Proof Upload Reconciliation
 
@@ -39,8 +50,15 @@ From the repo root:
 npm run typecheck:backend
 npm run test:backend
 npm --workspace backend/functions run build
+npm audit --workspace backend/functions --omit=dev --json
 ```
 
 ## Deploy Notes
 
-This package is ready to be wired into Firebase deployment config. A deployment follow-up should add the `functions` source entry in `firebase.json`, configure backend secrets, and keep `OPENLARP_ENABLE_LIVE_AI=false` until Genkit prompts, safety evaluations, rate limits, and production monitoring are reviewed.
+This package is ready to be wired into Firebase deployment config for
+deterministic callable workflows with `OPENLARP_ENABLE_LIVE_AI=false`.
+
+Before live AI is enabled, add the `functions` source entry in `firebase.json`,
+configure backend secrets outside the repository, review prompts and safety
+evaluations, set rate limits and budget monitoring, and run a fresh audit for
+both `backend/functions` and `backend/ai`.
