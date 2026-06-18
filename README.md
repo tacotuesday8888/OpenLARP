@@ -1,55 +1,36 @@
 # OpenLARP
 
-OpenLARP is an iOS-first career action app: a "Duolingo for careers / LinkedIn" experience built around daily quests, proof, progress, and a long-term career agent vision.
+OpenLARP is an iOS-first career action app. The product idea is a private AI career agent wrapped around daily career quests, proof collection, readiness tracking, and opportunity preparation.
 
-## Current Stage
+The app is currently a SwiftUI beta foundation, not a production service. It is being built local-first while backend, AI, Firebase, RevenueCat, and TestFlight work are added in stages.
 
-This repository is a local-first public beta V0 candidate. The app is not production-service-backed yet, but the main on-device loop is implemented and test-covered.
+## Source-Visible, Not Open Source
 
-It currently includes:
+This repository is public for visibility, review, and GitHub Actions access.
 
-- Planning and product strategy documents in `docs/`
-- A native SwiftUI iOS app shell with Today, Map, Progress, and Profile tabs
-- Goal setup and a deterministic local "Am I Cooked?" diagnostic
-- A seven-day quest plan generated from the user's target role
-- Local quest start, proof/self-report, mock quality check, XP, streak, badges, and readiness updates
-- Daily cadence rules that lock the next quest until the next local day
-- Intentional skip-today and missed-day recovery states
-- Proof text, links, and local screenshot/photo attachment metadata
-- App-private local proof attachment file storage
-- Proof receipts, proof detail, proof archive, completed quest detail, and map preview surfaces
-- JSON persistence in the app documents directory
-- XCTest coverage for the core local engine, persistence, proof attachments, proof archive/detail, cadence, skip, and recovery behavior
+It is not an open-source project. No open-source license is granted. You may read the code, but copying, redistribution, commercial use, or derivative product use requires written permission from the project owner.
 
-It does not yet include:
+## What Is Here
 
-- Real AI calls
-- Backend/auth or cross-device sync
-- Cloud proof uploads
-- Push notifications
-- Subscriptions/paywalls or payment processing
-- Production analytics
-- CI
-- TestFlight/App Store release setup
+- Native SwiftUI iOS app source in `OpenLARP/`
+- XCTest coverage in `OpenLARPTests/`
+- Local quest, proof, progress, and readiness models
+- Backend-ready contracts for Firebase, Firestore, AI workflows, and subscriptions
+- Product and architecture notes in `docs/`
+- Xcode project plus `project.yml` for project generation
 
-## Project Structure
+## What Is Not Here
 
-```text
-OpenLARP/
-  OpenLARP/                 SwiftUI app source
-    Models/                 Local state, engine, persistence, and attachment storage
-    Resources/              Asset catalogs
-    Style/                  Shared colors, cards, pills, button styles
-    Views/                  State-driven V0 product screens
-  OpenLARPTests/            XCTest coverage for the local V0 behavior
-  OpenLARP.xcodeproj/       Xcode project
-  docs/                     Product, roadmap, and architecture docs
-  project.yml               XcodeGen-style project definition
-```
+- Production AI provider keys
+- Firebase private plist files
+- App Store signing assets
+- RevenueCat keys or live product IDs
+- Private user data
+- Production backend secrets
 
-## Build Check
+## Build
 
-For local source validation without Apple signing configured:
+Unsigned local build:
 
 ```bash
 xcodebuild \
@@ -61,30 +42,28 @@ xcodebuild \
   build
 ```
 
-The normal signed app build will require setting an Apple development team in Xcode.
+Simulator tests:
 
-## Product Direction
-
-The V0 product loop is:
-
-```text
-Goal setup -> Am I Cooked? diagnostic -> Today quest -> proof/self-report -> AI quality check -> XP/streak/progress -> next quest
+```bash
+xcodebuild test \
+  -project OpenLARP.xcodeproj \
+  -scheme OpenLARP \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath /private/tmp/OpenLARPDerivedData \
+  CODE_SIGNING_ALLOWED=NO
 ```
 
-The current app remains quest-first. The Agent Helper is local/mock support for the action loop, not the primary product surface.
+Signed device builds and TestFlight uploads require Apple Developer account setup in Xcode.
 
-## Development Notes
+## Repository Hygiene
 
-- Keep secrets out of the repository.
-- Do not commit Xcode user state, build output, provisioning profiles, certificates, `.env` files, or local machine config.
-- Use branches for feature work.
-- Keep V0 narrow and focused on the daily quest loop before adding agent search, resume help, interview prep, or community features.
+Do not commit:
 
-## Useful Docs
+- `.env` files
+- `GoogleService-Info.plist`
+- provisioning profiles, certificates, or App Store signing material
+- Xcode user state
+- build output
+- private founder/application notes
 
-- `docs/PRODUCT_ROADMAP.md`
-- `docs/AGENT_ARCHITECTURE_ROADMAP.md`
-- `docs/FOUNDER_DECISIONS.md`
-- `docs/IOS_PRODUCT_ARCHITECTURE.md`
-- `docs/UX_FEATURE_PROMPT.md`
-- `docs/DEVELOPMENT_ROADMAP.md`
+The app is intentionally structured so the iOS client does not call LLM providers directly. AI providers should be routed through backend services such as Cloud Run, Cloud Functions, or Genkit.
