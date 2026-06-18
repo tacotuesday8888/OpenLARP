@@ -127,6 +127,7 @@ struct FirebaseBackendEventDocument: Codable, Equatable {
     var schemaVersion: Int
     var eventID: String
     var ownerUserID: String
+    var entityID: String
     var kind: BackendEventKind
     var syncStatus: BackendEventSyncStatus
     var idempotencyKey: String
@@ -140,6 +141,7 @@ struct FirebaseBackendEventDocument: Codable, Equatable {
         schemaVersion = event.schemaVersion
         eventID = event.id.uuidString
         ownerUserID = event.ownerUserID
+        entityID = event.entityID
         kind = event.kind
         syncStatus = .acknowledged
         idempotencyKey = event.idempotencyKey

@@ -18,7 +18,7 @@ final class AIBackendContractTests: XCTestCase {
         let service = FirebaseCallableV0AIWorkflowService(
             invoker: invoker,
             requestID: { sampleRequestID },
-            preflight: {}
+            preflight: { "user_123" }
         )
 
         let response = try await service.generateDiagnostic(
@@ -77,7 +77,7 @@ final class AIBackendContractTests: XCTestCase {
         let service = FirebaseCallableV0AIWorkflowService(
             invoker: invoker,
             requestID: { sampleRequestID },
-            preflight: {}
+            preflight: { "user_123" }
         )
 
         let response = try await service.generateQuestPlan(
@@ -113,7 +113,7 @@ final class AIBackendContractTests: XCTestCase {
         let proofService = FirebaseCallableV0AIWorkflowService(
             invoker: proofInvoker,
             requestID: { sampleRequestID },
-            preflight: {}
+            preflight: { "user_123" }
         )
         let state = sampleState
         let proofResponse = try await proofService.reviewProof(
@@ -156,7 +156,7 @@ final class AIBackendContractTests: XCTestCase {
         let progressService = FirebaseCallableV0AIWorkflowService(
             invoker: progressInvoker,
             requestID: { sampleRequestID },
-            preflight: {}
+            preflight: { "user_123" }
         )
         let progressResponse = try await progressService.summarizeProgress(
             V0ProgressSummaryRequest(state: state, requestedAt: sampleDate)
@@ -186,7 +186,7 @@ final class AIBackendContractTests: XCTestCase {
         let service = FirebaseCallableV0AIWorkflowService(
             invoker: invoker,
             requestID: { sampleRequestID },
-            preflight: {}
+            preflight: { "user_123" }
         )
 
         do {
@@ -218,7 +218,7 @@ final class AIBackendContractTests: XCTestCase {
         let service = FirebaseCallableV0AIWorkflowService(
             invoker: invoker,
             requestID: { sampleRequestID },
-            preflight: {}
+            preflight: { "user_123" }
         )
 
         do {
@@ -231,6 +231,121 @@ final class AIBackendContractTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    @MainActor
+    func testFirebaseCallableAIWorkflowServiceRejectsMismatchedUserID() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "cookedDiagnostic",
+            userID: "different_user",
+            result: [
+                "score": 62,
+                "label": "Some proof, not enough signal",
+                "mainGap": "Needs stronger evidence.",
+                "strongestSignal": "Has proof.",
+                "fastestFix": "Create an artifact.",
+                "readinessBaseline": 48
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+
+        do {
+            _ = try await service.generateDiagnostic(
+                V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+            )
+            XCTFail("Expected mismatched callable userID to be rejected.")
+        } catch FirebaseCallableAIWorkflowServiceError.contractMismatch {
+            XCTAssertEqual(invoker.calls.count, 1)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    @MainActor
+    func testFallbackAIWorkflowDoesNotHideFirebaseContractMismatch() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "cookedDiagnostic",
+            liveModelCallsEnabled: true,
+            result: [
+                "score": 62,
+                "label": "Some proof, not enough signal",
+                "mainGap": "Needs stronger evidence.",
+                "strongestSignal": "Has proof.",
+                "fastestFix": "Create an artifact.",
+                "readinessBaseline": 48
+            ]
+        ))
+        let primary = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+        let fallback = FallbackV0AIWorkflowService(
+            primary: primary,
+            fallback: LocalMockV0AIWorkflowService()
+        )
+
+        do {
+            _ = try await fallback.generateDiagnostic(
+                V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+            )
+            XCTFail("Expected callable contract mismatch to stay visible instead of falling back.")
+        } catch FirebaseCallableAIWorkflowServiceError.contractMismatch {
+            XCTAssertEqual(invoker.calls.count, 1)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    @MainActor
+    func testFallbackAIWorkflowDoesNotHideRawCallableFailure() async throws {
+        let invoker = MockFirebaseCallableInvoker(error: RawCallableFailure())
+        let primary = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+        let fallback = FallbackV0AIWorkflowService(
+            primary: primary,
+            fallback: LocalMockV0AIWorkflowService()
+        )
+
+        do {
+            _ = try await fallback.generateDiagnostic(
+                V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+            )
+            XCTFail("Expected raw callable failures to stay visible instead of falling back.")
+        } catch is RawCallableFailure {
+            XCTAssertEqual(invoker.calls.count, 1)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    @MainActor
+    func testFallbackAIWorkflowUsesLocalMockForRecoverableFirebaseSetupState() async throws {
+        let invoker = MockFirebaseCallableInvoker(error: FirebaseCallableAIWorkflowServiceError.authenticationRequired)
+        let primary = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+        let fallback = FallbackV0AIWorkflowService(
+            primary: primary,
+            fallback: LocalMockV0AIWorkflowService()
+        )
+
+        let response = try await fallback.generateDiagnostic(
+            V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+        )
+
+        XCTAssertEqual(invoker.calls.count, 1)
+        XCTAssertEqual(response.run.providerRoute, .localMock)
+        XCTAssertTrue(response.run.usedFallback)
     }
 
     func testRequestEnvelopeRedactsPrivateAndSessionIdentifiers() throws {
@@ -385,10 +500,15 @@ private final class MockFirebaseCallableInvoker: FirebaseCallableInvoking {
     }
 
     var calls: [Call] = []
-    var response: [String: Any]
+    var response: [String: Any]?
+    var error: Error?
 
     init(response: [String: Any]) {
         self.response = response
+    }
+
+    init(error: Error) {
+        self.error = error
     }
 
     func call<Payload: Codable & Equatable & Sendable, Result: Decodable>(
@@ -397,10 +517,18 @@ private final class MockFirebaseCallableInvoker: FirebaseCallableInvoking {
         responseType: FirebaseCallableAIWorkflowResponse<Result>.Type
     ) async throws -> FirebaseCallableAIWorkflowResponse<Result> {
         calls.append(Call(functionName: functionName, payload: try FirebaseCallableAIWorkflowJSON.dictionary(from: envelope)))
+        if let error {
+            throw error
+        }
+        guard let response else {
+            throw RawCallableFailure()
+        }
         let responseData = try JSONSerialization.data(withJSONObject: response)
         return try FirebaseCallableAIWorkflowJSON.decode(responseType, fromData: responseData)
     }
 }
+
+private struct RawCallableFailure: Error {}
 
 private let sampleRequestID = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
 private let sampleDate = Date(timeIntervalSince1970: 1_781_776_800)
@@ -487,6 +615,7 @@ private var sampleState: OpenLARPState {
 private func callableResponse(
     requestID: String = "11111111-1111-4111-8111-111111111111",
     kind: String,
+    userID: String = "user_123",
     liveModelCallsEnabled: Bool = false,
     externalActionTaken: Bool = false,
     result: [String: Any]
@@ -496,7 +625,7 @@ private func callableResponse(
         "schemaVersion": 1,
         "requestID": requestID,
         "kind": kind,
-        "userID": "user_123",
+        "userID": userID,
         "evaluatedAt": "2027-06-18T10:00:00.123Z",
         "providerRoute": "firebaseCallableGenkit",
         "liveModelCallsEnabled": liveModelCallsEnabled,

@@ -206,6 +206,7 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
     var kind: BackendEventKind
     var syncStatus: BackendEventSyncStatus
     var ownerUserID: String
+    var entityID: String
     var idempotencyKey: String
     var occurredAt: Date
     var retryCount: Int
@@ -231,10 +232,11 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
         self.kind = kind
         self.syncStatus = syncStatus
         self.ownerUserID = ownerUserID
+        self.entityID = entityID ?? id.uuidString
         idempotencyKey = Self.makeIdempotencyKey(
             ownerUserID: ownerUserID,
             kind: kind,
-            entityID: entityID ?? id.uuidString
+            entityID: self.entityID
         )
         self.occurredAt = Self.persistenceStableDate(occurredAt)
         self.retryCount = retryCount
@@ -290,7 +292,7 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
         idempotencyKey = Self.makeIdempotencyKey(
             ownerUserID: authenticatedOwnerUserID,
             kind: kind,
-            entityID: id.uuidString
+            entityID: entityID
         )
     }
 
@@ -300,6 +302,7 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
         case kind
         case syncStatus
         case ownerUserID
+        case entityID
         case idempotencyKey
         case occurredAt
         case retryCount
@@ -315,8 +318,16 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
         kind = try container.decode(BackendEventKind.self, forKey: .kind)
         syncStatus = try container.decodeIfPresent(BackendEventSyncStatus.self, forKey: .syncStatus) ?? .pending
         ownerUserID = try container.decode(String.self, forKey: .ownerUserID)
-        idempotencyKey = try container.decodeIfPresent(String.self, forKey: .idempotencyKey) ??
-            Self.makeIdempotencyKey(ownerUserID: ownerUserID, kind: kind, entityID: id.uuidString)
+        let decodedIdempotencyKey = try container.decodeIfPresent(String.self, forKey: .idempotencyKey)
+        entityID = try container.decodeIfPresent(String.self, forKey: .entityID) ??
+            Self.legacyEntityID(
+                from: decodedIdempotencyKey,
+                ownerUserID: ownerUserID,
+                kind: kind
+            ) ??
+            id.uuidString
+        idempotencyKey = decodedIdempotencyKey ??
+            Self.makeIdempotencyKey(ownerUserID: ownerUserID, kind: kind, entityID: entityID)
         occurredAt = Self.persistenceStableDate(try container.decode(Date.self, forKey: .occurredAt))
         retryCount = try container.decodeIfPresent(Int.self, forKey: .retryCount) ?? 0
         lastAttemptAt = try container.decodeIfPresent(Date.self, forKey: .lastAttemptAt).map(Self.persistenceStableDate)
@@ -330,6 +341,18 @@ struct BackendEventRecord: Codable, Equatable, Identifiable {
         entityID: String
     ) -> String {
         "\(ownerUserID)-\(kind.rawValue)-\(entityID)"
+    }
+
+    private static func legacyEntityID(
+        from idempotencyKey: String?,
+        ownerUserID: String,
+        kind: BackendEventKind
+    ) -> String? {
+        guard let idempotencyKey else { return nil }
+        let prefix = "\(ownerUserID)-\(kind.rawValue)-"
+        guard idempotencyKey.hasPrefix(prefix) else { return nil }
+        let suffix = String(idempotencyKey.dropFirst(prefix.count))
+        return suffix.isEmpty ? nil : suffix
     }
 
     private static func safeFailureSummary(_ value: String?) -> String? {

@@ -118,6 +118,25 @@ final class BackendSessionReadinessTests: XCTestCase {
         XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
     }
 
+    func testBackendEventReowningPreservesOriginalEntityIDForIdempotency() {
+        var event = BackendEventRecord(
+            id: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!,
+            kind: .proofClaimed,
+            ownerUserID: "local_user",
+            occurredAt: Date(timeIntervalSince1970: 20_600),
+            entityID: "33333333-3333-4333-8333-333333333333"
+        )
+
+        event.assignAuthenticatedOwnerIfLocal("firebase_uid_456")
+
+        XCTAssertEqual(event.entityID, "33333333-3333-4333-8333-333333333333")
+        XCTAssertEqual(
+            event.idempotencyKey,
+            "firebase_uid_456-proofClaimed-33333333-3333-4333-8333-333333333333"
+        )
+        XCTAssertFalse(event.idempotencyKey.contains(event.id.uuidString))
+    }
+
     func testFirebaseReadyUnauthenticatedSessionLeavesBackendEventsPending() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

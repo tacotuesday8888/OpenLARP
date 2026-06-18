@@ -26,6 +26,7 @@ This document tracks the practical path from the current local product foundatio
 - Firebase Storage is initialized in the Firebase dev project, and Storage rules are deployed for owner-scoped proof attachments.
 - Firebase Storage proof attachment upload adapter exists and writes owner-scoped upload receipts before Firestore metadata sync.
 - Firebase security rules tests exist for Firestore and Storage owner boundaries, upload metadata, proof attachment receipt shape, and nested local-path leak prevention.
+- Firestore rules now deny arbitrary recursive user-subcollection writes and limit client writes to named beta sync collections, but proof receipt promotion and backend event acknowledgement are still client-owned beta paths until a server verification function owns them.
 - Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
 
 ## Required Before TestFlight
@@ -34,9 +35,10 @@ This document tracks the practical path from the current local product foundatio
 2. Test account-backed proof attachment uploads, Firestore career graph writes, and the signed-in deterministic callable AI fallback route.
 3. Test the iOS callable route signed-out fallback behavior.
 4. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
-5. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way.
-6. Add privacy policy, support URL, App Store screenshots, and TestFlight notes.
-7. Run a signed archive on the Apple Developer team and upload to App Store Connect.
+5. Add server-owned proof receipt verification, backend event acknowledgement, App Check, and callable quota/budget controls before treating cloud data as authoritative or enabling live AI.
+6. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way.
+7. Add privacy policy, support URL, App Store screenshots, and TestFlight notes.
+8. Run a signed archive on the Apple Developer team and upload to App Store Connect.
 
 ## Live Dev Readiness Check
 

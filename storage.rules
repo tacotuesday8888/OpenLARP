@@ -37,12 +37,23 @@ service firebase.storage {
         && request.resource.metadata.idempotencyKey.size() <= 257;
     }
 
+    function isAllowedProofContentType() {
+      return request.resource.contentType in [
+        'image/png',
+        'image/jpeg',
+        'image/heic',
+        'image/heif',
+        'application/pdf',
+        'text/plain'
+      ];
+    }
+
     match /users/{userId}/proofAttachments/{attachmentId} {
       allow read: if isUser(userId);
       allow create: if resource == null
         && isUser(userId)
         && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*|application/pdf|text/plain')
+        && isAllowedProofContentType()
         && hasOpenLARPProofMetadata()
         && request.resource.metadata.ownerUserID == userId
         && request.resource.metadata.attachmentID == attachmentId
