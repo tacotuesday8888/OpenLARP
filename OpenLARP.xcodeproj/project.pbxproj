@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		066022B6F446EAEBE1111E35 /* V0EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 164D2BA7F6FBB1EFCC90AED1 /* V0EngineTests.swift */; };
+		093CC2254EA27818C33313DA /* AppCheckReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5444139510DC649A8A9501A8 /* AppCheckReadinessTests.swift */; };
 		1874F67C93F87254F33A36AD /* OpenLARPBackendContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09BB0C0A238D1B10FD983B7 /* OpenLARPBackendContracts.swift */; };
 		18AA6945B54DDDD4ACD98B26 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 91678A069E8588A1DBE74162 /* FirebaseAuth */; };
 		1DF572B1E3E57EE7FA87AC82 /* OpenLARPFirebaseBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 946A052D9DA62A642F46B6FC /* OpenLARPFirebaseBootstrap.swift */; };
@@ -32,6 +33,7 @@
 		7FED685774E3A0A37BB4692A /* OpenLARPAIWorkflowContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7F4B923B6F71934D650D8F /* OpenLARPAIWorkflowContracts.swift */; };
 		80194F06EC7A0AD3A535D035 /* CookedShareCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D946DF64F47A7C90479E8173 /* CookedShareCardView.swift */; };
 		801E18711540F14E001E6BBF /* QuestPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65AE049F689207B56A408E9 /* QuestPreviewView.swift */; };
+		8573ACB208493D7AD4DB1454 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4665062539415E613F754A93 /* GoogleSignInSwift */; };
 		89E9612270DE46D7B0DE2B55 /* OpenLARPBetaMeasurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 404CAE7BD2E7B7A1199D312D /* OpenLARPBetaMeasurement.swift */; };
 		90703ABE6E8B564BA1179B96 /* ShareCardExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D289D644FCC10CBC98DD5C /* ShareCardExportTests.swift */; };
 		940979C1D721A0E1E61590E6 /* AIBackendContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0BD29572C6A1B22588E89D /* AIBackendContractTests.swift */; };
@@ -47,12 +49,12 @@
 		BB424273A8937B30B2419351 /* OpenLARPFirebaseCallableAIWorkflowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A76AAB73F44A0319F7F555C8 /* OpenLARPFirebaseCallableAIWorkflowService.swift */; };
 		C34A260A0624B02D5546FB74 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DC112A777D32FCE8C8EE04 /* ProfileView.swift */; };
 		CEA6BF731E8B671609BDCA34 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A32FE957054753A00B9C9E6F /* Assets.xcassets */; };
-		D0B7B958D8CCF43B25CF9FDE /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4665062539415E613F754A93 /* GoogleSignInSwift */; };
+		D0B7B958D8CCF43B25CF9FDE /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 3FE087F5A1C9EFD54C4CC94B /* GoogleSignIn */; };
 		D59915296DAB4292D6F76100 /* ProgressTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39EFD52A49CEC4F79A489C4 /* ProgressTabView.swift */; };
 		DF5E464D1A8DEAFD35267543 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = D4917C5C043B0E5CD61C8658 /* FirebaseFirestore */; };
 		E17D2CA04E8911F8C538A95A /* OpenLARPCareerGraphStatusContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F2DD9179C36FA9D458C063C /* OpenLARPCareerGraphStatusContent.swift */; };
 		F380ECF5AD25C430559A830F /* OpenLARPCloudContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D35430DA658F76CC63EB78 /* OpenLARPCloudContracts.swift */; };
-		F3F70EC33A68F62AD2F57C33 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 3FE087F5A1C9EFD54C4CC94B /* GoogleSignIn */; };
+		F3F70EC33A68F62AD2F57C33 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = F2EBA1A67D68330AE3206115 /* FirebaseAppCheck */; };
 		FBCE6E4D4C69B60EB23CEB0A /* OpenLARPFirebaseBackendServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9264BE7F3F697BC161B14E50 /* OpenLARPFirebaseBackendServices.swift */; };
 		FEB94BF664A1A40EC36DC14F /* OpenLARPStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3447BF3025FF32A58EA3A1A1 /* OpenLARPStyle.swift */; };
 /* End PBXBuildFile section */
@@ -81,11 +83,13 @@
 		3E597104F3EE10CDAA1EBC2C /* OpenLARPSubscriptionContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPSubscriptionContracts.swift; sourceTree = "<group>"; };
 		404CAE7BD2E7B7A1199D312D /* OpenLARPBetaMeasurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPBetaMeasurement.swift; sourceTree = "<group>"; };
 		4C9DDB58985395E7EA0E0FAC /* OpenLARPEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPEngine.swift; sourceTree = "<group>"; };
+		5444139510DC649A8A9501A8 /* AppCheckReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCheckReadinessTests.swift; sourceTree = "<group>"; };
 		558B84EBAC143D9553A0A62E /* SubscriptionReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionReadinessTests.swift; sourceTree = "<group>"; };
 		56D7AF5561E51E598C8712C6 /* AgentChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChatView.swift; sourceTree = "<group>"; };
 		5D7F4B923B6F71934D650D8F /* OpenLARPAIWorkflowContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPAIWorkflowContracts.swift; sourceTree = "<group>"; };
 		601E79F5844C6D89A84C354B /* OpenLARPApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPApp.swift; sourceTree = "<group>"; };
 		6665166CE64A9711A38AB8EA /* ProofAttachmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofAttachmentViews.swift; sourceTree = "<group>"; };
+		6BBA8C69AC5D3C4981900C28 /* OpenLARP.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenLARP.entitlements; sourceTree = "<group>"; };
 		6F2DD9179C36FA9D458C063C /* OpenLARPCareerGraphStatusContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPCareerGraphStatusContent.swift; sourceTree = "<group>"; };
 		8681DC4AF3698AFDF55C89E7 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
 		87BE10675BD57C8E1C60DEF5 /* OpenLARPTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenLARPTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -124,8 +128,9 @@
 				DF5E464D1A8DEAFD35267543 /* FirebaseFirestore in Frameworks */,
 				69D82FF4B3EC442092DA54DD /* FirebaseStorage in Frameworks */,
 				97D49EEFBBA832A3987EB1E1 /* FirebaseFunctions in Frameworks */,
-				F3F70EC33A68F62AD2F57C33 /* GoogleSignIn in Frameworks */,
-				D0B7B958D8CCF43B25CF9FDE /* GoogleSignInSwift in Frameworks */,
+				F3F70EC33A68F62AD2F57C33 /* FirebaseAppCheck in Frameworks */,
+				D0B7B958D8CCF43B25CF9FDE /* GoogleSignIn in Frameworks */,
+				8573ACB208493D7AD4DB1454 /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -136,6 +141,7 @@
 			isa = PBXGroup;
 			children = (
 				CA0BD29572C6A1B22588E89D /* AIBackendContractTests.swift */,
+				5444139510DC649A8A9501A8 /* AppCheckReadinessTests.swift */,
 				C5FE9FFE5F44B22B0A266078 /* AuthenticationReadinessTests.swift */,
 				071E3A0FAFA43659976349F9 /* BackendSessionReadinessTests.swift */,
 				2D94367071D26EC53B70E4C2 /* BetaMeasurementTests.swift */,
@@ -152,6 +158,7 @@
 			children = (
 				8681DC4AF3698AFDF55C89E7 /* AppRootView.swift */,
 				E9CBA4417DBE205BCE9BEEAC /* Info.plist */,
+				6BBA8C69AC5D3C4981900C28 /* OpenLARP.entitlements */,
 				601E79F5844C6D89A84C354B /* OpenLARPApp.swift */,
 				AA1F7B0DF97B169436299E1D /* Models */,
 				DEB983A04649B04ECCCCB9DF /* Resources */,
@@ -261,6 +268,7 @@
 				D4917C5C043B0E5CD61C8658 /* FirebaseFirestore */,
 				17FD5B168EEE1FDC56F8E82F /* FirebaseStorage */,
 				70BA5B552210FEB18953AFEF /* FirebaseFunctions */,
+				F2EBA1A67D68330AE3206115 /* FirebaseAppCheck */,
 				3FE087F5A1C9EFD54C4CC94B /* GoogleSignIn */,
 				4665062539415E613F754A93 /* GoogleSignInSwift */,
 			);
@@ -360,6 +368,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				940979C1D721A0E1E61590E6 /* AIBackendContractTests.swift in Sources */,
+				093CC2254EA27818C33313DA /* AppCheckReadinessTests.swift in Sources */,
 				3469E86770713FB77ADC6000 /* AuthenticationReadinessTests.swift in Sources */,
 				36487711E483C13DA799C091 /* BackendSessionReadinessTests.swift in Sources */,
 				52877978FB95B59C9302B2B9 /* BetaMeasurementTests.swift in Sources */,
@@ -424,6 +433,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = OpenLARP/OpenLARP.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GOOGLE_REVERSED_CLIENT_ID = "com.googleusercontent.apps.795318771575-cqqtek2m323brvdfi62tvbmbv2oel6fq";
 				INFOPLIST_FILE = OpenLARP/Info.plist;
@@ -499,6 +509,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = OpenLARP/OpenLARP.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GOOGLE_REVERSED_CLIENT_ID = "com.googleusercontent.apps.795318771575-cqqtek2m323brvdfi62tvbmbv2oel6fq";
 				INFOPLIST_FILE = OpenLARP/Info.plist;
@@ -697,6 +708,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 9E5A8DD073F1B5CDE4B6A2E4 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
+		};
+		F2EBA1A67D68330AE3206115 /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9E5A8DD073F1B5CDE4B6A2E4 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

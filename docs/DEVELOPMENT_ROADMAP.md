@@ -142,7 +142,7 @@ Success criteria:
 
 Goal: make V0 usable across sessions/devices.
 
-Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned backend event acknowledgement, server-side per-user callable quotas, live readiness checks, and signed-in CLI smoke tooling exist. The remaining trust work is signed-in simulator/device Google Sign-In UX testing, App Check enforcement, provider-level token/cost accounting, derived readiness/history writes, and production-grade sync repair UX.
+Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned backend event acknowledgement, server-side per-user callable quotas, live readiness checks, signed-in CLI smoke tooling, and iOS App Check provider scaffolding exist. The remaining trust work is signed-in simulator/device Google Sign-In UX testing, Firebase Console App Check registration and enforcement, provider-level token/cost accounting, derived readiness/history writes, and production-grade sync repair UX.
 
 Work:
 
@@ -150,7 +150,7 @@ Work:
 - Keep the signed-in Firebase CLI smoke passing before backend-readiness passes
 - Finish account-backed Google Sign-In and sync smoke tests on simulator/device
 - Keep backend event acknowledgement server-owned through Cloud Functions
-- Add App Check enforcement after the iOS App Check provider is configured
+- Register App Check in Firebase Console, keep simulator debug tokens private, verify metrics from opt-in simulator/debug and App Attest device builds, then enable enforcement
 - Add provider-level token/cost accounting before live AI or broad beta traffic
 - Add explicit cloud backup consent separate from public sharing language
 

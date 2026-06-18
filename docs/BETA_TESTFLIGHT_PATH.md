@@ -30,6 +30,7 @@ This document tracks the practical path from the current local product foundatio
 - Firestore rules now deny arbitrary recursive user-subcollection writes, limit client writes to named beta sync collections, prevent clients from writing or downgrading uploaded proof attachment receipts, and keep backend event acknowledgement server-owned through `acknowledgeBackendEvents`.
 - Authenticated callable functions now have per-user daily server-side quota units that reject with `resource-exhausted` before AI workflow dispatch, proof upload promotion, proof upload reconciliation, or backend event acknowledgement side effects.
 - Signed-in Firebase CLI smoke tooling exists to verify workflow callable auth, proof Storage object verification, proof receipt promotion, proof upload reconciliation, backend event acknowledgement, and cleanup of temporary smoke data in the dev project.
+- iOS App Check provider scaffolding is linked, real-device builds have the production App Attest entitlement, and simulator debug App Check is explicit opt-in to avoid leaking debug tokens in logs. Firebase product enforcement is still off until console registration, debug tokens, and device metrics are verified.
 - Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
 
 ## Required Before TestFlight
@@ -38,7 +39,7 @@ This document tracks the practical path from the current local product foundatio
 2. Run `npm run firebase:signed-in-smoke` before each backend-readiness pass, then test account-backed proof attachment uploads, Firestore career graph writes, and the signed-in deterministic callable AI fallback route on a simulator/device.
 3. Test the iOS callable route signed-out fallback behavior.
 4. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
-5. Add App Check, signed-in quota exhaustion smoke tests, and provider-level token/cost accounting before treating all cloud data as authoritative or enabling live AI.
+5. Register App Check in Firebase Console, register simulator debug tokens as private secrets, verify device App Attest metrics, update live smoke tooling for App Check tokens, then enable App Check enforcement before treating all cloud data as authoritative or enabling live AI.
 6. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way.
 7. Add privacy policy, support URL, App Store screenshots, and TestFlight notes.
 8. Run a signed archive on the Apple Developer team and upload to App Store Connect.
