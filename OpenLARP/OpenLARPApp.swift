@@ -6,10 +6,12 @@ struct OpenLARPApp: App {
 
     init() {
         OpenLARPFirebaseBootstrap.configureIfAvailable()
+        let authenticationService = FirebaseGoogleSignInAuthenticationService()
         _store = State(
             initialValue: OpenLARPStore(
-                backendEventSyncService: FirebaseReadyBackendEventSyncService(),
-                backendSessionProvider: FirebaseBackendSessionProvider()
+                careerGraphSyncService: FirebaseReadyCareerGraphSyncService(),
+                authenticationService: authenticationService,
+                backendEventSyncService: FirebaseReadyBackendEventSyncService()
             )
         )
     }

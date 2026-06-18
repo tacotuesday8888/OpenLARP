@@ -16,6 +16,7 @@ enum FirebaseBackendServiceError: Error, LocalizedError, Equatable {
     case sdkUnavailable
     case configurationMissing
     case authenticationRequired
+    case unsupportedDocumentType
     case payloadEncodingFailed
 
     var errorDescription: String? {
@@ -26,6 +27,8 @@ enum FirebaseBackendServiceError: Error, LocalizedError, Equatable {
             "Firebase is linked but not configured for this build."
         case .authenticationRequired:
             "Sign in before syncing OpenLARP backend events."
+        case .unsupportedDocumentType:
+            "The career graph document type is not supported by this Firebase adapter."
         case .payloadEncodingFailed:
             "The backend event payload could not be encoded for Firestore."
         }
@@ -190,6 +193,166 @@ struct FirebaseReadyBackendEventSyncService: BackendEventSyncServicing {
         }
 
         return try await firebaseService.syncEvents(request)
+    }
+}
+
+protocol FirebaseCareerGraphDocumentWriting: Sendable {
+    func writeDocuments(_ documents: [FirebaseCareerGraphDocumentWrite]) async throws
+}
+
+struct FirebaseCareerGraphDocumentWrite: Identifiable, @unchecked Sendable {
+    var id: String { documentPath }
+
+    var documentType: CareerGraphSyncDocumentType
+    var documentPath: String
+    var data: [String: Any]
+
+    init<T: Encodable>(
+        documentType: CareerGraphSyncDocumentType,
+        documentPath: String,
+        document: T
+    ) throws {
+        self.documentType = documentType
+        self.documentPath = documentPath
+        data = try FirebaseFirestorePayload.dictionary(from: document)
+    }
+}
+
+struct FirebaseFirestoreCareerGraphDocumentWriter: FirebaseCareerGraphDocumentWriting {
+    init() {}
+
+    func writeDocuments(_ documents: [FirebaseCareerGraphDocumentWrite]) async throws {
+        #if canImport(FirebaseFirestore) && canImport(FirebaseCore)
+        guard FirebaseApp.app() != nil else {
+            throw FirebaseBackendServiceError.configurationMissing
+        }
+
+        let db = Firestore.firestore()
+        let batch = db.batch()
+        for document in documents {
+            batch.setData(
+                document.data,
+                forDocument: db.document(document.documentPath),
+                merge: true
+            )
+        }
+        try await batch.commit()
+        #else
+        throw FirebaseBackendServiceError.sdkUnavailable
+        #endif
+    }
+}
+
+struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
+    private let planner: CareerGraphSyncPlanner
+    private let writer: any FirebaseCareerGraphDocumentWriting
+
+    init(
+        planner: CareerGraphSyncPlanner = CareerGraphSyncPlanner(),
+        writer: any FirebaseCareerGraphDocumentWriting = FirebaseFirestoreCareerGraphDocumentWriter()
+    ) {
+        self.planner = planner
+        self.writer = writer
+    }
+
+    func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
+        guard request.session.isAuthenticated else {
+            throw FirebaseBackendServiceError.authenticationRequired
+        }
+
+        let manifest = planner.plan(request)
+        let writes = try makeDocumentWrites(from: request.snapshot, manifest: manifest)
+        try await writer.writeDocuments(writes)
+
+        return CareerGraphSyncResult(
+            status: .synced,
+            request: request,
+            didContactNetwork: true,
+            requiresAuthenticationToSync: false,
+            firestoreDocumentPaths: manifest.documentWrites.map(\.documentPath),
+            uploadIntents: manifest.storageUploads,
+            syncManifest: manifest
+        )
+    }
+
+    private func makeDocumentWrites(
+        from snapshot: CloudCareerGraphSnapshot,
+        manifest: CareerGraphSyncManifest
+    ) throws -> [FirebaseCareerGraphDocumentWrite] {
+        try manifest.documentWrites.map { write in
+            try FirebaseCareerGraphDocumentWrite(
+                documentType: write.documentType,
+                documentPath: write.documentPath,
+                document: document(for: write, in: snapshot)
+            )
+        }
+    }
+
+    private func document(
+        for write: CareerGraphSyncDocumentWrite,
+        in snapshot: CloudCareerGraphSnapshot
+    ) throws -> any Encodable {
+        switch write.documentType {
+        case .profile:
+            guard let document = snapshot.userProfile, document.documentPath == write.documentPath else {
+                throw FirebaseBackendServiceError.unsupportedDocumentType
+            }
+            return document
+        case .goal:
+            guard let document = snapshot.goal, document.documentPath == write.documentPath else {
+                throw FirebaseBackendServiceError.unsupportedDocumentType
+            }
+            return document
+        case .targetRole:
+            guard let document = snapshot.targetRoles.first(where: { $0.documentPath == write.documentPath }) else {
+                throw FirebaseBackendServiceError.unsupportedDocumentType
+            }
+            return document
+        case .proofRecord:
+            guard let document = snapshot.proofRecords.first(where: { $0.documentPath == write.documentPath }) else {
+                throw FirebaseBackendServiceError.unsupportedDocumentType
+            }
+            return document
+        case .proofAttachment:
+            guard let document = snapshot.proofRecords
+                .flatMap(\.attachments)
+                .first(where: { $0.documentPath == write.documentPath })
+            else {
+                throw FirebaseBackendServiceError.unsupportedDocumentType
+            }
+            return document
+        case .outcome:
+            guard let document = snapshot.outcomes.first(where: { $0.documentPath == write.documentPath }) else {
+                throw FirebaseBackendServiceError.unsupportedDocumentType
+            }
+            return document
+        case .readinessSnapshot:
+            guard let document = snapshot.readinessSnapshots.first(where: { $0.documentPath == write.documentPath }) else {
+                throw FirebaseBackendServiceError.unsupportedDocumentType
+            }
+            return document
+        }
+    }
+}
+
+struct FirebaseReadyCareerGraphSyncService: CareerGraphSyncServicing {
+    private let firebaseService: FirebaseFirestoreCareerGraphSyncService
+    private let localFallbackService: LocalMockCareerGraphSyncService
+
+    init(
+        firebaseService: FirebaseFirestoreCareerGraphSyncService = FirebaseFirestoreCareerGraphSyncService(),
+        localFallbackService: LocalMockCareerGraphSyncService = LocalMockCareerGraphSyncService()
+    ) {
+        self.firebaseService = firebaseService
+        self.localFallbackService = localFallbackService
+    }
+
+    func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
+        guard request.session.isAuthenticated else {
+            return try await localFallbackService.prepareSync(request)
+        }
+
+        return try await firebaseService.prepareSync(request)
     }
 }
 

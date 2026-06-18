@@ -12,7 +12,7 @@
     "test:backend": "npm --workspace backend/ai test && npm --workspace backend/functions test",
     "build:backend": "npm --workspace backend/functions run build",
     "test:rules": "npm --workspace firebase-rules test",
-    "test:rules:emulators": "firebase emulators:exec --only firestore,storage \"npm run test:rules\""
+    "test:rules:emulators": "JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21} PATH=\"${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}/bin:$PATH\" firebase emulators:exec --project openlarp-rules-test --only firestore,storage \"npm run test:rules\""
   },
   "devDependencies": {
     "firebase-tools": "15.21.0"

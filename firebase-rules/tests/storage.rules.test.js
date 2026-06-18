@@ -1,7 +1,7 @@
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { deleteObject, getBytes, ref, uploadString } from "firebase/storage";
+import { deleteObject, getBytes, ref, uploadBytes, uploadString } from "firebase/storage";
 
 let testEnv;
 
@@ -45,5 +45,46 @@ describe("Storage rules", () => {
       { contentType: "application/zip" }
     ));
     await assertFails(deleteObject(aliceAttachment));
+  });
+
+  it("allows real proof attachment content types and enforces size", async () => {
+    const alice = testEnv.authenticatedContext("alice").storage();
+
+    await assertSucceeds(uploadBytes(
+      ref(alice, "users/alice/proofAttachments/proof1.pdf"),
+      new Uint8Array(1024),
+      { contentType: "application/pdf" }
+    ));
+
+    await assertSucceeds(uploadBytes(
+      ref(alice, "users/alice/proofAttachments/proof1.jpg"),
+      new Uint8Array(1024),
+      { contentType: "image/jpeg" }
+    ));
+
+    await assertFails(uploadBytes(
+      ref(alice, "users/alice/proofAttachments/too-large.pdf"),
+      new Uint8Array(10 * 1024 * 1024),
+      { contentType: "application/pdf" }
+    ));
+  });
+
+  it("blocks unauthenticated and cross-owner proof attachment writes", async () => {
+    const guest = testEnv.unauthenticatedContext().storage();
+    const bob = testEnv.authenticatedContext("bob").storage();
+
+    await assertFails(uploadString(
+      ref(guest, "users/alice/proofAttachments/proof1.txt"),
+      "proof",
+      "raw",
+      { contentType: "text/plain" }
+    ));
+
+    await assertFails(uploadString(
+      ref(bob, "users/alice/proofAttachments/proof1.txt"),
+      "proof",
+      "raw",
+      { contentType: "text/plain" }
+    ));
   });
 });

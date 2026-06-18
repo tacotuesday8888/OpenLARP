@@ -13,6 +13,10 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
     case nextDayReturn
     case cookedCardPrepared
     case outcomeLogged
+    case accountSessionRestored
+    case accountSignInCompleted
+    case accountSignInFailed
+    case accountSignedOut
     case syncPreviewPrepared
     case freeSprintStarted
     case subscriptionStatusChecked
@@ -37,6 +41,10 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
         case .nextDayReturn: "Next-day return"
         case .cookedCardPrepared: "Cooked card prepared"
         case .outcomeLogged: "Outcome logged"
+        case .accountSessionRestored: "Account session restored"
+        case .accountSignInCompleted: "Account sign-in completed"
+        case .accountSignInFailed: "Account sign-in failed"
+        case .accountSignedOut: "Account signed out"
         case .syncPreviewPrepared: "Sync preview prepared"
         case .freeSprintStarted: "Free sprint started"
         case .subscriptionStatusChecked: "Subscription status checked"

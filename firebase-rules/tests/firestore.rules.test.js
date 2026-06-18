@@ -1,7 +1,7 @@
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 let testEnv;
 
@@ -77,4 +77,211 @@ describe("Firestore rules", () => {
 
     await assertFails(deleteDoc(eventRef));
   });
+
+  it("allows real career graph document contracts under the owner tree", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const bob = testEnv.authenticatedContext("bob").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/profiles/profile1"), {
+      metadata: safeMetadata("alice", "profile1", timestamp),
+      accountID: null,
+      email: null,
+      displayName: "Early-career candidate",
+      segment: "newGrad",
+      backgroundSummary: "",
+      minutesPerDay: 25,
+      networkingComfort: 3,
+      privacy: { memoryMode: "cloudReady", shareWins: true, requireApprovalForExternalActions: true },
+      collectionPath: "users/alice/profiles",
+      documentPath: "users/alice/profiles/profile1"
+    }));
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/goals/current"), {
+      schemaVersion: 1,
+      ownerUserID: "alice",
+      localID: "current",
+      currentStatus: "newGrad",
+      targetRole: "AI product engineer",
+      timeline: "30 days",
+      collectionPath: "users/alice/goals",
+      documentPath: "users/alice/goals/current"
+    }));
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/targetRoles/role1"), {
+      metadata: safeMetadata("alice", "role1", timestamp),
+      title: "AI product engineer",
+      seniority: "entry",
+      roleFamily: "ai",
+      timeline: "30 days",
+      keywords: ["SwiftUI", "AI", "product"],
+      preferredLocations: ["Remote"],
+      status: "active",
+      collectionPath: "users/alice/targetRoles",
+      documentPath: "users/alice/targetRoles/role1"
+    }));
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/proofRecords/proof1"), {
+      metadata: safeMetadata("alice", "proof1", timestamp),
+      questID: "quest1",
+      questTitle: "Map role requirements",
+      kind: "proof",
+      text: "Mapped real postings to shipped SwiftUI work.",
+      link: "https://example.com/proof",
+      attachments: [{
+        metadata: safeMetadata("alice", "attachment1", timestamp),
+        proofID: "proof1",
+        fileName: "proof.png",
+        originalFileName: "proof.png",
+        contentType: "image/png",
+        byteCount: 32000,
+        createdAt: timestamp,
+        storagePath: "users/alice/proofAttachments/attachment1",
+        collectionPath: "users/alice/proofAttachments",
+        documentPath: "users/alice/proofAttachments/attachment1"
+      }],
+      submittedAt: timestamp,
+      collectionPath: "users/alice/proofRecords",
+      documentPath: "users/alice/proofRecords/proof1"
+    }));
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/proofAttachments/attachment1"), {
+      metadata: safeMetadata("alice", "attachment1", timestamp),
+      proofID: "proof1",
+      fileName: "proof.png",
+      originalFileName: "proof.png",
+      contentType: "image/png",
+      byteCount: 32000,
+      createdAt: timestamp,
+      storagePath: "users/alice/proofAttachments/attachment1",
+      collectionPath: "users/alice/proofAttachments",
+      documentPath: "users/alice/proofAttachments/attachment1"
+    }));
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/outcomes/outcome1"), {
+      metadata: safeMetadata("alice", "outcome1", timestamp),
+      kind: "interview",
+      title: "Technical screen",
+      organizationName: "",
+      note: "",
+      occurredAt: timestamp,
+      targetRoleTitle: "AI product engineer",
+      isPrivate: false,
+      collectionPath: "users/alice/outcomes",
+      documentPath: "users/alice/outcomes/outcome1"
+    }));
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/readinessSnapshots/snapshot1"), {
+      metadata: safeMetadata("alice", "snapshot1", timestamp),
+      source: "proofClaim",
+      reason: "Accepted proof",
+      overall: 62,
+      proofStrength: 68,
+      confidence: 58,
+      consistency: 55,
+      skillProof: 70,
+      networkStrength: 42,
+      collectionPath: "users/alice/readinessSnapshots",
+      documentPath: "users/alice/readinessSnapshots/snapshot1"
+    }));
+
+    await assertFails(getDoc(doc(bob, "users/alice/proofRecords/proof1")));
+  });
+
+  it("rejects career graph update bypasses", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+    const proofRef = doc(alice, "users/alice/proofRecords/proof1");
+
+    await assertSucceeds(setDoc(proofRef, {
+      metadata: safeMetadata("alice", "proof1", timestamp),
+      questID: "quest1",
+      questTitle: "Map role requirements",
+      kind: "proof",
+      text: "Mapped real postings to shipped SwiftUI work.",
+      link: "https://example.com/proof",
+      attachments: [],
+      submittedAt: timestamp
+    }));
+
+    await assertFails(updateDoc(proofRef, { "metadata.ownerUserID": "bob" }));
+    await assertFails(updateDoc(proofRef, { externalActionTaken: true }));
+    await assertFails(updateDoc(proofRef, { syncStatus: "pending" }));
+    await assertFails(deleteDoc(proofRef));
+  });
+
+  it("allows Firebase backend event document shape and blocks spoofed backend events", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/backendEvents/event1"), {
+      schemaVersion: 1,
+      eventID: "event1",
+      ownerUserID: "alice",
+      kind: "proofClaimed",
+      syncStatus: "acknowledged",
+      idempotencyKey: "alice-proofClaimed-event1",
+      occurredAt: timestamp,
+      retryCount: 0,
+      lastAttemptAt: timestamp,
+      summary: { proofCount: 1, qualityAccepted: true },
+      acceptedAt: timestamp
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/backendEvents/bad-owner"), {
+      ownerUserID: "bob",
+      kind: "proofClaimed",
+      syncStatus: "acknowledged",
+      idempotencyKey: "bob-proofClaimed-event1"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/backendEvents/bad-kind"), {
+      ownerUserID: "alice",
+      kind: 123,
+      syncStatus: "acknowledged",
+      idempotencyKey: "alice-proofClaimed-event1"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/backendEvents/missing-key"), {
+      ownerUserID: "alice",
+      kind: "proofClaimed",
+      syncStatus: "acknowledged"
+    }));
+
+    const removableKeyRef = doc(alice, "users/alice/backendEvents/removable-key");
+    await assertSucceeds(setDoc(removableKeyRef, {
+      schemaVersion: 1,
+      eventID: "removable-key",
+      ownerUserID: "alice",
+      kind: "proofClaimed",
+      syncStatus: "acknowledged",
+      idempotencyKey: "alice-proofClaimed-removable-key",
+      occurredAt: timestamp,
+      retryCount: 0,
+      summary: { proofCount: 1 },
+      acceptedAt: timestamp
+    }));
+
+    await assertFails(setDoc(removableKeyRef, {
+      schemaVersion: 1,
+      eventID: "removable-key",
+      ownerUserID: "alice",
+      kind: "proofClaimed",
+      syncStatus: "acknowledged",
+      occurredAt: timestamp,
+      retryCount: 0,
+      summary: { proofCount: 1 },
+      acceptedAt: timestamp
+    }));
+  });
 });
+
+function safeMetadata(ownerUserID, localID, timestamp) {
+  return {
+    schemaVersion: 1,
+    ownerUserID,
+    localID,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
