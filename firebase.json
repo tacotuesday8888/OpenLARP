@@ -5,6 +5,21 @@
   "storage": {
     "rules": "storage.rules"
   },
+  "functions": {
+    "source": "backend/functions",
+    "runtime": "nodejs22",
+    "codebase": "openlarp-ai",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      "firestore-debug.log",
+      "coverage"
+    ],
+    "predeploy": [
+      "npm --prefix \"$RESOURCE_DIR\" run build"
+    ]
+  },
   "emulators": {
     "auth": {
       "port": 9099

@@ -61,6 +61,7 @@ Signed device builds and TestFlight uploads require Apple Developer account setu
 npm install
 npm run typecheck:backend
 npm run test:backend
+npm run build:backend
 npm run test:rules:emulators
 ```
 

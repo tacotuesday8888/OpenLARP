@@ -4,11 +4,13 @@
   "type": "module",
   "workspaces": [
     "backend/ai",
+    "backend/functions",
     "firebase-rules"
   ],
   "scripts": {
-    "typecheck:backend": "npm --workspace backend/ai run typecheck",
-    "test:backend": "npm --workspace backend/ai test",
+    "typecheck:backend": "npm --workspace backend/ai run typecheck && npm --workspace backend/functions run typecheck",
+    "test:backend": "npm --workspace backend/ai test && npm --workspace backend/functions test",
+    "build:backend": "npm --workspace backend/functions run build",
     "test:rules": "npm --workspace firebase-rules test",
     "test:rules:emulators": "firebase emulators:exec --only firestore,storage \"npm run test:rules\""
   },

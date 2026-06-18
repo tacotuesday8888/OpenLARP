@@ -48,15 +48,19 @@ Every envelope carries `V0AISafetyRules`. The default rules preserve OpenLARP's 
 - includes safety rules
 - round-trips stable JSON with ISO-8601 dates
 
-## Backend Package
+## Backend Packages
 
-The repo now includes a Genkit-ready backend package in `backend/ai/`.
+The repo now includes:
+
+- `backend/ai/`: Genkit-ready schemas, deterministic workflow handlers, safety validation, and backend-only model configuration.
+- `backend/functions/`: Firebase Callable Functions boundary that requires Firebase Auth, validates the AI request envelope, enforces OpenLARP safety guardrails, blocks external actions, and dispatches deterministic workflow handlers while live AI is disabled.
 
 Current backend verification commands:
 
 ```bash
 npm run typecheck:backend
 npm run test:backend
+npm run build:backend
 ```
 
 The backend package defines server-side schemas, deterministic mock workflow handlers, safety validation, and Genkit flow definitions for:
@@ -72,4 +76,6 @@ The backend package defines server-side schemas, deterministic mock workflow han
 
 The default backend target model is `gemini-3.1-flash-lite`, kept in backend config only. The iOS app still carries only `V0AIProviderRoute` values and does not encode model IDs, API keys, provider credentials, or direct prompts.
 
-Live model calls remain disabled until backend deployment, secrets, budget controls, and evaluation gates are configured.
+The callable export is `runOpenLARPWorkflow`, configured in `firebase.json` under `backend/functions`.
+
+Live model calls remain disabled until backend deployment, secrets, budget controls, and evaluation gates are configured. `npm audit --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories, so do not deploy live AI until those dependencies are remediated or explicitly risk-accepted.

@@ -33,7 +33,13 @@ From the repo root:
 ```bash
 npm run typecheck:backend
 npm run test:backend
+npm run build:backend
 ```
+
+`backend/functions` exposes the Firebase callable boundary for these workflows.
+It validates the same request envelope, requires Firebase Auth, blocks external
+actions, and dispatches to deterministic workflow handlers while live model
+calls are disabled.
 
 ## Flow Surface
 

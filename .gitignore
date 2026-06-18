@@ -24,6 +24,7 @@ Packages/
 # Node and backend tooling
 node_modules/
 backend/ai/dist/
+backend/functions/dist/
 coverage/
 
 # XcodeGen and local tooling

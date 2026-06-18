@@ -125,6 +125,10 @@ describe("OpenLARP AI backend contracts", () => {
     expect(DEFAULT_GEMINI_MODEL_ID).toBe("gemini-3.1-flash-lite");
     expect(configFromEnvironment({}).modelId).toBe("gemini-3.1-flash-lite");
     expect(configFromEnvironment({ OPENLARP_GEMINI_MODEL_ID: "gemini-test" }).modelId).toBe("gemini-test");
+    expect(configFromEnvironment({ OPENLARP_AI_PROVIDER: "local-mock" }).provider).toBe("local-mock");
+    expect(configFromEnvironment({ OPENLARP_AI_MAX_OUTPUT_TOKENS: "2048" }).maxOutputTokens).toBe(2048);
+    expect(() => configFromEnvironment({ OPENLARP_AI_PROVIDER: "client-llm" })).toThrow(/Unsupported/);
+    expect(() => configFromEnvironment({ OPENLARP_AI_MAX_OUTPUT_TOKENS: "not-a-number" })).toThrow(/MAX_OUTPUT_TOKENS/);
   });
 
   it("validates backend-safe request envelopes and safety rules", () => {

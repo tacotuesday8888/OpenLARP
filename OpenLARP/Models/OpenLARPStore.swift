@@ -599,6 +599,7 @@ final class OpenLARPStore {
 
         let session = currentBackendSession()
         guard session.auth.status != .needsAuthentication else { return }
+        guard !shouldHoldBackendEventsPendingForRemoteSetup(session) else { return }
 
         let eventIDs = Set(events.map(\.id))
         let previousBackendEvents = state.backendEvents
@@ -795,6 +796,16 @@ final class OpenLARPStore {
             .freeSprintStarted,
             occurredAt: state.subscriptionState.freeSprint?.startedAt ?? timestamp
         )
+    }
+
+    private func shouldHoldBackendEventsPendingForRemoteSetup(_ session: BackendUserSession) -> Bool {
+        if session.authProvider == .firebaseAuth && !session.isAuthenticated {
+            return true
+        }
+
+        return session.auth.status == .notConnected &&
+            session.firestore.status == .notConnected &&
+            session.genkit.status == .configured
     }
 
     private func recordAIWorkflowRun(_ run: V0AIWorkflowRun) {
