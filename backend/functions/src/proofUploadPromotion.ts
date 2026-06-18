@@ -87,6 +87,9 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "text/plain"
 ]);
 const MAX_PROOF_UPLOAD_BYTES = 10 * 1024 * 1024;
+const FIREBASE_MANAGED_STORAGE_METADATA_KEYS = new Set([
+  "firebaseStorageDownloadTokens"
+]);
 
 export async function handleProofUploadPromotionRequest(
   request: OpenLARPProofUploadPromotionRequest,
@@ -298,8 +301,12 @@ function validateStorageObject(
   };
   const metadataKeys = Object.keys(metadata);
   const expectedKeys = Object.keys(expectedMetadata);
+  const expectedMetadataKeys = new Set(expectedKeys);
+  const unexpectedMetadataKeys = metadataKeys.filter((key) => (
+    !expectedMetadataKeys.has(key) && !FIREBASE_MANAGED_STORAGE_METADATA_KEYS.has(key)
+  ));
   if (
-    metadataKeys.length !== expectedKeys.length ||
+    unexpectedMetadataKeys.length > 0 ||
     !expectedKeys.every((key) => metadata[key] === expectedMetadata[key])
   ) {
     return invalid("Storage object custom metadata does not match the signed-in user and upload intent.");

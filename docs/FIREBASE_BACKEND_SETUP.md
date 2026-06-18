@@ -77,7 +77,7 @@ which verifies:
 - matching signed-in owner, proof ID, attachment ID, Storage path, Firestore
   document paths, and idempotency key
 - allowed content type and byte count under the Storage limit
-- exact Storage custom metadata with no extra local/private fields
+- exact OpenLARP Storage custom metadata with no extra local/private fields; Firebase-managed Storage metadata such as download tokens may also exist on client uploads
 - existing Storage object metadata before the Firestore receipt is promoted
 
 Proof record Firestore documents cannot embed attachment arrays. Attachment metadata must be written through the dedicated proof-attachment collection. The iOS sync adapter replaces proof-record documents instead of merge-writing them so older local beta records with embedded attachments are cleaned up on the next sync.
@@ -103,6 +103,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are protected by server-side per-user daily callable quota units. Exhausted calls return `resource-exhausted` before workflow dispatch, Storage scans, Storage reads, Firestore receipt writes, or backend event acknowledgement writes.
 - `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are expected deployed active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
 - The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
+- `npm run firebase:signed-in-smoke` creates a temporary Firebase Auth smoke user through a local Admin custom token, calls the live workflow/proof/event callables as that signed-in user, validates Storage and Firestore side effects, and deletes its temporary Auth, Storage, Firestore, and quota data.
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
 - Google Sign-In is enabled in Firebase Auth for `openlarp-dev-langqi`.
 - A fresh Firebase iOS SDK config can be retrieved by CLI and now includes `CLIENT_ID` and `REVERSED_CLIENT_ID`. The ignored local `OpenLARP/GoogleService-Info.plist` has been refreshed on this workstation.
@@ -127,12 +128,51 @@ The check verifies:
 - Storage default bucket existence when `gcloud` is available
 - Functions Artifact Registry cleanup policies when `gcloud` is available
 
-A clean run should finish without missing Google OAuth ID or missing Storage bucket warnings. This script confirms the live project shape and local deploy source shape, but it does not replace a signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage upload/read rules, quota exhaustion, or callable AI fallback behavior.
+A clean run should finish without missing Google OAuth ID or missing Storage bucket warnings. This script confirms the live project shape and local deploy source shape, but it does not replace the signed-in smoke check or a simulator/device smoke test for Google Sign-In UX, Firestore writes, Storage upload/read rules, quota exhaustion, or callable AI fallback behavior.
+
+## Signed-In Smoke Check
+
+Run this from the repo root after Firebase and gcloud login:
+
+```bash
+npm run firebase:signed-in-smoke
+```
+
+The check uses a temporary Firebase Auth user and does not print ID tokens, API keys, or proof payloads. It verifies:
+
+- local Admin credentials can mint a Firebase custom token for a temporary smoke UID
+- the temporary ID token is accepted by `runOpenLARPWorkflow`
+- the live proof Storage bucket accepts a temporary proof object written through a signed-in Firebase client session
+- `promoteProofUploadReceipt` verifies that object and writes the server receipt
+- `reconcileProofUploads` reports the uploaded proof attachment as linked
+- `acknowledgeBackendEvents` writes server-owned backend event history
+- temporary Auth, Storage, Firestore, and quota data are cleaned up
+
+Prerequisites:
+
+- Firebase CLI access to `openlarp-dev-langqi`
+- Google Application Default Credentials, usually from `gcloud auth application-default login`
+- IAM Credentials API enabled for the project
+- the active Application Default Credentials principal has `iam.serviceAccounts.signBlob` on the Firebase Admin SDK service account, usually via `roles/iam.serviceAccountTokenCreator`
+
+Optional environment overrides:
+
+```bash
+OPENLARP_FIREBASE_PROJECT_ID=openlarp-dev-langqi
+OPENLARP_FIREBASE_SMOKE_ALLOW_PROJECT=openlarp-dev-langqi
+OPENLARP_FIREBASE_IOS_APP_ID=1:795318771575:ios:5315b3cc5b1bff81e30b72
+OPENLARP_FUNCTION_REGION=us-central1
+OPENLARP_FIREBASE_STORAGE_BUCKET=openlarp-dev-langqi.firebasestorage.app
+OPENLARP_FIREBASE_SMOKE_UID=openlarp-smoke-manual
+OPENLARP_FIREBASE_SIGNING_SERVICE_ACCOUNT=firebase-adminsdk-...@openlarp-dev-langqi.iam.gserviceaccount.com
+```
+
+This CLI smoke test complements but does not replace a real simulator/device Google Sign-In UX pass.
 
 ## Next Backend Steps
 
 1. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
-2. Deploy the latest Functions and Firestore rules, then rerun live readiness to confirm `promoteProofUploadReceipt`, `acknowledgeBackendEvents`, and the local quota-guarded deploy source are active.
+2. Keep `npm run firebase:live-readiness` and `npm run firebase:signed-in-smoke` passing after backend deploys.
 3. Test Firestore career graph sync, Storage proof attachment upload, server proof receipt promotion, and authenticated Firebase callable AI fallback behavior on a simulator or device.
 4. Add App Check enforcement and provider-level token/cost accounting before enabling live AI or broad external beta traffic.
 5. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
@@ -146,6 +186,7 @@ npx -y firebase-tools@15.21.0 deploy --only firestore:rules --project openlarp-d
 npx -y firebase-tools@15.21.0 deploy --only storage --project openlarp-dev-langqi
 npx -y firebase-tools@15.21.0 deploy --only functions:openlarp-ai --project openlarp-dev-langqi
 npm run firebase:live-readiness
+npm run firebase:signed-in-smoke
 npm run build:backend
 npx -y firebase-tools@15.21.0 emulators:start --project openlarp-rules-test --only auth,firestore,storage
 npm run test:rules:emulators

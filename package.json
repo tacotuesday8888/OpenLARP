@@ -13,9 +13,12 @@
     "build:backend": "npm --workspace backend/functions run build",
     "test:rules": "npm --workspace firebase-rules test",
     "test:rules:emulators": "JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21} PATH=\"${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}/bin:$PATH\" firebase emulators:exec --project openlarp-rules-test --only firestore,storage \"npm run test:rules\"",
-    "firebase:live-readiness": "scripts/firebase-live-readiness.sh"
+    "test:scripts": "vitest run scripts/tests",
+    "firebase:live-readiness": "scripts/firebase-live-readiness.sh",
+    "firebase:signed-in-smoke": "scripts/firebase-signed-in-smoke.sh"
   },
   "devDependencies": {
+    "firebase": "12.15.0",
     "firebase-tools": "15.21.0"
   }
 }
