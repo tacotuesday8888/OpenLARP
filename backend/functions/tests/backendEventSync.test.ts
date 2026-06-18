@@ -5,6 +5,7 @@ import {
   type BackendEventSyncDependencies,
   type BackendEventSyncResponse
 } from "../src/backendEventSync.js";
+import { makeQuotaGuard } from "./quotaTestHelpers.js";
 
 const now = new Date("2026-06-18T13:00:00.000Z");
 const requestedAt = "2026-06-18T12:55:00.000Z";
@@ -33,6 +34,10 @@ function backendEvent(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function eventUUID(index: number): string {
+  return `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
+}
+
 function syncPayload(events: unknown[] = [backendEvent()], overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: 1,
@@ -50,7 +55,10 @@ function syncPayload(events: unknown[] = [backendEvent()], overrides: Record<str
 
 type ExistingBackendEvent = { exists: true; idempotencyKey: unknown; acceptedAt?: unknown } | { exists: false };
 
-function makeDependencies(existing: ExistingBackendEvent = { exists: false }) {
+function makeDependencies(
+  existing: ExistingBackendEvent = { exists: false },
+  options: Pick<BackendEventSyncDependencies, "quotaGuard"> = {}
+) {
   const reads: Array<{ userID: string; eventID: string }> = [];
   const writes: Array<{
     userID: string;
@@ -83,6 +91,7 @@ function makeDependencies(existing: ExistingBackendEvent = { exists: false }) {
         acceptedAt: now.toISOString()
       };
     },
+    ...options,
     now: () => now
   };
 
@@ -175,6 +184,90 @@ describe("handleBackendEventSyncRequest", () => {
       }],
       externalActionTaken: false
     });
+  });
+
+  it("records quota before acknowledging backend event documents", async () => {
+    const { guard, charges } = makeQuotaGuard({ limitUnits: 500 });
+    const { dependencies, reads, writes } = makeDependencies({ exists: false }, {
+      quotaGuard: guard
+    });
+
+    const response = await authed(syncPayload(), dependencies);
+
+    expect(response).toMatchObject({
+      ok: true,
+      receipts: [{ eventID }]
+    });
+    expect(reads).toEqual([{ userID: "user_123", eventID }]);
+    expect(writes).toHaveLength(1);
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({
+      userID: "user_123",
+      callable: "acknowledgeBackendEvents",
+      category: "backendEventSync",
+      units: 1,
+      occurredAt: now,
+      metadata: {
+        eventCount: 1
+      }
+    });
+    expect(charges[0]?.auditKey).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("records quota for the maximum backend event batch without rejecting audit key length", async () => {
+    const { guard, charges } = makeQuotaGuard({ limitUnits: 500 });
+    const { dependencies, writes } = makeDependencies({ exists: false }, {
+      quotaGuard: guard
+    });
+    const events = Array.from({ length: 25 }, (_, index) => {
+      const entityID = `entity_${index}`;
+      return backendEvent({
+        id: eventUUID(index),
+        entityID,
+        idempotencyKey: `user_123-questStarted-${entityID}`,
+        summary: {
+          questDay: index + 1,
+          xp: index
+        }
+      });
+    });
+
+    const response = await authed(syncPayload(events), dependencies);
+
+    expect(response).toMatchObject({
+      ok: true,
+      receipts: expect.arrayContaining([
+        expect.objectContaining({ eventID: eventUUID(0) }),
+        expect.objectContaining({ eventID: eventUUID(24) })
+      ])
+    });
+    expect(writes).toHaveLength(25);
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({
+      callable: "acknowledgeBackendEvents",
+      units: 25,
+      metadata: {
+        eventCount: 25
+      }
+    });
+    expect(charges[0]?.auditKey).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("does not acknowledge backend events when sync quota is exhausted", async () => {
+    const { guard, charges } = makeQuotaGuard({ exhausted: true, limitUnits: 500 });
+    const { dependencies, reads, writes } = makeDependencies({ exists: false }, {
+      quotaGuard: guard
+    });
+
+    const response = await authed(syncPayload(), dependencies);
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "resource-exhausted"
+    });
+    expect(charges).toHaveLength(1);
+    expect(reads).toEqual([]);
+    expect(writes).toEqual([]);
   });
 
   it("allows idempotent retry only when existing server event has the same idempotency key", async () => {

@@ -1,5 +1,6 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import { type CallableQuotaGuard } from "./callableQuotaGuard.js";
 import { functionError, type OpenLARPFunctionError } from "./errors.js";
 
 export type OpenLARPProofUploadPromotionAuth = {
@@ -73,6 +74,7 @@ export type ProofUploadPromotionDependencies = {
     attachmentID: string,
     document: Record<string, unknown>
   ) => Promise<void>;
+  quotaGuard?: CallableQuotaGuard;
   now?: () => Date;
 };
 
@@ -100,6 +102,23 @@ export async function handleProofUploadPromotionRequest(
     return parsed.error;
   }
 
+  const promotedAtDate = dependencies.now?.() ?? new Date();
+  const quotaDecision = await dependencies.quotaGuard?.checkAndRecord({
+    userID,
+    callable: "promoteProofUploadReceipt",
+    category: "proofUpload",
+    units: 1,
+    auditKey: parsed.value.idempotencyKey,
+    occurredAt: promotedAtDate,
+    metadata: {
+      contentType: parsed.value.contentType,
+      byteCount: parsed.value.byteCount
+    }
+  });
+  if (quotaDecision && !quotaDecision.ok) {
+    return quotaDecision.error;
+  }
+
   const storageObject = await dependencies.readStorageObject(parsed.value.storagePath);
   if (!storageObject) {
     return functionError("not-found", "The uploaded proof attachment was not found in Firebase Storage.");
@@ -110,7 +129,6 @@ export async function handleProofUploadPromotionRequest(
     return storageValidation.error;
   }
 
-  const promotedAtDate = dependencies.now?.() ?? new Date();
   const promotedAt = promotedAtDate.toISOString();
   const uploadReceipt = receiptFromStorageObject(parsed.value, storageObject);
   const document = proofAttachmentDocument(userID, parsed.value, uploadReceipt, promotedAtDate);
@@ -366,14 +384,17 @@ function invalid(message: string): { ok: false; error: OpenLARPFunctionError } {
   };
 }
 
-function adminProofUploadPromotionDependencies(): ProofUploadPromotionDependencies {
+export function adminProofUploadPromotionDependencies(
+  quotaGuard?: CallableQuotaGuard
+): ProofUploadPromotionDependencies {
   return {
     readStorageObject,
     async writeProofAttachmentDocument(userID, attachmentID, document) {
       await getFirestore()
         .doc(`users/${userID}/proofAttachments/${attachmentID}`)
         .set(document, { merge: false });
-    }
+    },
+    ...(quotaGuard ? { quotaGuard } : {})
   };
 }
 

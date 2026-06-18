@@ -7,6 +7,7 @@ import {
   type ProofUploadPromotionResponse,
   type ProofUploadPromotionStorageObject
 } from "../src/proofUploadPromotion.js";
+import { makeQuotaGuard } from "./quotaTestHelpers.js";
 
 const now = new Date("2026-06-18T12:00:00.000Z");
 
@@ -50,7 +51,10 @@ function storageObject(
   };
 }
 
-function makeDependencies(object: ProofUploadPromotionStorageObject | null) {
+function makeDependencies(
+  object: ProofUploadPromotionStorageObject | null,
+  options: Pick<ProofUploadPromotionDependencies, "quotaGuard"> = {}
+) {
   const writes: Array<{
     userID: string;
     attachmentID: string;
@@ -65,6 +69,7 @@ function makeDependencies(object: ProofUploadPromotionStorageObject | null) {
     async writeProofAttachmentDocument(userID, attachmentID, document) {
       writes.push({ userID, attachmentID, document });
     },
+    ...options,
     now: () => now
   };
 
@@ -153,6 +158,48 @@ describe("handleProofUploadPromotionRequest", () => {
     expect(((document?.uploadReceipt as Record<string, unknown>).uploadedAt)).toBeInstanceOf(Timestamp);
     expect(writes[0]?.document).not.toHaveProperty("localRelativePath");
     expect(writes[0]?.document).toHaveProperty("uploadReceipt");
+  });
+
+  it("records quota before reading Storage or writing promoted receipts", async () => {
+    const { guard, charges } = makeQuotaGuard({ limitUnits: 150 });
+    const { dependencies, readPaths, writes } = makeDependencies(storageObject(), {
+      quotaGuard: guard
+    });
+
+    const response = await authed(promotionIntent(), dependencies);
+
+    expect(response).toMatchObject({ ok: true });
+    expect(readPaths).toEqual(["users/user_123/proofAttachments/attachment_123"]);
+    expect(writes).toHaveLength(1);
+    expect(charges).toEqual([{
+      userID: "user_123",
+      callable: "promoteProofUploadReceipt",
+      category: "proofUpload",
+      units: 1,
+      auditKey: "user_123-attachment_123",
+      occurredAt: now,
+      metadata: {
+        contentType: "image/png",
+        byteCount: 32_000
+      }
+    }]);
+  });
+
+  it("does not read Storage or write Firestore when promotion quota is exhausted", async () => {
+    const { guard, charges } = makeQuotaGuard({ exhausted: true, limitUnits: 150 });
+    const { dependencies, readPaths, writes } = makeDependencies(storageObject(), {
+      quotaGuard: guard
+    });
+
+    const response = await authed(promotionIntent(), dependencies);
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "resource-exhausted"
+    });
+    expect(charges).toHaveLength(1);
+    expect(readPaths).toEqual([]);
+    expect(writes).toEqual([]);
   });
 
   it("rejects cross-user paths and idempotency keys before reading Storage", async () => {

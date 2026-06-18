@@ -55,7 +55,7 @@ The generated project includes the public `GOOGLE_REVERSED_CLIENT_ID` callback U
 
 Firestore rules currently allow signed-in users to read only their own `users/{uid}` tree. Client writes are limited to the account root, named career graph collections, proof records, and pending proof attachment metadata; arbitrary user subcollections are denied.
 
-Firestore rules enforce owner/path consistency, block client-written external action claims and sync status fields, block embedded proof attachment arrays, and restrict client proof attachment metadata to `pendingUpload`. Proof upload receipt promotion is server-owned through `promoteProofUploadReceipt`, and backend event acknowledgement is server-owned through `acknowledgeBackendEvents`. This is still a beta client-sync model, not a fully server-trusted career graph; production trust still requires derived readiness/history writes, App Check enforcement, quota controls, and signed-in simulator/device smoke tests.
+Firestore rules enforce owner/path consistency, block client-written external action claims and sync status fields, block embedded proof attachment arrays, and restrict client proof attachment metadata to `pendingUpload`. Proof upload receipt promotion is server-owned through `promoteProofUploadReceipt`, and backend event acknowledgement is server-owned through `acknowledgeBackendEvents`. The callable backend now also records per-user daily quota units before AI workflow dispatch, proof receipt promotion, proof upload reconciliation, or backend event acknowledgement. This is still a beta client-sync model, not a fully server-trusted career graph; production trust still requires derived readiness/history writes, App Check enforcement, provider token/cost accounting, and signed-in simulator/device smoke tests.
 
 Storage rules currently reserve this path:
 
@@ -82,7 +82,7 @@ which verifies:
 
 Proof record Firestore documents cannot embed attachment arrays. Attachment metadata must be written through the dedicated proof-attachment collection. The iOS sync adapter replaces proof-record documents instead of merge-writing them so older local beta records with embedded attachments are cleaned up on the next sync.
 
-Current beta limitation: proof upload receipts and backend event acknowledgement are server-owned, but a fully authoritative career graph still needs derived readiness/history writes, App Check enforcement, quota controls, and signed-in simulator/device smoke tests.
+Current beta limitation: proof upload receipts, backend event acknowledgement, and per-user callable quotas are server-owned, but a fully authoritative career graph still needs derived readiness/history writes, App Check enforcement, provider token/cost accounting, and signed-in simulator/device smoke tests.
 
 Firestore rules now prevent backend event documents from bypassing the dedicated `backendEvents` rule through a broad user-tree rule. The broad recursive user write path has been removed; only named beta sync collections accept client writes. Backend event documents are owner-readable, but client create, update, and delete are denied. The server callable validates exact event shape, matching owner, known event kind, idempotency key, timestamp fields, and known typed summary fields before writing acknowledged history through the Admin SDK.
 
@@ -100,6 +100,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - The iOS app is wired to try `runOpenLARPWorkflow` through Firebase Functions first and preserve local V0 behavior through fallback when live Firebase is unavailable.
 - `promoteProofUploadReceipt` exists as an authenticated callable that verifies uploaded proof Storage objects with the Admin SDK and writes Firestore upload receipts server-side.
 - `reconcileProofUploads` exists as an authenticated callable repair/report boundary for rare orphaned proof uploads. It defaults to report-only and deletes only older owner-scoped Storage objects whose custom metadata matches the signed-in user and whose Firestore proof attachment document is missing.
+- `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are protected by server-side per-user daily callable quota units. Exhausted calls return `resource-exhausted` before workflow dispatch, Storage scans, Storage reads, Firestore receipt writes, or backend event acknowledgement writes.
 - `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are expected deployed active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
 - The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
@@ -121,18 +122,19 @@ The check verifies:
 - default Firestore database shape
 - active deployed callable Functions, including proof upload receipt promotion and backend event acknowledgement
 - unauthenticated callable rejection from the live workflow, proof promotion, and backend event acknowledgement endpoints
+- local deploy source includes the server-side callable quota guard
 - CLI retrieval of the iOS Firebase config without printing secret-bearing plist values
 - Storage default bucket existence when `gcloud` is available
 - Functions Artifact Registry cleanup policies when `gcloud` is available
 
-A clean run should finish without missing Google OAuth ID or missing Storage bucket warnings. This script confirms the live project shape, but it does not replace a signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage upload/read rules, or callable AI fallback behavior.
+A clean run should finish without missing Google OAuth ID or missing Storage bucket warnings. This script confirms the live project shape and local deploy source shape, but it does not replace a signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage upload/read rules, quota exhaustion, or callable AI fallback behavior.
 
 ## Next Backend Steps
 
 1. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
-2. Deploy the latest Functions and Firestore rules, then rerun live readiness to confirm `promoteProofUploadReceipt` and `acknowledgeBackendEvents` are active.
+2. Deploy the latest Functions and Firestore rules, then rerun live readiness to confirm `promoteProofUploadReceipt`, `acknowledgeBackendEvents`, and the local quota-guarded deploy source are active.
 3. Test Firestore career graph sync, Storage proof attachment upload, server proof receipt promotion, and authenticated Firebase callable AI fallback behavior on a simulator or device.
-4. Add App Check enforcement and per-user callable quota/budget controls before enabling live AI or broad external beta traffic.
+4. Add App Check enforcement and provider-level token/cost accounting before enabling live AI or broad external beta traffic.
 5. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
 6. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
 7. Keep provider model IDs and API keys only on the backend.

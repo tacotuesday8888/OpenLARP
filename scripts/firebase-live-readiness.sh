@@ -84,6 +84,13 @@ for (const [id, runtime] of required) {
 NODE
 pass "Required callable Functions are deployed and ACTIVE"
 
+if grep -q "adminCallableQuotaGuard" backend/functions/src/index.ts &&
+  grep -q "CALLABLE_DAILY_QUOTA_LIMITS" backend/functions/src/callableQuotaGuard.ts; then
+  pass "Local Functions deploy source includes callable quota guard"
+else
+  fail "Local Functions deploy source is missing the callable quota guard"
+fi
+
 callable_response="$tmp_dir/callable-response.txt"
 http_status="$(
   curl -sS -o "$callable_response" -w '%{http_code}' \

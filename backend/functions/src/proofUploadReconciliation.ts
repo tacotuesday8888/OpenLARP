@@ -1,5 +1,6 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import { type CallableQuotaGuard } from "./callableQuotaGuard.js";
 import { functionError, type OpenLARPFunctionError } from "./errors.js";
 
 export type OpenLARPProofUploadReconciliationAuth = {
@@ -75,6 +76,7 @@ export type ProofUploadReconciliationDependencies = {
     storagePath: string,
     generation: string | undefined
   ) => Promise<boolean>;
+  quotaGuard?: CallableQuotaGuard;
   now?: () => Date;
 };
 
@@ -110,6 +112,23 @@ export async function handleProofUploadReconciliationRequest(
       "failed-precondition",
       "Deleting orphaned proof uploads requires confirmDeletion=true."
     );
+  }
+
+  const evaluatedAt = dependencies.now?.() ?? new Date();
+  const quotaDecision = await dependencies.quotaGuard?.checkAndRecord({
+    userID,
+    callable: "reconcileProofUploads",
+    category: "proofUploadRepair",
+    units: reconciliationQuotaUnits(parsed.value),
+    occurredAt: evaluatedAt,
+    metadata: {
+      mode: parsed.value.mode,
+      maxAttachments: parsed.value.maxAttachments,
+      hasAttachmentFilter: parsed.value.attachmentIDs !== undefined
+    }
+  });
+  if (quotaDecision && !quotaDecision.ok) {
+    return quotaDecision.error;
   }
 
   const storageObjects = await dependencies.listStorageObjects(
@@ -176,13 +195,18 @@ export async function handleProofUploadReconciliationRequest(
     schemaVersion: 1,
     userID,
     mode: parsed.value.mode,
-    evaluatedAt: (dependencies.now?.() ?? new Date()).toISOString(),
+    evaluatedAt: evaluatedAt.toISOString(),
     scannedCount: candidates.length,
     orphanedCount,
     deletedCount,
     candidates,
     externalActionTaken: deletedCount > 0
   };
+}
+
+function reconciliationQuotaUnits(request: ParsedRequest): number {
+  const scanUnits = Math.max(1, Math.ceil(request.maxAttachments / 25));
+  return request.mode === "deleteOrphans" ? scanUnits + 1 : scanUnits;
 }
 
 async function evaluateStorageObject(
@@ -439,7 +463,9 @@ function isStorageObjectOldEnough(
   return now.getTime() - updatedDate.getTime() >= minimumAgeMinutes * 60_000;
 }
 
-function adminProofUploadReconciliationDependencies(): ProofUploadReconciliationDependencies {
+export function adminProofUploadReconciliationDependencies(
+  quotaGuard?: CallableQuotaGuard
+): ProofUploadReconciliationDependencies {
   return {
     async listStorageObjects(userID, attachmentIDs, maxAttachments) {
       if (attachmentIDs && attachmentIDs.length > 0) {
@@ -484,7 +510,8 @@ function adminProofUploadReconciliationDependencies(): ProofUploadReconciliation
       } catch {
         return false;
       }
-    }
+    },
+    ...(quotaGuard ? { quotaGuard } : {})
   };
 }
 

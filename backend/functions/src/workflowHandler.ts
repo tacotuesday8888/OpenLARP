@@ -30,6 +30,7 @@ import {
   summarizeProgress
 } from "../../ai/src/mockWorkflows.js";
 import { validateEnvelopeSafety } from "../../ai/src/safety.js";
+import { type CallableQuotaGuard } from "./callableQuotaGuard.js";
 import { functionError, type OpenLARPFunctionError } from "./errors.js";
 
 export type OpenLARPCallableAuth = {
@@ -59,8 +60,14 @@ export type OpenLARPWorkflowCallableResponse =
   | OpenLARPWorkflowCallableSuccess
   | OpenLARPFunctionError;
 
+export type OpenLARPWorkflowDependencies = {
+  quotaGuard?: CallableQuotaGuard;
+  now?: () => Date;
+};
+
 export async function handleOpenLARPWorkflowRequest(
-  request: OpenLARPWorkflowCallableRequest
+  request: OpenLARPWorkflowCallableRequest,
+  dependencies: OpenLARPWorkflowDependencies = {}
 ): Promise<OpenLARPWorkflowCallableResponse> {
   const userID = request.auth?.uid;
   if (!userID) {
@@ -89,6 +96,23 @@ export async function handleOpenLARPWorkflowRequest(
     return functionError("permission-denied", externalActionViolation);
   }
 
+  const evaluatedAt = dependencies.now?.() ?? new Date();
+  const quotaDecision = await dependencies.quotaGuard?.checkAndRecord({
+    userID,
+    callable: "runOpenLARPWorkflow",
+    category: "aiWorkflow",
+    units: 1,
+    auditKey: parsedEnvelope.data.run.requestID,
+    occurredAt: evaluatedAt,
+    metadata: {
+      workflowKind: parsedEnvelope.data.run.kind,
+      providerRoute: parsedEnvelope.data.run.providerRoute
+    }
+  });
+  if (quotaDecision && !quotaDecision.ok) {
+    return quotaDecision.error;
+  }
+
   try {
     const result = dispatchDeterministicWorkflow(parsedEnvelope.data);
     return {
@@ -97,7 +121,7 @@ export async function handleOpenLARPWorkflowRequest(
       requestID: parsedEnvelope.data.run.requestID,
       kind: parsedEnvelope.data.run.kind,
       userID,
-      evaluatedAt: new Date().toISOString(),
+      evaluatedAt: evaluatedAt.toISOString(),
       providerRoute: parsedEnvelope.data.run.providerRoute,
       liveModelCallsEnabled: false,
       externalActionTaken: false,

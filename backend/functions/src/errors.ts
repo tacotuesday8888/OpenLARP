@@ -5,6 +5,7 @@ export type OpenLARPFunctionErrorCode =
   | "invalid-argument"
   | "not-found"
   | "permission-denied"
+  | "resource-exhausted"
   | "failed-precondition"
   | "internal";
 

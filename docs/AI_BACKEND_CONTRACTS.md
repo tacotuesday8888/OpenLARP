@@ -98,6 +98,8 @@ The backend package defines server-side schemas, deterministic mock workflow han
 
 The default backend target model is `gemini-3.1-flash-lite`, kept in backend config only. The iOS app still carries only `V0AIProviderRoute` values and does not encode model IDs, API keys, provider credentials, or direct prompts.
 
-The callable exports are `runOpenLARPWorkflow` and `reconcileProofUploads`, configured in `firebase.json` under `backend/functions` and deployed to the `openlarp-dev-langqi` dev project with live model calls disabled.
+The callable exports are `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents`, configured in `firebase.json` under `backend/functions` and deployed to the `openlarp-dev-langqi` dev project with live model calls disabled.
 
-Live Genkit/Gemini model calls remain disabled until backend secrets, budget controls, observability, and evaluation gates are configured. The deterministic Firebase Functions package is kept Genkit-free for safer callable deployment. `npm audit --workspace backend/ai --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories, so do not deploy live Genkit/Gemini AI until those dependencies are remediated or explicitly risk-accepted.
+The deterministic callable package includes server-side per-user daily quota units for all authenticated callables. `runOpenLARPWorkflow` is capped before deterministic AI dispatch, and the proof/event callables are capped before Storage or Firestore side effects. Exhausted users receive `resource-exhausted` with safe quota details only.
+
+Live Genkit/Gemini model calls remain disabled until backend secrets, provider token/cost accounting, observability, and evaluation gates are configured. The deterministic Firebase Functions package is kept Genkit-free for safer callable deployment. `npm audit --workspace backend/ai --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories, so do not deploy live Genkit/Gemini AI until those dependencies are remediated or explicitly risk-accepted.
