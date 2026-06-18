@@ -47,6 +47,24 @@ Every envelope carries `V0AISafetyRules`. The default rules preserve OpenLARP's 
 - carries provider route only
 - includes safety rules
 - round-trips stable JSON with ISO-8601 dates
+- decodes Firebase callable responses into Swift app models without exposing local proof attachment paths or provider model IDs
+
+## iOS Callable Adapter
+
+`FirebaseCallableV0AIWorkflowService` is the iOS adapter for the authenticated
+`runOpenLARPWorkflow` callable. The production app injects it as the primary AI
+workflow service behind `FallbackV0AIWorkflowService`, so local V0 behavior still
+works when Firebase is not configured, the user is signed out, or the callable
+fails.
+
+The adapter:
+
+- calls only the Firebase callable boundary, never an LLM provider SDK
+- sends `providerRoute: firebaseCallableGenkit`
+- uses narrow callable DTOs instead of raw Swift proof models
+- strips local proof attachment filenames, UUIDs, and `localRelativePath` before network dispatch
+- validates response schema, workflow kind, request ID, provider route, live-model flag, and external-action flag before recording a run
+- supports a local Functions emulator configuration for authenticated development
 
 ## Backend Packages
 

@@ -9,6 +9,8 @@ enum V0AIWorkflowKind: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+extension V0AIWorkflowKind: Sendable {}
+
 enum V0AIProviderRoute: String, Codable, CaseIterable, Identifiable {
     case localMock
     case firebaseCallableGenkit
@@ -16,6 +18,8 @@ enum V0AIProviderRoute: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 }
+
+extension V0AIProviderRoute: Sendable {}
 
 struct V0AISafetyRules: Codable, Equatable {
     var hardBannedClaims: [String]
@@ -50,6 +54,8 @@ struct V0AISafetyRules: Codable, Equatable {
         self.privacyRequirements = privacyRequirements
     }
 }
+
+extension V0AISafetyRules: Sendable {}
 
 struct V0AIBackendPrivateIdentifiers: Equatable {
     static let none = V0AIBackendPrivateIdentifiers()
@@ -90,6 +96,8 @@ struct V0AIBackendPrivacyMetadata: Codable, Equatable {
     }
 }
 
+extension V0AIBackendPrivacyMetadata: Sendable {}
+
 struct V0AIBackendRequestRunMetadata: Codable, Equatable {
     var schemaVersion: Int
     var kind: V0AIWorkflowKind
@@ -114,6 +122,8 @@ struct V0AIBackendRequestRunMetadata: Codable, Equatable {
         self.privacy = V0AIBackendPrivacyMetadata(privacy: privacy)
     }
 }
+
+extension V0AIBackendRequestRunMetadata: Sendable {}
 
 struct V0AIBackendRequestEnvelope<Payload: Codable & Equatable>: Codable, Equatable {
     var schemaVersion: Int
@@ -147,6 +157,8 @@ struct V0AIBackendRequestEnvelope<Payload: Codable & Equatable>: Codable, Equata
         _ = privateIdentifiers
     }
 }
+
+extension V0AIBackendRequestEnvelope: Sendable where Payload: Sendable {}
 
 struct V0AIWorkflowRun: Codable, Equatable {
     var schemaVersion: Int

@@ -28,6 +28,8 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `FirebaseStorageProofAttachmentUploader` writes proof bytes to deterministic `users/{uid}/proofAttachments/{attachmentId}` paths with owner, proof, attachment, and idempotency custom metadata.
 - `CareerGraphSyncUploadIntent.localRelativePath` is runtime-only and is intentionally omitted from encoded sync manifests and Firestore documents.
 - Cloud proof records do not embed attachment documents. Attachment metadata and upload receipts live under `users/{uid}/proofAttachments/{attachmentId}` so local file paths cannot leak through nested proof-record payloads.
+- `FirebaseCallableV0AIWorkflowService` calls the authenticated `runOpenLARPWorkflow` Firebase callable for diagnostic, quest-plan, proof-quality, and progress-summary workflows, then falls back to local mock AI when Firebase is missing, signed out, or unavailable.
+- The callable AI adapter sends narrow backend DTOs and does not send local proof attachment filenames, UUIDs, or `localRelativePath`.
 
 The Firebase adapters also check that `FirebaseApp` is configured before touching Auth, Firestore, or Storage. This lets CI and local mock builds continue safely when Firebase SDKs are linked but private runtime configuration has not been bundled.
 
@@ -37,6 +39,7 @@ Firebase Apple SDK products are now linked through Swift Package Manager via `pr
 - `FirebaseAuth`
 - `FirebaseFirestore`
 - `FirebaseStorage`
+- `FirebaseFunctions`
 
 Google Sign-In packages are also linked as the next auth UI integration point:
 
@@ -78,6 +81,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Security rules validate through Firebase MCP.
 - Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22 and `runOpenLARPWorkflow` as the callable AI workflow boundary.
+- The iOS app is wired to try `runOpenLARPWorkflow` through Firebase Functions first and preserve local V0 behavior through fallback when live Firebase is unavailable.
 - `reconcileProofUploads` exists as an authenticated callable repair/report boundary for rare orphaned proof uploads. It defaults to report-only and deletes only older owner-scoped Storage objects whose custom metadata matches the signed-in user and whose Firestore proof attachment document is missing.
 
 ## Next Backend Steps
@@ -85,7 +89,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 1. Enable Firebase Auth providers in the Firebase console, starting with Sign in with Apple and Google Sign-In.
 2. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
 3. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
-4. Test live Google sign-in, Firestore career graph sync, and Storage proof attachment upload on a simulator or device with the ignored local Firebase plist.
+4. Test live Google sign-in, Firestore career graph sync, Storage proof attachment upload, and Firebase callable AI fallback behavior on a simulator or device with the ignored local Firebase plist.
 5. Deploy Cloud Functions only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
 6. Keep provider model IDs and API keys only on the backend.
 7. Add App Check enforcement after local device and TestFlight auth flows are verified.

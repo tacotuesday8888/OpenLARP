@@ -16,6 +16,7 @@ This document tracks the practical path from the current local product foundatio
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
 - Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled.
+- The iOS app now tries the Firebase callable Genkit route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.
 - Authenticated proof upload reconciliation callable exists for report-only scans and explicit safe deletion of orphaned Storage proof uploads.
 - Google Sign-In auth service boundary exists for restore, sign-in, sign-out, missing-config states, and future URL handling.
 - Firebase Storage proof attachment upload adapter exists and writes owner-scoped upload receipts before Firestore metadata sync.
@@ -26,7 +27,7 @@ This document tracks the practical path from the current local product foundatio
 
 1. Enable Firebase Auth providers and add real sign-in UI plus `.onOpenURL` forwarding.
 2. Test account-backed event sync, Firestore career graph writes, and Storage proof attachment uploads on device with live Firebase configuration.
-3. Deploy the backend Genkit Cloud Functions or Cloud Run service for AI workflows and keep LLM providers server-side.
+3. Deploy the backend Genkit Cloud Functions or Cloud Run service for AI workflows, test the iOS callable route against live Firebase Auth, and keep LLM providers server-side.
 4. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
 5. Add privacy policy, support URL, App Store screenshots, and TestFlight notes.
 6. Run a signed archive on the Apple Developer team and upload to App Store Connect.
