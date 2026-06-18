@@ -21,15 +21,16 @@ This document tracks the practical path from the current local product foundatio
 - Functions Artifact Registry cleanup policies are installed for the dev project so old deployment images do not accumulate without a retention policy.
 - The iOS app now tries the Firebase callable Genkit route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.
 - Authenticated proof upload reconciliation callable exists for report-only scans and explicit safe deletion of orphaned Storage proof uploads.
-- Google Sign-In auth service boundary exists for restore, sign-in, sign-out, missing-config states, and future URL handling.
+- Google Sign-In auth service boundary exists for restore, sign-in, sign-out, missing-config states, and callback URL handling.
+- Google Sign-In is enabled in the Firebase dev project, the ignored local iOS plist has OAuth client IDs, and the XcodeGen project declares the public reversed client ID URL scheme.
 - Firebase Storage proof attachment upload adapter exists and writes owner-scoped upload receipts before Firestore metadata sync.
 - Firebase security rules tests exist for Firestore and Storage owner boundaries, upload metadata, proof attachment receipt shape, and nested local-path leak prevention.
 - Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
 
 ## Required Before TestFlight
 
-1. Enable Firebase Auth providers, refresh the ignored local iOS plist, set the non-committed `GOOGLE_REVERSED_CLIENT_ID`, and verify live Google Sign-In in the simulator.
-2. Finish Firebase Storage product setup, deploy Storage rules, and test account-backed proof attachment uploads plus Firestore career graph writes.
+1. Finish Firebase Storage product setup, deploy Storage rules, and test account-backed proof attachment uploads plus Firestore career graph writes.
+2. Verify live Google Sign-In in the simulator/device with the refreshed ignored local plist, then add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary account option.
 3. Test the iOS callable route against live Firebase Auth, including signed-in deterministic AI fallback behavior and signed-out fallback behavior.
 4. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
 5. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way.
@@ -44,7 +45,7 @@ Use this command before each TestFlight-readiness pass:
 npm run firebase:live-readiness
 ```
 
-Expected current warnings are missing Google OAuth IDs in the downloaded iOS config and missing Firebase Storage initialization. Those warnings must be cleared before a true account-backed beta smoke test.
+Expected current warning is missing Firebase Storage initialization. That warning must be cleared before a true account-backed proof upload beta smoke test.
 
 ## Backend Dependency Risk
 

@@ -48,7 +48,7 @@ Google Sign-In packages are also linked as the next auth UI integration point:
 
 `GoogleService-Info.plist` remains ignored by Git and excluded from normal XcodeGen sources. The generated Xcode project includes an optional post-build copy script that copies the local plist into the app bundle only when the ignored local file exists.
 
-The generated project also includes a `GOOGLE_REVERSED_CLIENT_ID` build setting placeholder and a matching URL type entry for Google Sign-In callbacks. Do not commit the real local Firebase plist. For live local sign-in, set `GOOGLE_REVERSED_CLIENT_ID` to the `REVERSED_CLIENT_ID` value from the local plist in a non-committed Xcode setting or local build override before running on device/simulator.
+The generated project includes the public `GOOGLE_REVERSED_CLIENT_ID` callback URL scheme for the `openlarp-dev-langqi` iOS app. Do not commit the real local Firebase plist; it carries the project SDK config and is copied into local app bundles only when present.
 
 ## Security Rules
 
@@ -88,7 +88,8 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - `runOpenLARPWorkflow` and `reconcileProofUploads` are deployed as active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
 - The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
-- A fresh Firebase iOS SDK config can be retrieved by CLI, but it does not yet include `CLIENT_ID` or `REVERSED_CLIENT_ID`. Live Google Sign-In needs the Google provider/OAuth client setup before simulator verification.
+- Google Sign-In is enabled in Firebase Auth for `openlarp-dev-langqi`.
+- A fresh Firebase iOS SDK config can be retrieved by CLI and now includes `CLIENT_ID` and `REVERSED_CLIENT_ID`. The ignored local `OpenLARP/GoogleService-Info.plist` has been refreshed on this workstation.
 
 ## Live Readiness Check
 
@@ -108,18 +109,17 @@ The check verifies:
 - Storage default bucket existence when `gcloud` is available
 - Functions Artifact Registry cleanup policies when `gcloud` is available
 
-Warnings for missing Google OAuth IDs or missing Storage bucket are expected until the remaining console setup is complete.
+Warnings for missing Storage bucket are expected until the remaining console setup is complete. Missing Google OAuth IDs are no longer expected after the Auth deploy.
 
 ## Next Backend Steps
 
-1. Enable Firebase Auth providers in the Firebase console, starting with Google Sign-In and then Sign in with Apple for App Store readiness.
-2. Refresh the ignored local iOS plist with `npx -y firebase-tools@15.21.0 apps:sdkconfig IOS 1:795318771575:ios:5315b3cc5b1bff81e30b72 --project openlarp-dev-langqi > OpenLARP/GoogleService-Info.plist`.
-3. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
-4. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
-5. Test live Google sign-in, Firestore career graph sync, Storage proof attachment upload, and authenticated Firebase callable AI fallback behavior on a simulator or device with the ignored local Firebase plist.
-6. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
-7. Keep provider model IDs and API keys only on the backend.
-8. Add App Check enforcement after local device and TestFlight auth flows are verified.
+1. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
+2. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
+3. Test Firestore career graph sync, Storage proof attachment upload, and authenticated Firebase callable AI fallback behavior on a simulator or device.
+4. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
+5. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
+6. Keep provider model IDs and API keys only on the backend.
+7. Add App Check enforcement after local device and TestFlight auth flows are verified.
 
 ## Local Commands
 

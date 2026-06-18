@@ -1,5 +1,8 @@
 import XCTest
 @testable import OpenLARP
+#if canImport(FirebaseCore)
+import FirebaseCore
+#endif
 
 @MainActor
 final class AuthenticationReadinessTests: XCTestCase {
@@ -168,15 +171,28 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertFalse(store.handleOpenURL(URL(string: "openlarp:/not-google")!))
     }
 
-    func testFirebaseGoogleSignInServiceReportsMissingConfigurationInsteadOfFakeSuccess() async {
+    func testFirebaseGoogleSignInServiceReportsReadinessWithoutFakeSuccess() async {
         let state = OpenLARPEngine.confirmGoal(goal)
         let service = FirebaseGoogleSignInAuthenticationService()
 
+        _ = await service.signOut(for: state)
         let restoreResult = await service.restorePreviousSession(for: state)
         let signInResult = await service.signInWithGoogle(presenting: nil, for: state)
 
-        XCTAssertEqual(restoreResult.status, .configurationMissing)
-        XCTAssertEqual(signInResult.status, .configurationMissing)
+        #if canImport(FirebaseCore)
+        let hasRuntimeGoogleConfiguration = FirebaseApp.app()?.options.clientID?.isEmpty == false
+        #else
+        let hasRuntimeGoogleConfiguration = false
+        #endif
+
+        if hasRuntimeGoogleConfiguration {
+            XCTAssertEqual(restoreResult.status, .signedOut)
+            XCTAssertEqual(signInResult.status, .presentationRequired)
+        } else {
+            XCTAssertEqual(restoreResult.status, .configurationMissing)
+            XCTAssertEqual(signInResult.status, .configurationMissing)
+        }
+
         XCTAssertFalse(restoreResult.session.isAuthenticated)
         XCTAssertFalse(signInResult.session.isAuthenticated)
     }
