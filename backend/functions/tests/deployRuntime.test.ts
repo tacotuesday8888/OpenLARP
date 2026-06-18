@@ -33,6 +33,19 @@ describe("Firebase Functions deploy runtime", () => {
     expect(entrypoint).toContain("export const acknowledgeBackendEvents = onCall");
   });
 
+  it("wires deployed callable exports through the Admin callable quota guard", () => {
+    const entrypoint = readText("src/index.ts");
+    const quotaGuard = readText("src/callableQuotaGuard.ts");
+
+    expect(entrypoint).toContain("const callableQuotaGuard = adminCallableQuotaGuard()");
+    expect(entrypoint).toContain("quotaGuard: callableQuotaGuard");
+    expect(entrypoint).toContain("adminProofUploadReconciliationDependencies(callableQuotaGuard)");
+    expect(entrypoint).toContain("adminProofUploadPromotionDependencies(callableQuotaGuard)");
+    expect(entrypoint).toContain("adminBackendEventSyncDependencies(callableQuotaGuard)");
+    expect(quotaGuard).toContain("CALLABLE_DAILY_QUOTA_LIMITS");
+    expect(quotaGuard).toContain("resource-exhausted");
+  });
+
   it("keeps the deployable Functions package free of Genkit runtime dependencies", () => {
     const packageJson = JSON.parse(readText("package.json")) as {
       dependencies?: Record<string, string>;

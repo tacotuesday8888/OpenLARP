@@ -5,6 +5,7 @@ import {
   type ProofUploadReconciliationResponse,
   type ProofUploadStorageObject
 } from "../src/proofUploadReconciliation.js";
+import { makeQuotaGuard } from "./quotaTestHelpers.js";
 
 const now = new Date("2026-06-18T12:00:00.000Z");
 
@@ -51,6 +52,7 @@ function firestoreAttachment(attachmentID: string) {
 function makeDependencies(options: {
   objects: ProofUploadStorageObject[];
   firestoreAttachments?: Record<string, Record<string, unknown>>;
+  quotaGuard?: ProofUploadReconciliationDependencies["quotaGuard"];
 }) {
   const deletedPaths: string[] = [];
   const deleteGenerations: Array<string | undefined> = [];
@@ -75,6 +77,7 @@ function makeDependencies(options: {
       deleteGenerations.push(generation);
       return true;
     },
+    ...(options.quotaGuard ? { quotaGuard: options.quotaGuard } : {}),
     now: () => now
   };
 
@@ -133,6 +136,63 @@ describe("handleProofUploadReconciliationRequest", () => {
         }
       ]
     });
+    expect(deletedPaths).toEqual([]);
+  });
+
+  it("records quota before scanning Storage objects", async () => {
+    const { guard, charges } = makeQuotaGuard({ limitUnits: 30 });
+    const object = storageObject("attachment_123");
+    const { dependencies, requestedAttachmentIDs } = makeDependencies({
+      objects: [object],
+      firestoreAttachments: {
+        attachment_123: firestoreAttachment("attachment_123")
+      },
+      quotaGuard: guard
+    });
+
+    const response = await authed({
+      attachmentIDs: ["attachment_123"],
+      maxAttachments: 10
+    }, dependencies);
+
+    expect(response).toMatchObject({
+      ok: true,
+      scannedCount: 1
+    });
+    expect(requestedAttachmentIDs).toEqual([["attachment_123"]]);
+    expect(charges).toEqual([{
+      userID: "user_123",
+      callable: "reconcileProofUploads",
+      category: "proofUploadRepair",
+      units: 1,
+      occurredAt: now,
+      metadata: {
+        mode: "reportOnly",
+        maxAttachments: 10,
+        hasAttachmentFilter: true
+      }
+    }]);
+  });
+
+  it("does not list or delete Storage objects when reconciliation quota is exhausted", async () => {
+    const { guard, charges } = makeQuotaGuard({ exhausted: true, limitUnits: 30 });
+    const { dependencies, requestedAttachmentIDs, deletedPaths } = makeDependencies({
+      objects: [storageObject("orphan_123")],
+      quotaGuard: guard
+    });
+
+    const response = await authed({
+      mode: "deleteOrphans",
+      confirmDeletion: true,
+      maxAttachments: 10
+    }, dependencies);
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "resource-exhausted"
+    });
+    expect(charges).toHaveLength(1);
+    expect(requestedAttachmentIDs).toEqual([]);
     expect(deletedPaths).toEqual([]);
   });
 

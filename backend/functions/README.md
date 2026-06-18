@@ -10,6 +10,8 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 - Callable export: `reconcileProofUploads`
 - Callable export: `promoteProofUploadReceipt`
 - Callable export: `acknowledgeBackendEvents`
+- Callable quota: per-user daily Firestore-backed units for all authenticated
+  callables
 - Runtime: Node.js 22
 - Firebase Admin: pinned to `13.10.0` to satisfy
   `firebase-functions@7.2.5` peer dependencies
@@ -52,6 +54,31 @@ The callable:
 
 Firestore rules now allow clients to create only `pendingUpload` proof
 attachment metadata. Uploaded receipts are server-owned.
+
+## Callable Quota / Budget Guard
+
+All authenticated callables use `callableQuotaGuard.ts` before expensive or
+server-writing side effects. The guard records one Admin Firestore transaction
+per request under `_serverUsage/{hashedUid}/days/{yyyy-MM-dd}` and writes a
+charge receipt under that day document. Every callable invocation consumes quota
+units; request IDs and idempotency keys are audit hints only, not free replay
+tokens.
+
+Current beta daily unit limits:
+
+- `runOpenLARPWorkflow`: 60 units
+- `promoteProofUploadReceipt`: 150 units
+- `reconcileProofUploads`: 30 units
+- `acknowledgeBackendEvents`: 500 units
+
+Quota exhaustion returns Firebase callable error code `resource-exhausted` with
+safe details: callable name, user-daily scope, limit units, used units,
+requested units, and reset time. The response does not include UID, email,
+proof text, proof paths, provider metadata, prompts, or audit keys.
+
+This is a beta request-unit guard. Live Genkit/Gemini still needs provider token
+accounting, App Check enforcement, observability, and alerting before broad
+traffic.
 
 ## Backend Event Acknowledgement
 
@@ -113,6 +140,6 @@ This package is wired into Firebase deployment config for deterministic callable
 workflows with live AI disabled.
 
 Before live AI is enabled, configure backend secrets outside the repository,
-review prompts and safety evaluations, set rate limits, budget monitoring, and
-observability, and run a fresh audit for both `backend/functions` and
-`backend/ai`.
+review prompts and safety evaluations, add provider token accounting, App Check,
+budget monitoring, and observability, and run a fresh audit for both
+`backend/functions` and `backend/ai`.

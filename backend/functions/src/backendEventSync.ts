@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { type CallableQuotaGuard } from "./callableQuotaGuard.js";
 import { functionError, type OpenLARPFunctionError } from "./errors.js";
 
 export type OpenLARPBackendEventSyncAuth = {
@@ -95,6 +97,7 @@ export type BackendEventSyncDependencies = {
     idempotencyKey: string,
     document: Record<string, unknown>
   ) => Promise<BackendEventDocumentAcknowledgement>;
+  quotaGuard?: CallableQuotaGuard;
   now?: () => Date;
 };
 
@@ -188,6 +191,24 @@ export async function handleBackendEventSyncRequest(
   }
 
   const completedAtDate = dependencies.now?.() ?? new Date();
+  const quotaDecision = await dependencies.quotaGuard?.checkAndRecord({
+    userID,
+    callable: "acknowledgeBackendEvents",
+    category: "backendEventSync",
+    units: parsed.value.events.length,
+    auditKey: auditKeyForBackendEventBatch(parsed.value.events
+      .map((event) => `${event.id}:${event.idempotencyKey}`)
+      .sort()
+      .join("|")),
+    occurredAt: completedAtDate,
+    metadata: {
+      eventCount: parsed.value.events.length
+    }
+  });
+  if (quotaDecision && !quotaDecision.ok) {
+    return quotaDecision.error;
+  }
+
   const completedAt = completedAtDate.toISOString();
   const receipts: BackendEventSyncReceipt[] = [];
   for (const event of parsed.value.events) {
@@ -219,6 +240,10 @@ export async function handleBackendEventSyncRequest(
     receipts,
     externalActionTaken: false
   };
+}
+
+function auditKeyForBackendEventBatch(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseBackendEventSyncRequest(
@@ -489,7 +514,9 @@ function backendEventDocument(
   return document;
 }
 
-function adminBackendEventSyncDependencies(): BackendEventSyncDependencies {
+export function adminBackendEventSyncDependencies(
+  quotaGuard?: CallableQuotaGuard
+): BackendEventSyncDependencies {
   return {
     async acknowledgeBackendEventDocument(userID, eventID, idempotencyKey, document) {
       const firestore = getFirestore();
@@ -530,7 +557,8 @@ function adminBackendEventSyncDependencies(): BackendEventSyncDependencies {
         }
         return { ok: true, acceptedAt };
       });
-    }
+    },
+    ...(quotaGuard ? { quotaGuard } : {})
   };
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { makeQuotaGuard } from "./quotaTestHelpers.js";
 import { handleOpenLARPWorkflowRequest, type OpenLARPWorkflowCallableResponse } from "../src/workflowHandler.js";
 
 const privacy = {
@@ -152,6 +153,50 @@ describe("handleOpenLARPWorkflowRequest", () => {
       ok: false,
       code: "invalid-argument"
     });
+  });
+
+  it("records per-user callable quota before dispatching safe workflows", async () => {
+    const { guard, charges } = makeQuotaGuard();
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      quotaGuard: guard,
+      now: () => new Date("2026-06-18T12:00:00.000Z")
+    });
+
+    expectSuccess(response, "cookedDiagnostic");
+    expect(charges).toEqual([{
+      userID: "user_123",
+      callable: "runOpenLARPWorkflow",
+      category: "aiWorkflow",
+      units: 1,
+      auditKey: "11111111-1111-4111-8111-111111111111",
+      occurredAt: new Date("2026-06-18T12:00:00.000Z"),
+      metadata: {
+        workflowKind: "cookedDiagnostic",
+        providerRoute: "firebaseCallableGenkit"
+      }
+    }]);
+  });
+
+  it("returns resource-exhausted before workflow dispatch when quota is exhausted", async () => {
+    const { guard, charges } = makeQuotaGuard({ exhausted: true });
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", {})
+    }, {
+      quotaGuard: guard,
+      now: () => new Date("2026-06-18T12:00:00.000Z")
+    });
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "resource-exhausted"
+    });
+    expect(charges).toHaveLength(1);
   });
 
   it("enforces OpenLARP safety guardrails before dispatch", async () => {

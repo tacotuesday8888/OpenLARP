@@ -1,10 +1,17 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
-import { handleBackendEventSyncRequest } from "./backendEventSync.js";
+import { adminBackendEventSyncDependencies, handleBackendEventSyncRequest } from "./backendEventSync.js";
+import { adminCallableQuotaGuard } from "./callableQuotaGuard.js";
 import { toHttpsError } from "./errors.js";
-import { handleProofUploadPromotionRequest } from "./proofUploadPromotion.js";
-import { handleProofUploadReconciliationRequest } from "./proofUploadReconciliation.js";
+import {
+  adminProofUploadPromotionDependencies,
+  handleProofUploadPromotionRequest
+} from "./proofUploadPromotion.js";
+import {
+  adminProofUploadReconciliationDependencies,
+  handleProofUploadReconciliationRequest
+} from "./proofUploadReconciliation.js";
 import { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
 
 if (getApps().length === 0) {
@@ -16,6 +23,8 @@ setGlobalOptions({
   maxInstances: 10
 });
 
+const callableQuotaGuard = adminCallableQuotaGuard();
+
 export const runOpenLARPWorkflow = onCall(
   {
     cors: true,
@@ -26,6 +35,8 @@ export const runOpenLARPWorkflow = onCall(
     const response = await handleOpenLARPWorkflowRequest({
       auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : null,
       data: request.data
+    }, {
+      quotaGuard: callableQuotaGuard
     });
 
     if (!response.ok) {
@@ -46,7 +57,7 @@ export const reconcileProofUploads = onCall(
     const response = await handleProofUploadReconciliationRequest({
       auth: request.auth ? { uid: request.auth.uid } : null,
       data: request.data
-    });
+    }, adminProofUploadReconciliationDependencies(callableQuotaGuard));
 
     if (!response.ok) {
       throw toHttpsError(response);
@@ -66,7 +77,7 @@ export const promoteProofUploadReceipt = onCall(
     const response = await handleProofUploadPromotionRequest({
       auth: request.auth ? { uid: request.auth.uid } : null,
       data: request.data
-    });
+    }, adminProofUploadPromotionDependencies(callableQuotaGuard));
 
     if (!response.ok) {
       throw toHttpsError(response);
@@ -86,7 +97,7 @@ export const acknowledgeBackendEvents = onCall(
     const response = await handleBackendEventSyncRequest({
       auth: request.auth ? { uid: request.auth.uid } : null,
       data: request.data
-    });
+    }, adminBackendEventSyncDependencies(callableQuotaGuard));
 
     if (!response.ok) {
       throw toHttpsError(response);
@@ -97,6 +108,11 @@ export const acknowledgeBackendEvents = onCall(
 );
 
 export { handleBackendEventSyncRequest } from "./backendEventSync.js";
+export {
+  adminCallableQuotaGuard,
+  callableQuotaDayPath,
+  createFirestoreCallableQuotaGuard
+} from "./callableQuotaGuard.js";
 export { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
 export { handleProofUploadPromotionRequest } from "./proofUploadPromotion.js";
 export { handleProofUploadReconciliationRequest } from "./proofUploadReconciliation.js";
