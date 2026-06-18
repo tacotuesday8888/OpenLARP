@@ -78,6 +78,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Security rules validate through Firebase MCP.
 - Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22 and `runOpenLARPWorkflow` as the callable AI workflow boundary.
+- `reconcileProofUploads` exists as an authenticated callable repair/report boundary for rare orphaned proof uploads. It defaults to report-only and deletes only older owner-scoped Storage objects whose custom metadata matches the signed-in user and whose Firestore proof attachment document is missing.
 
 ## Next Backend Steps
 
@@ -85,10 +86,9 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 2. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
 3. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
 4. Test live Google sign-in, Firestore career graph sync, and Storage proof attachment upload on a simulator or device with the ignored local Firebase plist.
-5. Add a backend reconciliation job or callable repair flow for rare orphaned Storage objects if upload succeeds but a later upload or Firestore batch write fails.
-6. Deploy Cloud Functions only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
-7. Keep provider model IDs and API keys only on the backend.
-8. Add App Check enforcement after local device and TestFlight auth flows are verified.
+5. Deploy Cloud Functions only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
+6. Keep provider model IDs and API keys only on the backend.
+7. Add App Check enforcement after local device and TestFlight auth flows are verified.
 
 ## Local Commands
 

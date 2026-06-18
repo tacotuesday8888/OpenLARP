@@ -16,6 +16,7 @@ This document tracks the practical path from the current local product foundatio
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
 - Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled.
+- Authenticated proof upload reconciliation callable exists for report-only scans and explicit safe deletion of orphaned Storage proof uploads.
 - Google Sign-In auth service boundary exists for restore, sign-in, sign-out, missing-config states, and future URL handling.
 - Firebase Storage proof attachment upload adapter exists and writes owner-scoped upload receipts before Firestore metadata sync.
 - Firebase security rules tests exist for Firestore and Storage owner boundaries, upload metadata, proof attachment receipt shape, and nested local-path leak prevention.
