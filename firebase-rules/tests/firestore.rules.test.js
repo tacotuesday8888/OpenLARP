@@ -128,18 +128,6 @@ describe("Firestore rules", () => {
       kind: "proof",
       text: "Mapped real postings to shipped SwiftUI work.",
       link: "https://example.com/proof",
-      attachments: [{
-        metadata: safeMetadata("alice", "attachment1", timestamp),
-        proofID: "proof1",
-        fileName: "proof.png",
-        originalFileName: "proof.png",
-        contentType: "image/png",
-        byteCount: 32000,
-        createdAt: timestamp,
-        storagePath: "users/alice/proofAttachments/attachment1",
-        collectionPath: "users/alice/proofAttachments",
-        documentPath: "users/alice/proofAttachments/attachment1"
-      }],
       submittedAt: timestamp,
       collectionPath: "users/alice/proofRecords",
       documentPath: "users/alice/proofRecords/proof1"
@@ -154,6 +142,8 @@ describe("Firestore rules", () => {
       byteCount: 32000,
       createdAt: timestamp,
       storagePath: "users/alice/proofAttachments/attachment1",
+      uploadStatus: "uploaded",
+      uploadReceipt: safeUploadedReceipt("alice", "proof1", "attachment1", "image/png", 32000, timestamp),
       collectionPath: "users/alice/proofAttachments",
       documentPath: "users/alice/proofAttachments/attachment1"
     }));
@@ -200,7 +190,6 @@ describe("Firestore rules", () => {
       kind: "proof",
       text: "Mapped real postings to shipped SwiftUI work.",
       link: "https://example.com/proof",
-      attachments: [],
       submittedAt: timestamp
     }));
 
@@ -208,6 +197,156 @@ describe("Firestore rules", () => {
     await assertFails(updateDoc(proofRef, { externalActionTaken: true }));
     await assertFails(updateDoc(proofRef, { syncStatus: "pending" }));
     await assertFails(deleteDoc(proofRef));
+  });
+
+  it("rejects proof records that embed attachment documents or local file paths", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofRecords/proof-with-nested-attachment"), {
+      metadata: safeMetadata("alice", "proof-with-nested-attachment", timestamp),
+      questID: "quest1",
+      questTitle: "Map role requirements",
+      kind: "proof",
+      text: "Mapped real postings to shipped SwiftUI work.",
+      link: "https://example.com/proof",
+      attachments: [{
+        metadata: safeMetadata("alice", "attachment1", timestamp),
+        proofID: "proof-with-nested-attachment",
+        fileName: "proof.png",
+        originalFileName: "proof.png",
+        contentType: "image/png",
+        byteCount: 32000,
+        createdAt: timestamp,
+        storagePath: "users/alice/proofAttachments/attachment1",
+        uploadStatus: "uploaded",
+        uploadReceipt: safeUploadedReceipt("alice", "proof-with-nested-attachment", "attachment1", "image/png", 32000, timestamp),
+        collectionPath: "users/alice/proofAttachments",
+        documentPath: "users/alice/proofAttachments/attachment1",
+        localRelativePath: "ProofAttachments/private.png"
+      }],
+      submittedAt: timestamp,
+      collectionPath: "users/alice/proofRecords",
+      documentPath: "users/alice/proofRecords/proof-with-nested-attachment"
+    }));
+  });
+
+  it("requires proof attachment metadata to match the account-owned storage receipt", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+    const validAttachment = {
+      metadata: safeMetadata("alice", "attachment1", timestamp),
+      proofID: "proof1",
+      fileName: "proof.png",
+      originalFileName: "proof.png",
+      contentType: "image/png",
+      byteCount: 32000,
+      createdAt: timestamp,
+      storagePath: "users/alice/proofAttachments/attachment1",
+      uploadStatus: "uploaded",
+      uploadReceipt: safeUploadedReceipt("alice", "proof1", "attachment1", "image/png", 32000, timestamp),
+      collectionPath: "users/alice/proofAttachments",
+      documentPath: "users/alice/proofAttachments/attachment1"
+    };
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/proofAttachments/attachment1"), validAttachment));
+
+    const pendingAttachment = {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "pending1", timestamp),
+      storagePath: "users/alice/proofAttachments/pending1",
+      uploadStatus: "pendingUpload",
+      collectionPath: "users/alice/proofAttachments",
+      documentPath: "users/alice/proofAttachments/pending1"
+    };
+    delete pendingAttachment.uploadReceipt;
+    await assertSucceeds(setDoc(doc(alice, "users/alice/proofAttachments/pending1"), pendingAttachment));
+
+    const uploadedWithoutReceipt = {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "no-receipt", timestamp),
+      storagePath: "users/alice/proofAttachments/no-receipt",
+      documentPath: "users/alice/proofAttachments/no-receipt"
+    };
+    delete uploadedWithoutReceipt.uploadReceipt;
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/no-receipt"), uploadedWithoutReceipt));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment2"), {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "attachment2", timestamp),
+      storagePath: "users/alice/proofAttachments/attachment1",
+      documentPath: "users/alice/proofAttachments/attachment2"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment3"), {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "attachment3", timestamp),
+      storagePath: "users/bob/proofAttachments/attachment3",
+      uploadReceipt: safeUploadedReceipt("alice", "proof1", "attachment3", "image/png", 32000, timestamp),
+      documentPath: "users/alice/proofAttachments/attachment3"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment4"), {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "attachment4", timestamp),
+      storagePath: "users/alice/proofAttachments/attachment4",
+      uploadReceipt: {
+        ...safeUploadedReceipt("alice", "proof1", "attachment4", "image/png", 32000, timestamp),
+        status: "failed"
+      },
+      documentPath: "users/alice/proofAttachments/attachment4"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment6"), {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "attachment6", timestamp),
+      proofID: "proof1",
+      storagePath: "users/alice/proofAttachments/attachment6",
+      uploadReceipt: {
+        ...safeUploadedReceipt("alice", "other-proof", "attachment6", "image/png", 32000, timestamp)
+      },
+      documentPath: "users/alice/proofAttachments/attachment6"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment7"), {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "attachment7", timestamp),
+      storagePath: "users/alice/proofAttachments/attachment7",
+      uploadReceipt: {
+        ...safeUploadedReceipt("alice", "proof1", "attachment7", "application/pdf", 32000, timestamp)
+      },
+      documentPath: "users/alice/proofAttachments/attachment7"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment8"), {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "attachment8", timestamp),
+      storagePath: "users/alice/proofAttachments/attachment8",
+      uploadReceipt: {
+        ...safeUploadedReceipt("alice", "proof1", "attachment8", "image/png", 12, timestamp)
+      },
+      documentPath: "users/alice/proofAttachments/attachment8"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment9"), {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "attachment9", timestamp),
+      storagePath: "users/alice/proofAttachments/attachment9",
+      uploadReceipt: {
+        ...safeUploadedReceipt("alice", "proof1", "attachment9", "image/png", 32000, timestamp),
+        idempotencyKey: "wrong-key"
+      },
+      documentPath: "users/alice/proofAttachments/attachment9"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment5"), {
+      ...validAttachment,
+      metadata: safeMetadata("alice", "attachment5", timestamp),
+      storagePath: "users/alice/proofAttachments/attachment5",
+      uploadReceipt: safeUploadedReceipt("alice", "proof1", "attachment5", "image/png", 32000, timestamp),
+      documentPath: "users/alice/proofAttachments/attachment5",
+      localRelativePath: "ProofAttachments/proof.png"
+    }));
   });
 
   it("allows Firebase backend event document shape and blocks spoofed backend events", async () => {
@@ -283,5 +422,23 @@ function safeMetadata(ownerUserID, localID, timestamp) {
     localID,
     createdAt: timestamp,
     updatedAt: timestamp
+  };
+}
+
+function safeUploadedReceipt(ownerUserID, proofID, attachmentID, contentType, byteCount, timestamp) {
+  return {
+    schemaVersion: 1,
+    proofID,
+    attachmentID,
+    storagePath: `users/${ownerUserID}/proofAttachments/${attachmentID}`,
+    contentType,
+    byteCount,
+    status: "uploaded",
+    uploadedAt: timestamp,
+    storageBucket: "openlarp-test.appspot.com",
+    storageGeneration: 101,
+    metadataGeneration: 2,
+    md5Hash: "mock-md5",
+    idempotencyKey: `${ownerUserID}-${attachmentID}`
   };
 }

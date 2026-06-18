@@ -260,6 +260,19 @@ struct CloudProofRecordDocument: Codable, Equatable {
     var collectionPath: String
     var documentPath: String
 
+    private enum CodingKeys: String, CodingKey {
+        case metadata
+        case questID
+        case questTitle
+        case kind
+        case text
+        case link
+        case submittedAt
+        case quality
+        case collectionPath
+        case documentPath
+    }
+
     init(proof: ProofRecord, ownerUserID: String) {
         metadata = CloudDocumentMetadata(
             ownerUserID: ownerUserID,
@@ -280,6 +293,21 @@ struct CloudProofRecordDocument: Codable, Equatable {
         collectionPath = "users/\(ownerUserID)/proofRecords"
         documentPath = "\(collectionPath)/\(proof.id.uuidString)"
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        metadata = try container.decode(CloudDocumentMetadata.self, forKey: .metadata)
+        questID = try container.decode(String.self, forKey: .questID)
+        questTitle = try container.decode(String.self, forKey: .questTitle)
+        kind = try container.decode(ProofKind.self, forKey: .kind)
+        text = try container.decode(String.self, forKey: .text)
+        link = try container.decode(String.self, forKey: .link)
+        attachments = []
+        submittedAt = try container.decode(Date.self, forKey: .submittedAt)
+        quality = try container.decodeIfPresent(QualityCheckResult.self, forKey: .quality)
+        collectionPath = try container.decode(String.self, forKey: .collectionPath)
+        documentPath = try container.decode(String.self, forKey: .documentPath)
+    }
 }
 
 struct CloudProofAttachmentDocument: Codable, Equatable {
@@ -291,8 +319,26 @@ struct CloudProofAttachmentDocument: Codable, Equatable {
     var byteCount: Int
     var createdAt: Date
     var storagePath: String
+    var uploadStatus: CareerGraphSyncUploadStatus
+    var uploadReceipt: CareerGraphSyncUploadReceipt?
     var collectionPath: String
     var documentPath: String
+    var localRelativePath: String
+
+    private enum CodingKeys: String, CodingKey {
+        case metadata
+        case proofID
+        case fileName
+        case originalFileName
+        case contentType
+        case byteCount
+        case createdAt
+        case storagePath
+        case uploadStatus
+        case uploadReceipt
+        case collectionPath
+        case documentPath
+    }
 
     init(attachment: ProofAttachment, ownerUserID: String, proofID: UUID) {
         metadata = CloudDocumentMetadata(
@@ -308,8 +354,35 @@ struct CloudProofAttachmentDocument: Codable, Equatable {
         byteCount = attachment.byteCount
         createdAt = attachment.createdAt
         storagePath = "users/\(ownerUserID)/proofAttachments/\(attachment.id.uuidString)"
+        uploadStatus = .pendingUpload
+        uploadReceipt = nil
         collectionPath = "users/\(ownerUserID)/proofAttachments"
         documentPath = "\(collectionPath)/\(attachment.id.uuidString)"
+        localRelativePath = attachment.localRelativePath
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        metadata = try container.decode(CloudDocumentMetadata.self, forKey: .metadata)
+        proofID = try container.decode(String.self, forKey: .proofID)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        originalFileName = try container.decodeIfPresent(String.self, forKey: .originalFileName) ?? ""
+        contentType = try container.decode(String.self, forKey: .contentType)
+        byteCount = try container.decode(Int.self, forKey: .byteCount)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        storagePath = try container.decode(String.self, forKey: .storagePath)
+        uploadStatus = try container.decodeIfPresent(CareerGraphSyncUploadStatus.self, forKey: .uploadStatus) ?? .pendingUpload
+        uploadReceipt = try container.decodeIfPresent(CareerGraphSyncUploadReceipt.self, forKey: .uploadReceipt)
+        collectionPath = try container.decode(String.self, forKey: .collectionPath)
+        documentPath = try container.decode(String.self, forKey: .documentPath)
+        localRelativePath = ""
+    }
+
+    func uploaded(with receipt: CareerGraphSyncUploadReceipt) -> CloudProofAttachmentDocument {
+        var document = self
+        document.uploadStatus = receipt.status
+        document.uploadReceipt = receipt
+        return document
     }
 }
 
@@ -387,6 +460,28 @@ struct CloudReadinessSnapshotDocument: Codable, Equatable {
         relatedOutcomeID = snapshot.relatedOutcomeID?.uuidString
         collectionPath = "users/\(ownerUserID)/readinessSnapshots"
         documentPath = "\(collectionPath)/\(snapshot.id.uuidString)"
+    }
+}
+
+extension CloudCareerGraphSnapshot {
+    func applyingUploadReceipts(
+        _ receipts: [CareerGraphSyncUploadReceipt]
+    ) -> CloudCareerGraphSnapshot {
+        guard !receipts.isEmpty else { return self }
+
+        let receiptsByAttachmentID = Dictionary(uniqueKeysWithValues: receipts.map { ($0.attachmentID, $0) })
+        var snapshot = self
+        snapshot.proofRecords = snapshot.proofRecords.map { proof in
+            var proof = proof
+            proof.attachments = proof.attachments.map { attachment in
+                guard let receipt = receiptsByAttachmentID[attachment.metadata.localID] else {
+                    return attachment
+                }
+                return attachment.uploaded(with: receipt)
+            }
+            return proof
+        }
+        return snapshot
     }
 }
 

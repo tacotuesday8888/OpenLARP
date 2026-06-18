@@ -28,7 +28,13 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
             includePrivateEvidence: true
         )
         let writer = CapturingCareerGraphDocumentWriter()
-        let service = FirebaseFirestoreCareerGraphSyncService(writer: writer)
+        let dataProvider = StaticProofAttachmentDataProvider()
+        let uploader = CapturingProofAttachmentUploader()
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: dataProvider,
+            proofAttachmentUploader: uploader
+        )
 
         let result = try await service.prepareSync(request)
 
@@ -57,6 +63,17 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
         XCTAssertEqual(result.uploadIntents.map(\.storagePath), [
             "users/firebase_uid_graph/proofAttachments/E1E1E1E1-E1E1-E1E1-E1E1-E1E1E1E1E1E1"
         ])
+        XCTAssertEqual(uploader.requests.map(\.uploadIntent.storagePath), result.uploadIntents.map(\.storagePath))
+        XCTAssertEqual(uploader.requests.first?.data.count, 32_000)
+        XCTAssertEqual(result.uploadReceipts.map(\.status), [.uploaded])
+        XCTAssertEqual(result.uploadReceipts.first?.storageBucket, "openlarp-test.appspot.com")
+        let proofRecordWrite = try XCTUnwrap(writer.writes.first { $0.documentType == .proofRecord })
+        XCTAssertFalse(proofRecordWrite.merge)
+        let attachmentWrite = try XCTUnwrap(writer.writes.first { $0.documentType == .proofAttachment })
+        XCTAssertTrue(attachmentWrite.merge)
+        XCTAssertEqual(attachmentWrite.data["uploadStatus"] as? String, CareerGraphSyncUploadStatus.uploaded.rawValue)
+        XCTAssertNotNil(attachmentWrite.data["uploadReceipt"])
+        XCTAssertNil(attachmentWrite.data["localRelativePath"])
         XCTAssertFalse(String(describing: writer.writes).contains("private@example.com"))
         XCTAssertFalse(String(describing: writer.writes).contains("private-account"))
     }
@@ -97,7 +114,11 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
             includePrivateEvidence: false
         )
         let writer = CapturingCareerGraphDocumentWriter()
-        let service = FirebaseFirestoreCareerGraphSyncService(writer: writer)
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: StaticProofAttachmentDataProvider(),
+            proofAttachmentUploader: CapturingProofAttachmentUploader()
+        )
 
         let result = try await service.prepareSync(request)
 
@@ -105,6 +126,7 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
         XCTAssertFalse(writer.writes.map(\.documentType).contains(.proofRecord))
         XCTAssertFalse(writer.writes.map(\.documentType).contains(.proofAttachment))
         XCTAssertTrue(result.uploadIntents.isEmpty)
+        XCTAssertTrue(result.uploadReceipts.isEmpty)
     }
 
     func testDirectFirebaseCareerGraphSyncRequiresAuthentication() async {
@@ -125,6 +147,153 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
             XCTAssertEqual(error, .authenticationRequired)
         } catch {
             XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testFirebaseCareerGraphSyncDoesNotWriteMetadataWhenAttachmentBytesAreMissing() async {
+        let now = Date(timeIntervalSince1970: 42_000)
+        let state = careerGraphStateWithProof(now: now)
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_missing_file"),
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let writer = CapturingCareerGraphDocumentWriter()
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: ThrowingProofAttachmentDataProvider(error: .missingLocalAttachment),
+            proofAttachmentUploader: FailingIfCalledProofAttachmentUploader()
+        )
+
+        do {
+            _ = try await service.prepareSync(request)
+            XCTFail("Missing local attachment bytes should stop Firebase sync before metadata writes.")
+        } catch let error as FirebaseBackendServiceError {
+            XCTAssertEqual(error, .attachmentBytesUnavailable)
+            XCTAssertTrue(writer.writes.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testFirebaseCareerGraphSyncDoesNotWriteMetadataWhenAttachmentPathIsRejected() async {
+        let now = Date(timeIntervalSince1970: 42_250)
+        let state = careerGraphStateWithProof(now: now)
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_bad_path"),
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let writer = CapturingCareerGraphDocumentWriter()
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: ThrowingProofAttachmentDataProvider(error: .unsafeLocalPath),
+            proofAttachmentUploader: FailingIfCalledProofAttachmentUploader()
+        )
+
+        do {
+            _ = try await service.prepareSync(request)
+            XCTFail("Unsafe local attachment paths should stop Firebase sync before upload or metadata writes.")
+        } catch let error as FirebaseBackendServiceError {
+            XCTAssertEqual(error, .attachmentPathRejected)
+            XCTAssertTrue(writer.writes.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testFirebaseCareerGraphSyncDoesNotWriteMetadataWhenUploadReceiptIsFailed() async {
+        let now = Date(timeIntervalSince1970: 42_500)
+        let state = careerGraphStateWithProof(now: now)
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_failed_receipt"),
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let writer = CapturingCareerGraphDocumentWriter()
+        let uploader = InvalidReceiptProofAttachmentUploader(status: .failed)
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: StaticProofAttachmentDataProvider(),
+            proofAttachmentUploader: uploader
+        )
+
+        do {
+            _ = try await service.prepareSync(request)
+            XCTFail("A failed upload receipt should stop Firestore metadata writes.")
+        } catch let error as FirebaseBackendServiceError {
+            XCTAssertEqual(error, .invalidUploadReceipt)
+            XCTAssertTrue(writer.writes.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testFirebaseCareerGraphSyncDoesNotWriteMetadataWhenUploadReceiptMismatchesIntent() async {
+        let now = Date(timeIntervalSince1970: 42_750)
+        let state = careerGraphStateWithProof(now: now)
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_mismatch"),
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let writer = CapturingCareerGraphDocumentWriter()
+        let uploader = InvalidReceiptProofAttachmentUploader(storagePathOverride: "users/firebase_uid_mismatch/proofAttachments/wrong")
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: StaticProofAttachmentDataProvider(),
+            proofAttachmentUploader: uploader
+        )
+
+        do {
+            _ = try await service.prepareSync(request)
+            XCTFail("A mismatched upload receipt should stop Firestore metadata writes.")
+        } catch let error as FirebaseBackendServiceError {
+            XCTAssertEqual(error, .invalidUploadReceipt)
+            XCTAssertTrue(writer.writes.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testFirebaseCareerGraphSyncRejectsEachMismatchedUploadReceiptField() async {
+        let now = Date(timeIntervalSince1970: 42_900)
+        let state = careerGraphStateWithProof(now: now)
+        let cases: [(String, InvalidReceiptProofAttachmentUploader)] = [
+            ("proof ID", InvalidReceiptProofAttachmentUploader(proofIDOverride: "wrong-proof")),
+            ("attachment ID", InvalidReceiptProofAttachmentUploader(attachmentIDOverride: "wrong-attachment")),
+            ("content type", InvalidReceiptProofAttachmentUploader(contentTypeOverride: "application/pdf")),
+            ("byte count", InvalidReceiptProofAttachmentUploader(byteCountOverride: 12)),
+            ("idempotency key", InvalidReceiptProofAttachmentUploader(idempotencyKeyOverride: "wrong-key"))
+        ]
+
+        for (label, uploader) in cases {
+            let request = CareerGraphSyncPreparationRequest(
+                state: state,
+                session: BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_mismatch_\(label.replacingOccurrences(of: " ", with: "_"))"),
+                requestedAt: now,
+                includePrivateEvidence: true
+            )
+            let writer = CapturingCareerGraphDocumentWriter()
+            let service = FirebaseFirestoreCareerGraphSyncService(
+                writer: writer,
+                attachmentDataProvider: StaticProofAttachmentDataProvider(),
+                proofAttachmentUploader: uploader
+            )
+
+            do {
+                _ = try await service.prepareSync(request)
+                XCTFail("A mismatched upload receipt \(label) should stop Firestore metadata writes.")
+            } catch let error as FirebaseBackendServiceError {
+                XCTAssertEqual(error, .invalidUploadReceipt)
+                XCTAssertTrue(writer.writes.isEmpty)
+            } catch {
+                XCTFail("Unexpected error for \(label): \(error)")
+            }
         }
     }
 
@@ -171,5 +340,80 @@ private final class CapturingCareerGraphDocumentWriter: FirebaseCareerGraphDocum
 
     func writeDocuments(_ documents: [FirebaseCareerGraphDocumentWrite]) async throws {
         writes.append(contentsOf: documents)
+    }
+}
+
+private struct StaticProofAttachmentDataProvider: CareerGraphProofAttachmentDataProviding {
+    func data(for uploadIntent: CareerGraphSyncUploadIntent) async throws -> Data {
+        Data(repeating: 7, count: uploadIntent.byteCount)
+    }
+}
+
+private struct ThrowingProofAttachmentDataProvider: CareerGraphProofAttachmentDataProviding {
+    var error: CareerGraphProofAttachmentDataError
+
+    func data(for uploadIntent: CareerGraphSyncUploadIntent) async throws -> Data {
+        throw error
+    }
+}
+
+private final class CapturingProofAttachmentUploader: CareerGraphProofAttachmentUploading, @unchecked Sendable {
+    private(set) var requests: [CareerGraphProofAttachmentUploadRequest] = []
+
+    func upload(_ request: CareerGraphProofAttachmentUploadRequest) async throws -> CareerGraphSyncUploadReceipt {
+        requests.append(request)
+        return CareerGraphSyncUploadReceipt(
+            intent: request.uploadIntent,
+            status: .uploaded,
+            uploadedAt: request.requestedAt,
+            storageBucket: "openlarp-test.appspot.com",
+            storageGeneration: 101,
+            metadataGeneration: 2,
+            md5Hash: "mock-md5"
+        )
+    }
+}
+
+private struct FailingIfCalledProofAttachmentUploader: CareerGraphProofAttachmentUploading {
+    func upload(_ request: CareerGraphProofAttachmentUploadRequest) async throws -> CareerGraphSyncUploadReceipt {
+        XCTFail("Proof attachment uploader should not be called when local bytes are missing.")
+        return CareerGraphSyncUploadReceipt(intent: request.uploadIntent, status: .failed)
+    }
+}
+
+private struct InvalidReceiptProofAttachmentUploader: CareerGraphProofAttachmentUploading {
+    var status: CareerGraphSyncUploadStatus = .uploaded
+    var proofIDOverride: String?
+    var attachmentIDOverride: String?
+    var storagePathOverride: String?
+    var contentTypeOverride: String?
+    var byteCountOverride: Int?
+    var idempotencyKeyOverride: String?
+
+    func upload(_ request: CareerGraphProofAttachmentUploadRequest) async throws -> CareerGraphSyncUploadReceipt {
+        var receipt = CareerGraphSyncUploadReceipt(
+            intent: request.uploadIntent,
+            status: status,
+            uploadedAt: request.requestedAt
+        )
+        if let storagePathOverride {
+            receipt.storagePath = storagePathOverride
+        }
+        if let proofIDOverride {
+            receipt.proofID = proofIDOverride
+        }
+        if let attachmentIDOverride {
+            receipt.attachmentID = attachmentIDOverride
+        }
+        if let contentTypeOverride {
+            receipt.contentType = contentTypeOverride
+        }
+        if let byteCountOverride {
+            receipt.byteCount = byteCountOverride
+        }
+        if let idempotencyKeyOverride {
+            receipt.idempotencyKey = idempotencyKeyOverride
+        }
+        return receipt
     }
 }

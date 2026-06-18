@@ -12,12 +12,21 @@ import FirebaseAuth
 import FirebaseFirestore
 #endif
 
+#if canImport(FirebaseStorage)
+import FirebaseStorage
+#endif
+
 enum FirebaseBackendServiceError: Error, LocalizedError, Equatable {
     case sdkUnavailable
     case configurationMissing
     case authenticationRequired
     case unsupportedDocumentType
     case payloadEncodingFailed
+    case attachmentBytesUnavailable
+    case attachmentByteCountMismatch
+    case attachmentPathRejected
+    case storagePathMismatch
+    case invalidUploadReceipt
 
     var errorDescription: String? {
         switch self {
@@ -31,6 +40,16 @@ enum FirebaseBackendServiceError: Error, LocalizedError, Equatable {
             "The career graph document type is not supported by this Firebase adapter."
         case .payloadEncodingFailed:
             "The backend event payload could not be encoded for Firestore."
+        case .attachmentBytesUnavailable:
+            "The local proof attachment bytes are unavailable for upload."
+        case .attachmentByteCountMismatch:
+            "The local proof attachment byte count does not match the sync manifest."
+        case .attachmentPathRejected:
+            "The local proof attachment path is outside the private proof attachments directory."
+        case .storagePathMismatch:
+            "The proof attachment storage path does not match the signed-in Firebase user."
+        case .invalidUploadReceipt:
+            "The proof attachment upload receipt does not match the sync manifest."
         }
     }
 }
@@ -205,15 +224,18 @@ struct FirebaseCareerGraphDocumentWrite: Identifiable, @unchecked Sendable {
 
     var documentType: CareerGraphSyncDocumentType
     var documentPath: String
+    var merge: Bool
     var data: [String: Any]
 
     init<T: Encodable>(
         documentType: CareerGraphSyncDocumentType,
         documentPath: String,
-        document: T
+        document: T,
+        merge: Bool = true
     ) throws {
         self.documentType = documentType
         self.documentPath = documentPath
+        self.merge = merge
         data = try FirebaseFirestorePayload.dictionary(from: document)
     }
 }
@@ -233,7 +255,7 @@ struct FirebaseFirestoreCareerGraphDocumentWriter: FirebaseCareerGraphDocumentWr
             batch.setData(
                 document.data,
                 forDocument: db.document(document.documentPath),
-                merge: true
+                merge: document.merge
             )
         }
         try await batch.commit()
@@ -243,16 +265,75 @@ struct FirebaseFirestoreCareerGraphDocumentWriter: FirebaseCareerGraphDocumentWr
     }
 }
 
+struct FirebaseStorageProofAttachmentUploader: CareerGraphProofAttachmentUploading {
+    init() {}
+
+    func upload(_ request: CareerGraphProofAttachmentUploadRequest) async throws -> CareerGraphSyncUploadReceipt {
+        guard request.session.isAuthenticated else {
+            throw FirebaseBackendServiceError.authenticationRequired
+        }
+        guard request.data.count == request.uploadIntent.byteCount else {
+            throw FirebaseBackendServiceError.attachmentByteCountMismatch
+        }
+        guard request.uploadIntent.storagePath == expectedStoragePath(for: request) else {
+            throw FirebaseBackendServiceError.storagePathMismatch
+        }
+
+        #if canImport(FirebaseStorage) && canImport(FirebaseCore)
+        guard FirebaseApp.app() != nil else {
+            throw FirebaseBackendServiceError.configurationMissing
+        }
+
+        let metadata = StorageMetadata()
+        metadata.contentType = request.uploadIntent.contentType
+        metadata.customMetadata = [
+            "ownerUserID": request.session.ownerUserID,
+            "proofID": request.uploadIntent.proofID,
+            "attachmentID": request.uploadIntent.attachmentID,
+            "idempotencyKey": request.uploadIntent.idempotencyKey
+        ]
+
+        let uploadedMetadata = try await Storage
+            .storage()
+            .reference()
+            .child(request.uploadIntent.storagePath)
+            .putDataAsync(request.data, metadata: metadata)
+
+        return CareerGraphSyncUploadReceipt(
+            intent: request.uploadIntent,
+            status: .uploaded,
+            uploadedAt: uploadedMetadata.updated ?? request.requestedAt,
+            storageBucket: uploadedMetadata.bucket,
+            storageGeneration: uploadedMetadata.generation == 0 ? nil : uploadedMetadata.generation,
+            metadataGeneration: uploadedMetadata.metageneration == 0 ? nil : uploadedMetadata.metageneration,
+            md5Hash: uploadedMetadata.md5Hash
+        )
+        #else
+        throw FirebaseBackendServiceError.sdkUnavailable
+        #endif
+    }
+
+    private func expectedStoragePath(for request: CareerGraphProofAttachmentUploadRequest) -> String {
+        "users/\(request.session.ownerUserID)/proofAttachments/\(request.uploadIntent.attachmentID)"
+    }
+}
+
 struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
     private let planner: CareerGraphSyncPlanner
     private let writer: any FirebaseCareerGraphDocumentWriting
+    private let attachmentDataProvider: any CareerGraphProofAttachmentDataProviding
+    private let proofAttachmentUploader: any CareerGraphProofAttachmentUploading
 
     init(
         planner: CareerGraphSyncPlanner = CareerGraphSyncPlanner(),
-        writer: any FirebaseCareerGraphDocumentWriting = FirebaseFirestoreCareerGraphDocumentWriter()
+        writer: any FirebaseCareerGraphDocumentWriting = FirebaseFirestoreCareerGraphDocumentWriter(),
+        attachmentDataProvider: any CareerGraphProofAttachmentDataProviding = OpenLARPAttachmentStore.live,
+        proofAttachmentUploader: any CareerGraphProofAttachmentUploading = FirebaseStorageProofAttachmentUploader()
     ) {
         self.planner = planner
         self.writer = writer
+        self.attachmentDataProvider = attachmentDataProvider
+        self.proofAttachmentUploader = proofAttachmentUploader
     }
 
     func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
@@ -261,7 +342,12 @@ struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
         }
 
         let manifest = planner.plan(request)
-        let writes = try makeDocumentWrites(from: request.snapshot, manifest: manifest)
+        let uploadReceipts = try await uploadProofAttachments(
+            manifest.storageUploads,
+            request: request
+        )
+        let uploadedSnapshot = request.snapshot.applyingUploadReceipts(uploadReceipts)
+        let writes = try makeDocumentWrites(from: uploadedSnapshot, manifest: manifest)
         try await writer.writeDocuments(writes)
 
         return CareerGraphSyncResult(
@@ -271,8 +357,54 @@ struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
             requiresAuthenticationToSync: false,
             firestoreDocumentPaths: manifest.documentWrites.map(\.documentPath),
             uploadIntents: manifest.storageUploads,
+            uploadReceipts: uploadReceipts,
             syncManifest: manifest
         )
+    }
+
+    private func uploadProofAttachments(
+        _ uploadIntents: [CareerGraphSyncUploadIntent],
+        request: CareerGraphSyncPreparationRequest
+    ) async throws -> [CareerGraphSyncUploadReceipt] {
+        var receipts: [CareerGraphSyncUploadReceipt] = []
+        for uploadIntent in uploadIntents {
+            let data: Data
+            do {
+                data = try await attachmentDataProvider.data(for: uploadIntent)
+            } catch CareerGraphProofAttachmentDataError.missingLocalAttachment {
+                throw FirebaseBackendServiceError.attachmentBytesUnavailable
+            } catch CareerGraphProofAttachmentDataError.byteCountMismatch {
+                throw FirebaseBackendServiceError.attachmentByteCountMismatch
+            } catch CareerGraphProofAttachmentDataError.unsafeLocalPath {
+                throw FirebaseBackendServiceError.attachmentPathRejected
+            }
+
+            let uploadRequest = CareerGraphProofAttachmentUploadRequest(
+                requestedAt: request.requestedAt,
+                session: request.session,
+                uploadIntent: uploadIntent,
+                data: data
+            )
+            let receipt = try await proofAttachmentUploader.upload(uploadRequest)
+            guard isValidUploadedReceipt(receipt, for: uploadIntent) else {
+                throw FirebaseBackendServiceError.invalidUploadReceipt
+            }
+            receipts.append(receipt)
+        }
+        return receipts
+    }
+
+    private func isValidUploadedReceipt(
+        _ receipt: CareerGraphSyncUploadReceipt,
+        for uploadIntent: CareerGraphSyncUploadIntent
+    ) -> Bool {
+        receipt.status == .uploaded &&
+            receipt.proofID == uploadIntent.proofID &&
+            receipt.attachmentID == uploadIntent.attachmentID &&
+            receipt.storagePath == uploadIntent.storagePath &&
+            receipt.contentType == uploadIntent.contentType &&
+            receipt.byteCount == uploadIntent.byteCount &&
+            receipt.idempotencyKey == uploadIntent.idempotencyKey
     }
 
     private func makeDocumentWrites(
@@ -283,9 +415,16 @@ struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
             try FirebaseCareerGraphDocumentWrite(
                 documentType: write.documentType,
                 documentPath: write.documentPath,
-                document: document(for: write, in: snapshot)
+                document: document(for: write, in: snapshot),
+                merge: shouldMergeDocument(write)
             )
         }
+    }
+
+    private func shouldMergeDocument(_ write: CareerGraphSyncDocumentWrite) -> Bool {
+        // Replacing proof records removes legacy embedded attachment arrays that
+        // are now stored in the dedicated proofAttachments collection.
+        write.documentType != .proofRecord
     }
 
     private func document(
