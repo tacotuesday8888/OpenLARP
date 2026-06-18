@@ -75,9 +75,9 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 
 ## Current Setup Status
 
-- Firestore rules deploy successfully.
+- Firestore rules are deployed to `openlarp-dev-langqi`.
 - Storage rules are tracked locally, but Firebase CLI currently reports that Firebase Storage still needs product setup in the Firebase console before rules can be released.
-- The Firebase MCP environment has been authenticated locally, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
+- The Firebase CLI environment has been authenticated locally, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
 - Security rules validate through Firebase MCP.
 - Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22 and `runOpenLARPWorkflow` as the callable AI workflow boundary.
@@ -85,22 +85,49 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - `backend/functions/package-lock.json` is committed because Firebase deploys from that source directory, and the package pins Firebase Admin to the latest 13.x version compatible with `firebase-functions@7.2.5`.
 - The iOS app is wired to try `runOpenLARPWorkflow` through Firebase Functions first and preserve local V0 behavior through fallback when live Firebase is unavailable.
 - `reconcileProofUploads` exists as an authenticated callable repair/report boundary for rare orphaned proof uploads. It defaults to report-only and deletes only older owner-scoped Storage objects whose custom metadata matches the signed-in user and whose Firestore proof attachment document is missing.
+- `runOpenLARPWorkflow` and `reconcileProofUploads` are deployed as active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
+- The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
+- Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
+- A fresh Firebase iOS SDK config can be retrieved by CLI, but it does not yet include `CLIENT_ID` or `REVERSED_CLIENT_ID`. Live Google Sign-In needs the Google provider/OAuth client setup before simulator verification.
+
+## Live Readiness Check
+
+Run this from the repo root after Firebase login:
+
+```bash
+npm run firebase:live-readiness
+```
+
+The check verifies:
+
+- Firebase CLI version
+- default Firestore database shape
+- active deployed callable Functions
+- unauthenticated callable rejection from the live endpoint
+- CLI retrieval of the iOS Firebase config without printing secret-bearing plist values
+- Storage default bucket existence when `gcloud` is available
+- Functions Artifact Registry cleanup policies when `gcloud` is available
+
+Warnings for missing Google OAuth IDs or missing Storage bucket are expected until the remaining console setup is complete.
 
 ## Next Backend Steps
 
-1. Enable Firebase Auth providers in the Firebase console, starting with Sign in with Apple and Google Sign-In.
-2. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
-3. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
-4. Test live Google sign-in, Firestore career graph sync, Storage proof attachment upload, and Firebase callable AI fallback behavior on a simulator or device with the ignored local Firebase plist.
-5. Deploy deterministic Cloud Functions with live AI disabled only after `firebase.json` has a functions source entry and the Functions package audit has no high or critical issues. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
-6. Keep provider model IDs and API keys only on the backend.
-7. Add App Check enforcement after local device and TestFlight auth flows are verified.
+1. Enable Firebase Auth providers in the Firebase console, starting with Google Sign-In and then Sign in with Apple for App Store readiness.
+2. Refresh the ignored local iOS plist with `npx -y firebase-tools@15.21.0 apps:sdkconfig IOS 1:795318771575:ios:5315b3cc5b1bff81e30b72 --project openlarp-dev-langqi > OpenLARP/GoogleService-Info.plist`.
+3. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
+4. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
+5. Test live Google sign-in, Firestore career graph sync, Storage proof attachment upload, and authenticated Firebase callable AI fallback behavior on a simulator or device with the ignored local Firebase plist.
+6. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
+7. Keep provider model IDs and API keys only on the backend.
+8. Add App Check enforcement after local device and TestFlight auth flows are verified.
 
 ## Local Commands
 
 ```bash
 npx -y firebase-tools@15.21.0 deploy --only firestore:rules --project openlarp-dev-langqi
-npx -y firebase-tools@15.21.0 deploy --only storage:rules --project openlarp-dev-langqi
+npx -y firebase-tools@15.21.0 deploy --only storage --project openlarp-dev-langqi
+npx -y firebase-tools@15.21.0 deploy --only functions:openlarp-ai --project openlarp-dev-langqi
+npm run firebase:live-readiness
 npm run build:backend
 npx -y firebase-tools@15.21.0 emulators:start --project openlarp-rules-test --only auth,firestore,storage
 npm run test:rules:emulators

@@ -5,12 +5,32 @@ import { build } from "esbuild";
 import { describe, expect, it } from "vitest";
 
 const functionsRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = resolve(functionsRoot, "../..");
 
 function readText(path: string) {
   return readFileSync(resolve(functionsRoot, path), "utf8");
 }
 
 describe("Firebase Functions deploy runtime", () => {
+  it("keeps Firebase deployment config pointed at the deterministic callable package", () => {
+    const firebaseJson = JSON.parse(readFileSync(resolve(repoRoot, "firebase.json"), "utf8")) as {
+      functions?: {
+        source?: string;
+        runtime?: string;
+        codebase?: string;
+      };
+    };
+    const entrypoint = readText("src/index.ts");
+
+    expect(firebaseJson.functions).toMatchObject({
+      source: "backend/functions",
+      runtime: "nodejs22",
+      codebase: "openlarp-ai"
+    });
+    expect(entrypoint).toContain("export const runOpenLARPWorkflow = onCall");
+    expect(entrypoint).toContain("export const reconcileProofUploads = onCall");
+  });
+
   it("keeps the deployable Functions package free of Genkit runtime dependencies", () => {
     const packageJson = JSON.parse(readText("package.json")) as {
       dependencies?: Record<string, string>;
