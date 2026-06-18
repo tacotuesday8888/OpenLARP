@@ -67,7 +67,7 @@ npm run firebase:live-readiness
 npm run firebase:signed-in-smoke
 ```
 
-The Firebase rules emulator command requires Java. The signed-in smoke command performs live writes against the Firebase dev project, then cleans up its temporary smoke data; it requires Firebase/gcloud access and local credentials that can mint temporary Firebase custom tokens. Provider keys and Firebase private plist files are intentionally not committed.
+The Firebase rules emulator command requires Java. The signed-in smoke command performs live writes against the Firebase dev project, then cleans up its temporary smoke data; it requires Firebase/gcloud access and local credentials that can mint temporary Firebase custom tokens. After Firebase App Check enforcement is enabled, the live smoke path must also use registered App Check debug/device tokens. Provider keys, Firebase private plist files, and App Check debug tokens are intentionally not committed or printed into shared logs.
 
 ## Repository Hygiene
 

@@ -20,7 +20,7 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `FirebaseCallableBackendEventSyncService` is compile-gated and calls `acknowledgeBackendEvents` to promote local backend event outbox records into server-owned `users/{uid}/backendEvents/{eventId}` history.
 - `FirebaseReadyBackendEventSyncService` routes authenticated sessions to the callable event acknowledgement boundary and keeps events pending when Firebase Auth needs sign-in or Firebase runtime config is missing.
 - `FirebaseGoogleSignInAuthenticationService` provides a Google Sign-In boundary for restore, sign-in, sign-out, and URL handling without faking success when setup is incomplete.
-- `OpenLARPFirebaseBootstrap.configureIfAvailable()` configures Firebase only when the SDK and plist are both available.
+- `OpenLARPFirebaseBootstrap.configureIfAvailable()` configures Firebase only when the SDK and plist are both available, and installs the Firebase App Check provider factory before `FirebaseApp.configure()`.
 - `OpenLARPStore` now owns authentication state through `OpenLARPAuthenticationServicing`, restores previous sessions on app launch/foreground, forwards auth callback URLs, updates local profile account fields, and uses the same authenticated session source for backend events and career graph previews.
 - `ProfileView` exposes account status, Google sign-in, restore, and sign-out controls while preserving local/mock mode.
 - `FirebaseReadyCareerGraphSyncService` routes signed-in users to a Firestore-backed career graph metadata sync and keeps signed-out users in local preview mode.
@@ -41,6 +41,7 @@ Firebase Apple SDK products are now linked through Swift Package Manager via `pr
 - `FirebaseFirestore`
 - `FirebaseStorage`
 - `FirebaseFunctions`
+- `FirebaseAppCheck`
 
 Google Sign-In packages are also linked as the next auth UI integration point:
 
@@ -51,11 +52,28 @@ Google Sign-In packages are also linked as the next auth UI integration point:
 
 The generated project includes the public `GOOGLE_REVERSED_CLIENT_ID` callback URL scheme for the `openlarp-dev-langqi` iOS app. Do not commit the real local Firebase plist; it carries the project SDK config and is copied into local app bundles only when present.
 
+## App Check Readiness
+
+OpenLARP now links `FirebaseAppCheck` and configures an App Check provider factory before Firebase starts:
+
+- simulator builds use no App Check provider by default so local tests do not leak debug tokens
+- simulator builds can opt into Firebase's debug App Check provider with `OPENLARP_ENABLE_FIREBASE_APP_CHECK_DEBUG=1`, `AppCheckDebugToken`, or Firebase's deprecated `FIRAAppCheckDebugToken`
+- device builds use Apple's App Attest provider with the production App Attest entitlement in `OpenLARP/OpenLARP.entitlements`
+- builds without Firebase App Check linked remain local-safe
+
+App Check enforcement is intentionally not enabled yet for Firestore, Storage, or callable Functions. Enabling enforcement now would break the current CLI smoke scripts and any installed app build that does not yet send valid App Check tokens. Before enforcement:
+
+1. Register App Check for the `com.openlarp.app` iOS app in Firebase Console.
+2. Register simulator/debug tokens in Firebase Console without committing them or exposing them in shared logs.
+3. Verify App Check request metrics from a simulator and a real device.
+4. Update live smoke tooling to send or obtain valid App Check tokens.
+5. Enable enforcement gradually for Storage, Firestore, and callable Functions only after signed-in simulator/device testing passes.
+
 ## Security Rules
 
 Firestore rules currently allow signed-in users to read only their own `users/{uid}` tree. Client writes are limited to the account root, named career graph collections, proof records, and pending proof attachment metadata; arbitrary user subcollections are denied.
 
-Firestore rules enforce owner/path consistency, block client-written external action claims and sync status fields, block embedded proof attachment arrays, and restrict client proof attachment metadata to `pendingUpload`. Proof upload receipt promotion is server-owned through `promoteProofUploadReceipt`, and backend event acknowledgement is server-owned through `acknowledgeBackendEvents`. The callable backend now also records per-user daily quota units before AI workflow dispatch, proof receipt promotion, proof upload reconciliation, or backend event acknowledgement. This is still a beta client-sync model, not a fully server-trusted career graph; production trust still requires derived readiness/history writes, App Check enforcement, provider token/cost accounting, and signed-in simulator/device smoke tests.
+Firestore rules enforce owner/path consistency, block client-written external action claims and sync status fields, block embedded proof attachment arrays, and restrict client proof attachment metadata to `pendingUpload`. Proof upload receipt promotion is server-owned through `promoteProofUploadReceipt`, and backend event acknowledgement is server-owned through `acknowledgeBackendEvents`. The callable backend now also records per-user daily quota units before AI workflow dispatch, proof receipt promotion, proof upload reconciliation, or backend event acknowledgement. This is still a beta client-sync model, not a fully server-trusted career graph; production trust still requires derived readiness/history writes, App Check enforcement after provider rollout, provider token/cost accounting, and signed-in simulator/device smoke tests.
 
 Storage rules currently reserve this path:
 
@@ -101,6 +119,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - `promoteProofUploadReceipt` exists as an authenticated callable that verifies uploaded proof Storage objects with the Admin SDK and writes Firestore upload receipts server-side.
 - `reconcileProofUploads` exists as an authenticated callable repair/report boundary for rare orphaned proof uploads. It defaults to report-only and deletes only older owner-scoped Storage objects whose custom metadata matches the signed-in user and whose Firestore proof attachment document is missing.
 - `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are protected by server-side per-user daily callable quota units. Exhausted calls return `resource-exhausted` before workflow dispatch, Storage scans, Storage reads, Firestore receipt writes, or backend event acknowledgement writes.
+- iOS App Check provider scaffolding is linked and configured, but Firebase product enforcement is still off until console registration, debug token handling, metrics, and signed-in simulator/device checks are complete.
 - `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are expected deployed active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
 - The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
 - `npm run firebase:signed-in-smoke` creates a temporary Firebase Auth smoke user through a local Admin custom token, calls the live workflow/proof/event callables as that signed-in user, validates Storage and Firestore side effects, and deletes its temporary Auth, Storage, Firestore, and quota data.
@@ -167,14 +186,14 @@ OPENLARP_FIREBASE_SMOKE_UID=openlarp-smoke-manual
 OPENLARP_FIREBASE_SIGNING_SERVICE_ACCOUNT=firebase-adminsdk-...@openlarp-dev-langqi.iam.gserviceaccount.com
 ```
 
-This CLI smoke test complements but does not replace a real simulator/device Google Sign-In UX pass.
+This CLI smoke test complements but does not replace a real simulator/device Google Sign-In UX pass. After App Check enforcement is enabled, this smoke test must also obtain or send a valid App Check token.
 
 ## Next Backend Steps
 
 1. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
 2. Keep `npm run firebase:live-readiness` and `npm run firebase:signed-in-smoke` passing after backend deploys.
 3. Test Firestore career graph sync, Storage proof attachment upload, server proof receipt promotion, and authenticated Firebase callable AI fallback behavior on a simulator or device.
-4. Add App Check enforcement and provider-level token/cost accounting before enabling live AI or broad external beta traffic.
+4. Register App Check in Firebase Console, verify simulator/debug and device App Attest metrics, update smoke tooling for App Check tokens, then enable App Check enforcement.
 5. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
 6. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
 7. Keep provider model IDs and API keys only on the backend.
