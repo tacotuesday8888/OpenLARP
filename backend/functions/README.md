@@ -18,6 +18,11 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
   are disabled
 - Deploy lockfile: `backend/functions/package-lock.json` is committed so
   Firebase Cloud Build installs the same deploy-source dependency graph
+- Dev deploy: `runOpenLARPWorkflow` and `reconcileProofUploads` are active Gen 2
+  callables in `openlarp-dev-langqi` / `us-central1`
+- Live endpoint smoke: unsigned workflow requests return `UNAUTHENTICATED`
+- Artifact cleanup: `gcf-artifacts` keeps the most recent 5 versions and deletes
+  artifacts older than 7 days
 
 The deployable Functions runtime validates shared request/response contracts with
 direct Zod imports. Genkit stays isolated in `backend/ai` so deterministic
@@ -50,15 +55,16 @@ From the repo root:
 npm run typecheck:backend
 npm run test:backend
 npm --workspace backend/functions run build
+npm run firebase:live-readiness
 npm audit --workspace backend/functions --omit=dev --json
 ```
 
 ## Deploy Notes
 
-This package is ready to be wired into Firebase deployment config for
-deterministic callable workflows with `OPENLARP_ENABLE_LIVE_AI=false`.
+This package is wired into Firebase deployment config for deterministic callable
+workflows with live AI disabled.
 
-Before live AI is enabled, add the `functions` source entry in `firebase.json`,
-configure backend secrets outside the repository, review prompts and safety
-evaluations, set rate limits and budget monitoring, and run a fresh audit for
-both `backend/functions` and `backend/ai`.
+Before live AI is enabled, configure backend secrets outside the repository,
+review prompts and safety evaluations, set rate limits, budget monitoring, and
+observability, and run a fresh audit for both `backend/functions` and
+`backend/ai`.
