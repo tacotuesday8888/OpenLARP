@@ -237,6 +237,20 @@ describe("handleProofUploadPromotionRequest", () => {
     expect(writes).toEqual([]);
   });
 
+  it("accepts Firebase-managed download token metadata from signed-in client uploads", async () => {
+    const { dependencies, writes } = makeDependencies(storageObject({
+      metadata: {
+        ...storageObject().metadata,
+        firebaseStorageDownloadTokens: "firebase-managed-token"
+      }
+    }));
+
+    const response = await authed(promotionIntent(), dependencies);
+
+    expect(response).toMatchObject({ ok: true });
+    expect(writes).toHaveLength(1);
+  });
+
   it("rejects missing Storage objects without writing Firestore", async () => {
     const { dependencies, writes } = makeDependencies(null);
 

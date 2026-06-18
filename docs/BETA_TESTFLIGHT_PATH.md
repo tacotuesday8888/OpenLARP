@@ -29,12 +29,13 @@ This document tracks the practical path from the current local product foundatio
 - Firebase security rules tests exist for Firestore and Storage owner boundaries, upload metadata, server-owned proof attachment receipt protection, and nested local-path leak prevention.
 - Firestore rules now deny arbitrary recursive user-subcollection writes, limit client writes to named beta sync collections, prevent clients from writing or downgrading uploaded proof attachment receipts, and keep backend event acknowledgement server-owned through `acknowledgeBackendEvents`.
 - Authenticated callable functions now have per-user daily server-side quota units that reject with `resource-exhausted` before AI workflow dispatch, proof upload promotion, proof upload reconciliation, or backend event acknowledgement side effects.
+- Signed-in Firebase CLI smoke tooling exists to verify workflow callable auth, proof Storage object verification, proof receipt promotion, proof upload reconciliation, backend event acknowledgement, and cleanup of temporary smoke data in the dev project.
 - Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
 
 ## Required Before TestFlight
 
 1. Verify live Google Sign-In in the simulator/device with the refreshed ignored local plist, then add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary account option.
-2. Test account-backed proof attachment uploads, Firestore career graph writes, and the signed-in deterministic callable AI fallback route.
+2. Run `npm run firebase:signed-in-smoke` before each backend-readiness pass, then test account-backed proof attachment uploads, Firestore career graph writes, and the signed-in deterministic callable AI fallback route on a simulator/device.
 3. Test the iOS callable route signed-out fallback behavior.
 4. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
 5. Add App Check, signed-in quota exhaustion smoke tests, and provider-level token/cost accounting before treating all cloud data as authoritative or enabling live AI.

@@ -44,6 +44,9 @@ jobs:
       - name: Build Firebase Functions backend
         run: npm run build:backend
 
+      - name: Test repository scripts
+        run: npm run test:scripts
+
       - name: Test Firebase security rules
         run: npm run test:rules:emulators
 
