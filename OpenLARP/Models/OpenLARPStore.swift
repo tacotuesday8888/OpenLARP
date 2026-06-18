@@ -94,6 +94,7 @@ final class OpenLARPStore {
 
     func confirmGoal(_ goal: CareerGoal) async {
         guard !isGoalSetupRunning else { return }
+        guard requireSubscriptionAccess(for: .confirmGoal) else { return }
         let previousProfile = state.userProfile
         let previousOutcomeLog = state.outcomeLog
         let previousBetaEvents = state.betaEvents
@@ -204,6 +205,7 @@ final class OpenLARPStore {
     }
 
     func startCurrentQuest() {
+        guard requireSubscriptionAccess(for: .startQuest) else { return }
         refreshDailyAvailability()
         let currentQuest = state.currentQuest
         let shouldRecordStart = currentQuest?.status == .available
@@ -240,6 +242,7 @@ final class OpenLARPStore {
     }
 
     func skipCurrentQuest() {
+        guard requireSubscriptionAccess(for: .skipQuest) else { return }
         guard !isProofChecking else {
             errorMessage = "Wait for the proof check to finish before skipping today."
             return
@@ -265,6 +268,7 @@ final class OpenLARPStore {
     }
 
     func swapCurrentQuest() {
+        guard requireSubscriptionAccess(for: .swapQuest) else { return }
         mutate {
             try OpenLARPEngine.swappedCurrentQuest(in: state, now: now())
         }
@@ -276,6 +280,7 @@ final class OpenLARPStore {
         link: String,
         attachments: [ProofAttachment] = []
     ) async {
+        guard requireSubscriptionAccess(for: .submitProof) else { return }
         guard !isProofChecking else { return }
         let questID = state.currentQuest?.id
         let questDay = state.currentQuest?.day
@@ -328,6 +333,7 @@ final class OpenLARPStore {
 
     func claimPendingQualityResult() {
         guard let pendingProof, let pendingQualityResult else { return }
+        guard requireSubscriptionAccess(for: .claimProofXP) else { return }
         let quest = state.currentQuest
         do {
             state = try OpenLARPEngine.claim(
@@ -594,6 +600,7 @@ final class OpenLARPStore {
             errorMessage = "Set a career goal before previewing your career graph."
             return
         }
+        guard requireSubscriptionAccess(for: .syncCareerGraph) else { return }
 
         let requestedAt = now()
         let session = currentBackendSession()
@@ -696,6 +703,10 @@ final class OpenLARPStore {
         state.subscriptionState.access(at: now(), calendar: calendar)
     }
 
+    func subscriptionGateDecision(for action: OpenLARPAccessControlledAction) -> OpenLARPAccessGateDecision {
+        OpenLARPAccessGate.decision(for: action, access: subscriptionAccess())
+    }
+
     func recordSubscriptionPaywallViewed() {
         recordBetaEvent(.subscriptionPaywallViewed)
         save()
@@ -756,6 +767,7 @@ final class OpenLARPStore {
 
     func runAgentScan() async {
         guard !state.needsGoalSetup else { return }
+        guard requireSubscriptionAccess(for: .runAgentScan) else { return }
         isAgentScanning = true
         defer { isAgentScanning = false }
 
@@ -840,6 +852,17 @@ final class OpenLARPStore {
         if state.betaEvents.count > 500 {
             state.betaEvents.removeFirst(state.betaEvents.count - 500)
         }
+    }
+
+    @discardableResult
+    private func requireSubscriptionAccess(for action: OpenLARPAccessControlledAction) -> Bool {
+        let decision = subscriptionGateDecision(for: action)
+        guard !decision.isAllowed else { return true }
+
+        recordBetaEvent(.subscriptionPaywallViewed)
+        errorMessage = "\(decision.title): \(decision.message)"
+        save()
+        return false
     }
 
     private func recordFreeSprintStartedIfNeeded(at timestamp: Date) {

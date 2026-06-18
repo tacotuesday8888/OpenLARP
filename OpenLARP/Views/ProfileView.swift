@@ -24,6 +24,7 @@ struct ProfileView: View {
 
                 careerSummaryCard
                 accountProfileCard
+                subscriptionStatusCard
                 careerGraphSetupStatusCard
                 betaMeasurementCard
                 activeGoalCard
@@ -148,6 +149,92 @@ struct ProfileView: View {
                     SummaryTile(value: "\(store.state.progress.readiness.overall)%", label: "Ready", color: .openLARPBlue)
                 }
             }
+        }
+    }
+
+    private var subscriptionStatusCard: some View {
+        let access = store.subscriptionAccess()
+
+        return Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(feature: .profile, eyebrow: "Access", title: "OpenLARP sprint")
+
+                HStack(spacing: 8) {
+                    SummaryTile(value: access.status.label, label: "Status", color: access.isEntitled ? .openLARPGreen : .openLARPCoral)
+                    SummaryTile(value: "\(access.daysRemaining)", label: "Days", color: .openLARPBlue)
+                }
+
+                Text(subscriptionDetail(for: access))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Button {
+                        Task {
+                            await store.refreshSubscriptionStatus()
+                        }
+                    } label: {
+                        if store.isRefreshingSubscriptionStatus {
+                            HStack {
+                                ProgressView()
+                                    .tint(.white)
+                                Text("Checking")
+                            }
+                        } else {
+                            Label("Check Status", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(store.isRefreshingSubscriptionStatus || store.isRestoringPurchases)
+
+                    if access.shouldShowPaywall {
+                        restorePurchasesButton
+                            .buttonStyle(PrimaryButtonStyle())
+                    } else {
+                        restorePurchasesButton
+                            .buttonStyle(SecondaryButtonStyle())
+                    }
+                }
+            }
+        }
+    }
+
+    private var restorePurchasesButton: some View {
+        Button {
+            Task {
+                await store.restorePurchases()
+            }
+        } label: {
+            if store.isRestoringPurchases {
+                HStack {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Restoring")
+                }
+            } else {
+                Label("Restore", systemImage: "arrow.uturn.backward")
+            }
+        }
+        .disabled(store.isRefreshingSubscriptionStatus || store.isRestoringPurchases)
+    }
+
+    private func subscriptionDetail(for access: OpenLARPSubscriptionAccess) -> String {
+        switch access.status {
+        case .notStarted:
+            return "The first proof sprint starts when you set a career goal. No live RevenueCat purchase is required in local beta mode."
+        case .active:
+            return "A RevenueCat-shaped entitlement is active. Live SDK purchase verification still waits for App Store and RevenueCat setup."
+        case .freeSprint:
+            return "Your local free sprint is active. New quest and proof actions remain available while it is running."
+        case .expired:
+            return "Your sprint access has ended. Saved proof remains available, but new quest, proof, and agent actions require active access."
+        case .offline:
+            return "Offline entitlement access is active from cached RevenueCat customer info."
+        case .restoreInProgress:
+            return "OpenLARP is checking purchase history. New sprint actions wait until restore finishes."
+        case .restoreFailed:
+            return "No active subscription was restored. Restore again after RevenueCat and App Store products are configured."
         }
     }
 

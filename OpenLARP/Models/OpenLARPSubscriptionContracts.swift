@@ -211,6 +211,124 @@ struct OpenLARPSubscriptionAccess: Codable, Equatable {
     var shouldShowPaywall: Bool
 }
 
+enum OpenLARPAccessControlledAction: String, Codable, CaseIterable, Identifiable {
+    case confirmGoal
+    case startQuest
+    case swapQuest
+    case skipQuest
+    case submitProof
+    case claimProofXP
+    case runAgentScan
+    case syncCareerGraph
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .confirmGoal: "Start a new sprint"
+        case .startQuest: "Start today's quest"
+        case .swapQuest: "Swap today's quest"
+        case .skipQuest: "Skip today's quest"
+        case .submitProof: "Submit proof"
+        case .claimProofXP: "Claim proof XP"
+        case .runAgentScan: "Run an agent scan"
+        case .syncCareerGraph: "Sync career graph"
+        }
+    }
+}
+
+struct OpenLARPAccessGateDecision: Codable, Equatable {
+    var action: OpenLARPAccessControlledAction
+    var isAllowed: Bool
+    var accessStatus: OpenLARPSubscriptionAccessStatus
+    var title: String
+    var message: String
+    var primaryActionTitle: String
+}
+
+enum OpenLARPAccessGate {
+    static func decision(
+        for action: OpenLARPAccessControlledAction,
+        access: OpenLARPSubscriptionAccess
+    ) -> OpenLARPAccessGateDecision {
+        if access.isEntitled {
+            return allowedDecision(action: action, accessStatus: access.status)
+        }
+
+        switch access.status {
+        case .notStarted:
+            if action == .confirmGoal {
+                return allowedDecision(action: action, accessStatus: access.status)
+            }
+
+            return blockedDecision(
+                action: action,
+                accessStatus: access.status,
+                title: "Start a sprint first",
+                message: "Set a career goal to start your first OpenLARP sprint before using quest, proof, agent, or sync actions.",
+                primaryActionTitle: "Set Goal"
+            )
+        case .restoreInProgress:
+            return blockedDecision(
+                action: action,
+                accessStatus: access.status,
+                title: "Restore in progress",
+                message: "OpenLARP is checking your purchase status. Wait for restore to finish before continuing sprint work.",
+                primaryActionTitle: "Restoring Purchases"
+            )
+        case .restoreFailed:
+            return blockedDecision(
+                action: action,
+                accessStatus: access.status,
+                title: "Restore needed",
+                message: "OpenLARP could not restore an active subscription. Restore purchases or start a new subscription before continuing sprint work.",
+                primaryActionTitle: "Restore Purchases"
+            )
+        case .expired:
+            return blockedDecision(
+                action: action,
+                accessStatus: access.status,
+                title: "Sprint access ended",
+                message: "Your free sprint or subscription access has ended. Your saved proof stays available, but new sprint actions need active access.",
+                primaryActionTitle: "Continue OpenLARP"
+            )
+        case .active, .freeSprint, .offline:
+            return allowedDecision(action: action, accessStatus: access.status)
+        }
+    }
+
+    private static func allowedDecision(
+        action: OpenLARPAccessControlledAction,
+        accessStatus: OpenLARPSubscriptionAccessStatus
+    ) -> OpenLARPAccessGateDecision {
+        OpenLARPAccessGateDecision(
+            action: action,
+            isAllowed: true,
+            accessStatus: accessStatus,
+            title: "Access ready",
+            message: "Your OpenLARP sprint access is ready.",
+            primaryActionTitle: action.label
+        )
+    }
+
+    private static func blockedDecision(
+        action: OpenLARPAccessControlledAction,
+        accessStatus: OpenLARPSubscriptionAccessStatus,
+        title: String,
+        message: String,
+        primaryActionTitle: String
+    ) -> OpenLARPAccessGateDecision {
+        OpenLARPAccessGateDecision(
+            action: action,
+            isAllowed: false,
+            accessStatus: accessStatus,
+            title: title,
+            message: message,
+            primaryActionTitle: primaryActionTitle
+        )
+    }
+}
+
 struct OpenLARPSubscriptionState: Codable, Equatable {
     var schemaVersion: Int
     var configuration: OpenLARPSubscriptionConfiguration
