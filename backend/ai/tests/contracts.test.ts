@@ -171,6 +171,58 @@ describe("OpenLARP AI backend contracts", () => {
     expect(validateEnvelopeSafety(envelope).blockedReasons).toContain("external actions must require user approval");
   });
 
+  it("rejects contradictory long-term memory settings", () => {
+    const envelope = requestEnvelopeSchema.parse({
+      ...safeEnvelope,
+      run: {
+        ...safeEnvelope.run,
+        privacy: {
+          ...safeEnvelope.run.privacy,
+          memoryMode: "localOnly",
+          allowsLongTermMemoryWrite: true
+        }
+      }
+    });
+
+    expect(validateEnvelopeSafety(envelope).ok).toBe(false);
+    expect(validateEnvelopeSafety(envelope).blockedReasons).toContain("long-term memory writes require cloud-ready memory mode");
+  });
+
+  it("accepts normalized equivalent safety wording", () => {
+    const envelope = requestEnvelopeSchema.parse({
+      ...safeEnvelope,
+      safetyRules: {
+        ...safeEnvelope.safetyRules,
+        hardBannedClaims: [
+          "Never fabricate an employer, school, certificate, title, date, project, or ownership claim."
+        ],
+        privacyRequirements: [
+          "Any external action needs user approval before the system acts."
+        ]
+      }
+    });
+
+    expect(validateEnvelopeSafety(envelope)).toEqual({
+      ok: true,
+      blockedReasons: []
+    });
+  });
+
+  it("rejects external-action wording that mentions users without approval", () => {
+    const envelope = requestEnvelopeSchema.parse({
+      ...safeEnvelope,
+      safetyRules: {
+        ...safeEnvelope.safetyRules,
+        privacyRequirements: [
+          "Notify the user after an external action is completed."
+        ]
+      }
+    });
+
+    expect(validateEnvelopeSafety(envelope).ok).toBe(false);
+    expect(validateEnvelopeSafety(envelope).blockedReasons).toContain("missing external-action approval guardrail");
+  });
+
   it("creates deterministic diagnostic output from valid payloads", () => {
     const payload = diagnosticPayloadSchema.parse(safeEnvelope.payload);
 

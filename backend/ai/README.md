@@ -26,6 +26,10 @@ OPENLARP_AI_MAX_OUTPUT_TOKENS=1200
 GEMINI_API_KEY=<store as a backend secret, never in Git>
 ```
 
+`GEMINI_API_KEY` is read only by the provider runtime when live AI is enabled.
+`configFromEnvironment()` validates OpenLARP runtime flags and never exposes or
+logs provider secret values.
+
 ## Local Commands
 
 From the repo root:

@@ -47,6 +47,16 @@ describe("Firestore rules", () => {
     }));
   });
 
+  it("rejects unsafe sync status on regular user-tree documents", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofRecords/pending-sync"), {
+      ownerUserID: "alice",
+      syncStatus: "pending",
+      title: "Unsafe status"
+    }));
+  });
+
   it("requires acknowledged backend event shape and denies deletes", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
     const eventRef = doc(alice, "users/alice/backendEvents/event1");

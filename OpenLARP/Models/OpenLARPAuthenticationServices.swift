@@ -5,11 +5,11 @@ import FirebaseCore
 #endif
 
 #if canImport(FirebaseAuth)
-import FirebaseAuth
+@preconcurrency import FirebaseAuth
 #endif
 
 #if canImport(GoogleSignIn)
-import GoogleSignIn
+@preconcurrency import GoogleSignIn
 #endif
 
 #if canImport(UIKit)
