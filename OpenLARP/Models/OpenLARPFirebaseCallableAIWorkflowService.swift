@@ -228,7 +228,7 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
     }
 }
 
-struct FirebaseCallableAIWorkflowResponse<Result: Decodable>: Decodable {
+struct FirebaseCallableAIWorkflowResponse<Result: Decodable>: Decodable, @unchecked Sendable {
     var ok: Bool
     var schemaVersion: Int
     var requestID: UUID
