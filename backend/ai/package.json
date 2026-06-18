@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@genkit-ai/google-genai": "1.37.0",
-    "genkit": "1.37.0"
+    "genkit": "1.37.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/node": "22.19.21",

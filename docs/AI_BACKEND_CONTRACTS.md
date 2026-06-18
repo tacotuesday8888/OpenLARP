@@ -73,6 +73,10 @@ The repo now includes:
 - `backend/ai/`: Genkit-ready schemas, deterministic workflow handlers, safety validation, and backend-only model configuration.
 - `backend/functions/`: Firebase Callable Functions boundary that requires Firebase Auth, validates the AI request envelope, enforces OpenLARP safety guardrails, blocks external actions, and dispatches deterministic workflow handlers while live AI is disabled.
 
+Shared request/response contracts import Zod directly. This keeps the
+deployable Firebase Functions package free of Genkit runtime dependencies while
+the Genkit/Gemini orchestration layer remains isolated in `backend/ai`.
+
 Current backend verification commands:
 
 ```bash
@@ -96,4 +100,4 @@ The default backend target model is `gemini-3.1-flash-lite`, kept in backend con
 
 The callable export is `runOpenLARPWorkflow`, configured in `firebase.json` under `backend/functions`.
 
-Live model calls remain disabled until backend deployment, secrets, budget controls, and evaluation gates are configured. `npm audit --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories, so do not deploy live AI until those dependencies are remediated or explicitly risk-accepted.
+Live model calls remain disabled until backend deployment, secrets, budget controls, and evaluation gates are configured. The deterministic Firebase Functions package is kept Genkit-free for safer callable deployment. `npm audit --workspace backend/ai --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories, so do not deploy live Genkit/Gemini AI until those dependencies are remediated or explicitly risk-accepted.

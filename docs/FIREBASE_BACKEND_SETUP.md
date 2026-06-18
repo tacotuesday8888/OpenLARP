@@ -81,6 +81,8 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Security rules validate through Firebase MCP.
 - Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22 and `runOpenLARPWorkflow` as the callable AI workflow boundary.
+- The deployable Functions package is intentionally Genkit-free while live model calls are disabled; Genkit/Gemini orchestration remains isolated in `backend/ai`.
+- `backend/functions/package-lock.json` is committed because Firebase deploys from that source directory, and the package pins Firebase Admin to the latest 13.x version compatible with `firebase-functions@7.2.5`.
 - The iOS app is wired to try `runOpenLARPWorkflow` through Firebase Functions first and preserve local V0 behavior through fallback when live Firebase is unavailable.
 - `reconcileProofUploads` exists as an authenticated callable repair/report boundary for rare orphaned proof uploads. It defaults to report-only and deletes only older owner-scoped Storage objects whose custom metadata matches the signed-in user and whose Firestore proof attachment document is missing.
 
@@ -90,7 +92,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 2. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
 3. Finish Firebase Storage product setup in the Firebase console, then deploy Storage rules.
 4. Test live Google sign-in, Firestore career graph sync, Storage proof attachment upload, and Firebase callable AI fallback behavior on a simulator or device with the ignored local Firebase plist.
-5. Deploy Cloud Functions only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
+5. Deploy deterministic Cloud Functions with live AI disabled only after `firebase.json` has a functions source entry and the Functions package audit has no high or critical issues. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
 6. Keep provider model IDs and API keys only on the backend.
 7. Add App Check enforcement after local device and TestFlight auth flows are verified.
 

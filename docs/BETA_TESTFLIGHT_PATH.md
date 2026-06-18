@@ -15,7 +15,7 @@ This document tracks the practical path from the current local product foundatio
 - Firebase Apple SDKs and Google Sign-In packages are declared through XcodeGen/SPM while private plist config remains ignored.
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
-- Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled.
+- Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled, and its deploy package is kept free of Genkit runtime dependencies.
 - The iOS app now tries the Firebase callable Genkit route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.
 - Authenticated proof upload reconciliation callable exists for report-only scans and explicit safe deletion of orphaned Storage proof uploads.
 - Google Sign-In auth service boundary exists for restore, sign-in, sign-out, missing-config states, and future URL handling.
@@ -34,7 +34,7 @@ This document tracks the practical path from the current local product foundatio
 
 ## Backend Dependency Risk
 
-`npm audit --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories. Keep live AI disabled until the backend dependency tree is upgraded or pinned to advisory-free versions, and run a fresh audit before deployment.
+`npm audit --workspace backend/ai --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories. Keep live Genkit/Gemini AI disabled until the backend dependency tree is upgraded or pinned to advisory-free versions, and run a fresh audit before deployment.
 
 ## What Should Wait For Designer HTML
 
