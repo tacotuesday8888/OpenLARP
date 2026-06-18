@@ -20,6 +20,7 @@ struct TodayView: View {
                     }
                 } else {
                     header
+                    subscriptionAccessCard
                     questCard
                     diagnosticCard
                     progressStrip
@@ -138,6 +139,46 @@ struct TodayView: View {
                         SummaryTile(value: "\(store.state.progress.xp)", label: "XP", color: .openLARPBlue)
                         SummaryTile(value: "\(store.state.progress.proofCount)", label: "Proof", color: .openLARPGreen)
                         SummaryTile(value: store.state.goal?.timeline ?? "Sprint", label: "Timeline", color: .openLARPCoral)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var subscriptionAccessCard: some View {
+        let access = store.subscriptionAccess()
+        if access.shouldShowPaywall {
+            let decision = store.subscriptionGateDecision(for: .startQuest)
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(feature: .profile, eyebrow: "Access", title: decision.title)
+
+                    Text(decision.message)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            Task {
+                                await store.restorePurchases()
+                            }
+                        } label: {
+                            if store.isRestoringPurchases {
+                                HStack {
+                                    ProgressView()
+                                        .tint(.white)
+                                    Text("Restoring")
+                                }
+                            } else {
+                                Label("Restore Purchases", systemImage: "arrow.clockwise")
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(store.isRestoringPurchases)
+
+                        Pill(title: access.status.label, systemImage: "lock.fill", color: .openLARPCoral)
                     }
                 }
             }

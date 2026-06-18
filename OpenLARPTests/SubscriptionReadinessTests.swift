@@ -243,6 +243,26 @@ final class SubscriptionReadinessTests: XCTestCase {
         XCTAssertFalse(access.shouldShowPaywall)
     }
 
+    func testAccessGateAllowsFirstSetupAndBlocksExpiredProgression() {
+        let now = date(year: 2026, month: 6, day: 20)
+        let notStarted = OpenLARPSubscriptionState.notStarted().access(at: now, calendar: calendar)
+        let active = OpenLARPSubscriptionState.localFreeSprint(startedAt: now).access(at: now, calendar: calendar)
+        let expired = OpenLARPSubscriptionState.localFreeSprint(
+            startedAt: date(year: 2026, month: 6, day: 1)
+        )
+        .access(at: now, calendar: calendar)
+
+        XCTAssertTrue(OpenLARPAccessGate.decision(for: .confirmGoal, access: notStarted).isAllowed)
+        XCTAssertFalse(OpenLARPAccessGate.decision(for: .startQuest, access: notStarted).isAllowed)
+        XCTAssertTrue(OpenLARPAccessGate.decision(for: .startQuest, access: active).isAllowed)
+
+        let expiredDecision = OpenLARPAccessGate.decision(for: .submitProof, access: expired)
+        XCTAssertFalse(expiredDecision.isAllowed)
+        XCTAssertEqual(expiredDecision.accessStatus, .expired)
+        XCTAssertEqual(expiredDecision.primaryActionTitle, "Continue OpenLARP")
+        XCTAssertTrue(expiredDecision.message.contains("saved proof stays available"))
+    }
+
     @MainActor
     func testStoreRefreshSubscriptionStatusAppliesInjectedServiceAndPersistsEvent() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -339,6 +359,166 @@ final class SubscriptionReadinessTests: XCTestCase {
     }
 
     @MainActor
+    func testExpiredSprintBlocksQuestProgressionAndRecordsPaywallExposure() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let start = date(year: 2026, month: 6, day: 1)
+        let expiredAt = date(year: 2026, month: 6, day: 20)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { expiredAt },
+            calendar: calendar
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: start)
+        store.state.subscriptionState = OpenLARPSubscriptionState.localFreeSprint(startedAt: start)
+
+        store.startCurrentQuest()
+
+        XCTAssertEqual(store.state.currentQuest?.status, .available)
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionPaywallViewed)
+        XCTAssertTrue(store.errorMessage?.contains("Sprint access ended") == true)
+        XCTAssertEqual(try persistence.load().currentQuest?.status, .available)
+    }
+
+    @MainActor
+    func testExpiredSprintBlocksProofSubmissionBeforeAIReview() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let start = date(year: 2026, month: 6, day: 1)
+        let expiredAt = date(year: 2026, month: 6, day: 20)
+        var state = OpenLARPEngine.confirmGoal(goal, now: start)
+        state = try OpenLARPEngine.startCurrentQuest(in: state, now: start)
+        state.subscriptionState = OpenLARPSubscriptionState.localFreeSprint(startedAt: start)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: FailingSubscriptionGateAIWorkflowService(),
+            now: { expiredAt },
+            calendar: calendar
+        )
+        store.state = state
+
+        await store.checkProof(
+            kind: .proof,
+            text: "I shipped a small feature and saved the pull request.",
+            link: "",
+            attachments: []
+        )
+
+        XCTAssertNil(store.pendingProof)
+        XCTAssertNil(store.pendingQualityResult)
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .proofSubmitted })
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionPaywallViewed)
+    }
+
+    @MainActor
+    func testExpiredSprintBlocksPendingProofClaimBeforeProgressMoves() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let start = date(year: 2026, month: 6, day: 1)
+        let expiredAt = date(year: 2026, month: 6, day: 20)
+        var state = OpenLARPEngine.confirmGoal(goal, now: start)
+        state = try OpenLARPEngine.startCurrentQuest(in: state, now: start)
+        state.subscriptionState = OpenLARPSubscriptionState.localFreeSprint(startedAt: start)
+        let proof = ProofSubmission(
+            kind: .proof,
+            text: "I shipped a small feature, wrote implementation notes, attached the pull request, and saved the review feedback.",
+            link: "https://example.com/proof",
+            submittedAt: start
+        )
+        let result = try OpenLARPEngine.checkProof(proof, in: state)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { expiredAt },
+            calendar: calendar
+        )
+        store.state = state
+        store.pendingProof = proof
+        store.pendingQualityResult = result
+
+        store.claimPendingQualityResult()
+
+        XCTAssertEqual(store.state.progress.xp, 0)
+        XCTAssertEqual(store.state.currentQuest?.status, .inProgress)
+        XCTAssertEqual(store.pendingProof, proof)
+        XCTAssertEqual(store.pendingQualityResult, result)
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .xpClaimed })
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionPaywallViewed)
+    }
+
+    @MainActor
+    func testExpiredSprintBlocksCareerGraphSyncPreparationBeforeBackendWork() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let start = date(year: 2026, month: 6, day: 1)
+        let expiredAt = date(year: 2026, month: 6, day: 20)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            careerGraphSyncService: FailingSubscriptionGateCareerGraphSyncService(),
+            now: { expiredAt },
+            calendar: calendar
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: start)
+        store.state.subscriptionState = OpenLARPSubscriptionState.localFreeSprint(startedAt: start)
+
+        await store.prepareCareerGraphSyncPreview()
+
+        XCTAssertNil(store.careerGraphSyncPreview)
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionPaywallViewed)
+        XCTAssertTrue(store.errorMessage?.contains("Sprint access ended") == true)
+    }
+
+    @MainActor
+    func testExpiredSprintBlocksAgentScanButAllowsRestoreAttempt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let start = date(year: 2026, month: 6, day: 1)
+        let expiredAt = date(year: 2026, month: 6, day: 20)
+        let service = CapturingSubscriptionService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { expiredAt },
+            calendar: calendar
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: start)
+        store.state.subscriptionState = OpenLARPSubscriptionState.localFreeSprint(startedAt: start)
+        let originalBrief = store.state.agentBrief
+
+        await store.runAgentScan()
+        await store.restorePurchases()
+
+        XCTAssertEqual(store.state.agentBrief, originalBrief)
+        XCTAssertEqual(service.restoreRequestCount, 1)
+        XCTAssertEqual(Array(store.state.betaEvents.map(\.kind).suffix(3)), [
+            .subscriptionPaywallViewed,
+            .subscriptionRestoreRequested,
+            .subscriptionRestoreFailed
+        ])
+    }
+
+    @MainActor
+    func testExpiredLifecycleBlocksNewGoalAfterReset() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let start = date(year: 2026, month: 6, day: 1)
+        let expiredAt = date(year: 2026, month: 6, day: 20)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { expiredAt },
+            calendar: calendar
+        )
+        store.state = .empty
+        store.state.subscriptionState = OpenLARPSubscriptionState.localFreeSprint(startedAt: start)
+
+        await store.confirmGoal(goal)
+
+        XCTAssertTrue(store.state.needsGoalSetup)
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionPaywallViewed)
+        XCTAssertTrue(store.errorMessage?.contains("Sprint access ended") == true)
+    }
+
+    @MainActor
     func testGoalConfirmationRecordsFreeSprintStartOnlyOnceAndPreservesResetLifecycle() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let dayOne = date(year: 2026, month: 6, day: 1)
@@ -383,6 +563,32 @@ final class SubscriptionReadinessTests: XCTestCase {
             day: day,
             hour: hour
         ))!
+    }
+}
+
+private struct FailingSubscriptionGateAIWorkflowService: V0AIWorkflowServicing {
+    func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
+        throw OpenLARPError.invalidQuestPlan
+    }
+
+    func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
+        throw OpenLARPError.invalidQuestPlan
+    }
+
+    func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
+        XCTFail("Expired sprint should block proof review before AI workflow dispatch.")
+        throw OpenLARPError.invalidQuestPlan
+    }
+
+    func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse {
+        throw OpenLARPError.invalidQuestPlan
+    }
+}
+
+private struct FailingSubscriptionGateCareerGraphSyncService: CareerGraphSyncServicing {
+    func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
+        XCTFail("Expired sprint should block career graph sync before backend preparation.")
+        throw OpenLARPError.invalidQuestPlan
     }
 }
 
