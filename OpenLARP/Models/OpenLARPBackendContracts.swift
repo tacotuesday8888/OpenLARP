@@ -892,12 +892,11 @@ struct CareerGraphSyncPreview: Codable, Equatable {
     }
 }
 
-@MainActor
-protocol CareerGraphSyncServicing {
+protocol CareerGraphSyncServicing: Sendable {
     func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult
 }
 
-struct CareerGraphSyncPlanner {
+struct CareerGraphSyncPlanner: Sendable {
     init() {}
 
     func plan(_ request: CareerGraphSyncPreparationRequest) -> CareerGraphSyncManifest {

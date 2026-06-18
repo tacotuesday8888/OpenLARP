@@ -166,8 +166,7 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
     }
 }
 
-@MainActor
-private final class CapturingCareerGraphDocumentWriter: FirebaseCareerGraphDocumentWriting {
+private final class CapturingCareerGraphDocumentWriter: FirebaseCareerGraphDocumentWriting, @unchecked Sendable {
     private(set) var writes: [FirebaseCareerGraphDocumentWrite] = []
 
     func writeDocuments(_ documents: [FirebaseCareerGraphDocumentWrite]) async throws {

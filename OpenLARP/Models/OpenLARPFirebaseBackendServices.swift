@@ -196,12 +196,11 @@ struct FirebaseReadyBackendEventSyncService: BackendEventSyncServicing {
     }
 }
 
-@MainActor
-protocol FirebaseCareerGraphDocumentWriting {
+protocol FirebaseCareerGraphDocumentWriting: Sendable {
     func writeDocuments(_ documents: [FirebaseCareerGraphDocumentWrite]) async throws
 }
 
-struct FirebaseCareerGraphDocumentWrite: Identifiable {
+struct FirebaseCareerGraphDocumentWrite: Identifiable, @unchecked Sendable {
     var id: String { documentPath }
 
     var documentType: CareerGraphSyncDocumentType

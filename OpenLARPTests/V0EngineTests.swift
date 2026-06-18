@@ -4041,7 +4041,7 @@ private final class DeferredBackendEventSyncService: BackendEventSyncServicing {
     }
 }
 
-private final class RecordingCareerGraphSyncService: CareerGraphSyncServicing {
+private final class RecordingCareerGraphSyncService: CareerGraphSyncServicing, @unchecked Sendable {
     var requests: [CareerGraphSyncPreparationRequest] = []
     var shouldThrow = false
 
@@ -4054,7 +4054,7 @@ private final class RecordingCareerGraphSyncService: CareerGraphSyncServicing {
     }
 }
 
-private final class DeferredCareerGraphSyncService: CareerGraphSyncServicing {
+private final class DeferredCareerGraphSyncService: CareerGraphSyncServicing, @unchecked Sendable {
     var requests: [CareerGraphSyncPreparationRequest] = []
     var pendingContinuation: CheckedContinuation<Void, Never>?
 
