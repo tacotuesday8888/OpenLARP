@@ -122,6 +122,7 @@ struct AppRootView: View {
         .onAppear {
             store.refreshDailyAvailability()
             Task {
+                await store.restorePreviousAuthenticationSession()
                 await store.refreshSubscriptionStatus()
                 await store.syncBackendEvents()
             }
@@ -130,6 +131,7 @@ struct AppRootView: View {
             guard phase == .active else { return }
             store.refreshDailyAvailability()
             Task {
+                await store.restorePreviousAuthenticationSession()
                 await store.refreshSubscriptionStatus()
                 await store.syncBackendEvents()
             }
@@ -137,6 +139,9 @@ struct AppRootView: View {
         .onChange(of: selectedTab) {
             store.refreshDailyAvailability()
             Task { await store.syncBackendEvents() }
+        }
+        .onOpenURL { url in
+            _ = store.handleOpenURL(url)
         }
     }
 }

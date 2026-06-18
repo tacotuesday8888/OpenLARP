@@ -70,14 +70,17 @@ protocol OpenLARPAuthenticationServicing: BackendSessionProviding {
 final class MockOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
     private let restoredSession: BackendUserSession?
     private let googleSignInSession: BackendUserSession?
+    private let handledURLSchemes: Set<String>
     private var activeSession: BackendUserSession?
 
     init(
         restoredSession: BackendUserSession? = nil,
-        googleSignInSession: BackendUserSession? = nil
+        googleSignInSession: BackendUserSession? = nil,
+        handledURLSchemes: Set<String> = []
     ) {
         self.restoredSession = restoredSession
         self.googleSignInSession = googleSignInSession
+        self.handledURLSchemes = handledURLSchemes
     }
 
     func currentSession(for state: OpenLARPState) -> BackendUserSession {
@@ -134,7 +137,8 @@ final class MockOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
     }
 
     func handleOpenURL(_ url: URL) -> Bool {
-        false
+        guard let scheme = url.scheme else { return false }
+        return handledURLSchemes.contains(scheme)
     }
 }
 

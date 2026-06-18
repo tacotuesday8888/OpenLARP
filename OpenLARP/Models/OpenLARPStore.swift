@@ -9,6 +9,7 @@ final class OpenLARPStore {
     private let aiWorkflowService: any V0AIWorkflowServicing
     private let agentService: CareerAgentBriefServicing
     private let careerGraphSyncService: any CareerGraphSyncServicing
+    private let authenticationService: any OpenLARPAuthenticationServicing
     private let backendEventSyncService: any BackendEventSyncServicing
     private let backendSessionProvider: any BackendSessionProviding
     private let subscriptionService: any OpenLARPSubscriptionServicing
@@ -25,9 +26,13 @@ final class OpenLARPStore {
     var isGoalSetupRunning = false
     var isProofChecking = false
     var isPreparingCareerGraphSyncPreview = false
+    var isRestoringAuthenticationSession = false
+    var isSigningInWithGoogle = false
+    var isSigningOutOfAccount = false
     var isSyncingBackendEvents = false
     var isRefreshingSubscriptionStatus = false
     var isRestoringPurchases = false
+    var authenticationResult: OpenLARPAuthenticationResult?
     var careerGraphSyncPreview: CareerGraphSyncPreview?
     private var careerGraphSyncPreviewGeneration = 0
 
@@ -37,8 +42,9 @@ final class OpenLARPStore {
         aiWorkflowService: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService(),
         agentService: CareerAgentBriefServicing = MockCareerAgentService(),
         careerGraphSyncService: any CareerGraphSyncServicing = LocalMockCareerGraphSyncService(),
+        authenticationService: (any OpenLARPAuthenticationServicing)? = nil,
         backendEventSyncService: any BackendEventSyncServicing = LocalMockBackendEventSyncService(),
-        backendSessionProvider: any BackendSessionProviding = LocalMockBackendSessionProvider(),
+        backendSessionProvider: (any BackendSessionProviding)? = nil,
         subscriptionService: any OpenLARPSubscriptionServicing = MockOpenLARPSubscriptionService(),
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .autoupdatingCurrent,
@@ -50,8 +56,10 @@ final class OpenLARPStore {
         self.aiWorkflowService = aiWorkflowService
         self.agentService = agentService
         self.careerGraphSyncService = careerGraphSyncService
+        let resolvedAuthenticationService = authenticationService ?? MockOpenLARPAuthenticationService()
+        self.authenticationService = resolvedAuthenticationService
         self.backendEventSyncService = backendEventSyncService
-        self.backendSessionProvider = backendSessionProvider
+        self.backendSessionProvider = backendSessionProvider ?? resolvedAuthenticationService
         self.subscriptionService = subscriptionService
         self.now = now
         self.calendar = calendar
@@ -78,6 +86,10 @@ final class OpenLARPStore {
             errorMessage = "Local progress could not be loaded. A fresh state was started."
         }
         restorePersistedProofDraft()
+    }
+
+    var isAuthenticationOperationInFlight: Bool {
+        isRestoringAuthenticationSession || isSigningInWithGoogle || isSigningOutOfAccount
     }
 
     func confirmGoal(_ goal: CareerGoal) async {
@@ -137,6 +149,10 @@ final class OpenLARPStore {
         state.backendEvents = previousBackendEvents
         if previousSubscriptionState.hasStartedAccessLifecycle {
             state.subscriptionState = previousSubscriptionState
+        }
+        let currentSession = currentBackendSession()
+        if currentSession.isAuthenticated {
+            applyAuthenticatedAccount(currentSession)
         }
         recordAIWorkflowRuns(completedAIWorkflowRuns)
         recordBackendEvent(
@@ -384,6 +400,41 @@ final class OpenLARPStore {
         )
         state.updatedAt = now()
         save()
+    }
+
+    func restorePreviousAuthenticationSession() async {
+        guard !isRestoringAuthenticationSession else { return }
+        isRestoringAuthenticationSession = true
+        defer { isRestoringAuthenticationSession = false }
+
+        let result = await authenticationService.restorePreviousSession(for: state)
+        applyAuthenticationResult(result, shouldSurfaceMessage: false)
+    }
+
+    func signInWithGoogle(presenting anchor: OpenLARPAuthenticationPresentationAnchor?) async {
+        guard !isSigningInWithGoogle else { return }
+        isSigningInWithGoogle = true
+        defer { isSigningInWithGoogle = false }
+
+        let result = await authenticationService.signInWithGoogle(presenting: anchor, for: state)
+        applyAuthenticationResult(result, shouldSurfaceMessage: true)
+        if result.status == .authenticated {
+            await syncBackendEvents()
+        }
+    }
+
+    func signOutOfAccount() async {
+        guard !isSigningOutOfAccount else { return }
+        isSigningOutOfAccount = true
+        defer { isSigningOutOfAccount = false }
+
+        let result = await authenticationService.signOut(for: state)
+        applyAuthenticationResult(result, shouldSurfaceMessage: true)
+    }
+
+    @discardableResult
+    func handleOpenURL(_ url: URL) -> Bool {
+        authenticationService.handleOpenURL(url)
     }
 
     func logOutcome(
@@ -753,6 +804,10 @@ final class OpenLARPStore {
         save()
     }
 
+    func currentBackendSessionSnapshot() -> BackendUserSession {
+        currentBackendSession()
+    }
+
     func deleteProofImage(_ attachment: ProofAttachment) {
         do {
             try attachmentStore.delete(attachment)
@@ -806,6 +861,64 @@ final class OpenLARPStore {
         return session.auth.status == .notConnected &&
             session.firestore.status == .notConnected &&
             session.genkit.status == .configured
+    }
+
+    private func applyAuthenticationResult(
+        _ result: OpenLARPAuthenticationResult,
+        shouldSurfaceMessage: Bool
+    ) {
+        authenticationResult = result
+        let previousAccountID = state.userProfile?.accountID
+
+        switch result.status {
+        case .authenticated:
+            applyAuthenticatedAccount(result.session)
+            let currentAccountID = result.session.accountID ?? result.session.ownerUserID
+            if result.operation == .restorePreviousSession && previousAccountID != currentAccountID {
+                recordBetaEvent(.accountSessionRestored, occurredAt: now())
+            } else if result.operation == .signInWithGoogle {
+                recordBetaEvent(.accountSignInCompleted, occurredAt: now())
+            }
+            clearCareerGraphSyncPreview()
+            errorMessage = nil
+            save()
+        case .signedOut:
+            if result.operation == .signOut || state.userProfile?.accountID != nil || state.userProfile?.email != nil {
+                clearAuthenticatedAccount()
+                if result.operation == .signOut {
+                    recordBetaEvent(.accountSignedOut, occurredAt: now())
+                }
+                clearCareerGraphSyncPreview()
+                errorMessage = nil
+                save()
+            }
+        case .configurationMissing, .sdkUnavailable, .providerSetupRequired, .presentationRequired, .failed:
+            if result.operation == .signInWithGoogle {
+                recordBetaEvent(.accountSignInFailed, occurredAt: now())
+                save()
+            }
+            if shouldSurfaceMessage {
+                errorMessage = result.message ?? "Account sign-in could not finish."
+            }
+        }
+    }
+
+    private func applyAuthenticatedAccount(_ session: BackendUserSession) {
+        guard var profile = state.userProfile else { return }
+        profile.accountID = session.accountID ?? session.ownerUserID
+        profile.email = session.email
+        profile.updatedAt = now()
+        state.userProfile = profile
+        state.updatedAt = profile.updatedAt
+    }
+
+    private func clearAuthenticatedAccount() {
+        guard var profile = state.userProfile else { return }
+        profile.accountID = nil
+        profile.email = nil
+        profile.updatedAt = now()
+        state.userProfile = profile
+        state.updatedAt = profile.updatedAt
     }
 
     private func recordAIWorkflowRun(_ run: V0AIWorkflowRun) {

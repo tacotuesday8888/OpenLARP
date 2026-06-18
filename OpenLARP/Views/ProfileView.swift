@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct ProfileView: View {
     let store: OpenLARPStore
@@ -6,6 +9,7 @@ struct ProfileView: View {
     @State private var selectedProof: ProofRecord?
     @State private var showingProofArchive = false
     @State private var outcomeSheetDestination: OutcomeSheetDestination?
+    @State private var authenticationPresentationAnchor: OpenLARPAuthenticationPresentationAnchor?
 
     var body: some View {
         ScrollView {
@@ -61,6 +65,7 @@ struct ProfileView: View {
         } message: {
             Text("This clears the local diagnostic and questline so you can set a new target.")
         }
+        .background(authenticationPresentationAnchorReader)
     }
 
     private var betaMeasurementCard: some View {
@@ -147,7 +152,10 @@ struct ProfileView: View {
     }
 
     private var accountProfileCard: some View {
-        Card {
+        let session = store.currentBackendSessionSnapshot()
+        let result = store.authenticationResult
+
+        return Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(feature: .profile, eyebrow: "Account-ready", title: "User profile")
 
@@ -159,8 +167,12 @@ struct ProfileView: View {
 
                     ProfileDetailRow(title: "Display name", value: profile.displayName)
                     ProfileDetailRow(title: "Memory mode", value: profile.privacy.memoryMode.label)
-                    ProfileDetailRow(title: "Account sync", value: profile.accountID == nil ? "Not connected yet" : "Linked")
+                    ProfileDetailRow(title: "Account sync", value: accountSyncStatusTitle(session: session, result: result))
+                    if let email = session.email ?? profile.email {
+                        ProfileDetailRow(title: "Account email", value: email)
+                    }
                     ProfileDetailRow(title: "Profile record", value: "Saved on this device")
+                    accountActionArea(session: session, result: result)
                 } else {
                     Text("A local user profile is created after goal setup and can be linked to account sync later.")
                         .font(.body)
@@ -174,7 +186,7 @@ struct ProfileView: View {
     private var careerGraphSetupStatusCard: some View {
         let content = CareerGraphSetupStatusContent(
             state: store.state,
-            session: BackendUserSession.localOnly(for: store.state)
+            session: store.currentBackendSessionSnapshot()
         )
 
         return Card {
@@ -234,6 +246,146 @@ struct ProfileView: View {
                     .foregroundStyle(Color.openLARPSoftInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var authenticationPresentationAnchorReader: some View {
+        #if canImport(UIKit)
+        AuthenticationPresentationAnchorReader { anchor in
+            authenticationPresentationAnchor = anchor
+        }
+        #else
+        EmptyView()
+        #endif
+    }
+
+    private func accountActionArea(
+        session: BackendUserSession,
+        result: OpenLARPAuthenticationResult?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(accountSyncDetail(session: session, result: result))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.openLARPSoftInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let message = result?.message, !message.isEmpty {
+                Text(message)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPCoral)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if session.isAuthenticated {
+                Button {
+                    Task {
+                        await store.signOutOfAccount()
+                    }
+                } label: {
+                    if store.isSigningOutOfAccount {
+                        HStack {
+                            ProgressView()
+                                .tint(.white)
+                            Text("Signing Out")
+                        }
+                    } else {
+                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(store.isAuthenticationOperationInFlight)
+            } else {
+                VStack(spacing: 8) {
+                    Button {
+                        Task {
+                            await store.signInWithGoogle(presenting: authenticationPresentationAnchor)
+                        }
+                    } label: {
+                        if store.isSigningInWithGoogle {
+                            HStack {
+                                ProgressView()
+                                    .tint(.white)
+                                Text("Opening Google")
+                            }
+                        } else {
+                            Label("Continue With Google", systemImage: "person.crop.circle.badge.plus")
+                        }
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(store.isAuthenticationOperationInFlight)
+
+                    Button {
+                        Task {
+                            await store.restorePreviousAuthenticationSession()
+                        }
+                    } label: {
+                        if store.isRestoringAuthenticationSession {
+                            HStack {
+                                ProgressView()
+                                Text("Checking Session")
+                            }
+                        } else {
+                            Label("Restore Previous Session", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(store.isAuthenticationOperationInFlight)
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func accountSyncStatusTitle(
+        session: BackendUserSession,
+        result: OpenLARPAuthenticationResult?
+    ) -> String {
+        if session.isAuthenticated {
+            return "Linked"
+        }
+
+        switch result?.status {
+        case .configurationMissing:
+            return "Firebase config needed"
+        case .providerSetupRequired:
+            return "Google provider needed"
+        case .sdkUnavailable:
+            return "SDK unavailable"
+        case .presentationRequired:
+            return "Sign-in presenter needed"
+        case .failed:
+            return "Sign-in failed"
+        case .signedOut:
+            return "Signed out"
+        case .authenticated:
+            return "Linked"
+        case nil:
+            return "Not connected yet"
+        }
+    }
+
+    private func accountSyncDetail(
+        session: BackendUserSession,
+        result: OpenLARPAuthenticationResult?
+    ) -> String {
+        if session.isAuthenticated {
+            return "OpenLARP can now assign backend events and future career graph uploads to your Firebase account."
+        }
+
+        switch result?.status {
+        case .configurationMissing:
+            return "The app is Firebase-ready, but this local build needs GoogleService-Info.plist and the Google callback URL scheme."
+        case .providerSetupRequired:
+            return "Enable the Google provider in Firebase Auth and add the reversed client ID URL scheme before live sign-in."
+        case .sdkUnavailable:
+            return "FirebaseAuth and GoogleSignIn must be linked in this build before live account sync."
+        case .presentationRequired:
+            return "Google Sign-In needs a presentation anchor from the current iOS screen."
+        case .failed:
+            return "The account session did not finish. Local OpenLARP progress is still available on this device."
+        default:
+            return "Connect Google to make this device profile account-backed. Local progress still works without signing in."
         }
     }
 
@@ -551,6 +703,26 @@ private struct CareerGraphSyncPreviewSummary: View {
         .accessibilityElement(children: .contain)
     }
 }
+
+#if canImport(UIKit)
+private struct AuthenticationPresentationAnchorReader: UIViewControllerRepresentable {
+    let onResolve: (OpenLARPAuthenticationPresentationAnchor) -> Void
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let controller = UIViewController()
+        DispatchQueue.main.async {
+            onResolve(controller)
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            onResolve(uiViewController)
+        }
+    }
+}
+#endif
 
 private struct PrivacyToggleRow: View {
     let title: String

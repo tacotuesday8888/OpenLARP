@@ -10,7 +10,7 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - Tracked config files: `.firebaserc`, `firebase.json`, `firestore.rules`, `storage.rules`
 - Local-only config file: `OpenLARP/GoogleService-Info.plist`
 
-`OpenLARP/GoogleService-Info.plist` is intentionally ignored by Git. The generated Xcode project also excludes it so private local config is not accidentally committed or required in CI. When Firebase SDKs are linked for live auth testing, add a local-only Debug copy step or another non-committed configuration path before expecting Firebase to configure at runtime.
+`OpenLARP/GoogleService-Info.plist` is intentionally ignored by Git. The generated Xcode project excludes it from source membership and uses an optional post-build copy script so private local config is not accidentally committed or required in CI.
 
 ## What Exists In iOS
 
@@ -21,6 +21,8 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `FirebaseReadyBackendEventSyncService` routes authenticated sessions to Firestore and keeps events pending when Firebase Auth needs sign-in or Firebase runtime config is missing.
 - `FirebaseGoogleSignInAuthenticationService` provides a Google Sign-In boundary for restore, sign-in, sign-out, and URL handling without faking success when setup is incomplete.
 - `OpenLARPFirebaseBootstrap.configureIfAvailable()` configures Firebase only when the SDK and plist are both available.
+- `OpenLARPStore` now owns authentication state through `OpenLARPAuthenticationServicing`, restores previous sessions on app launch/foreground, forwards auth callback URLs, updates local profile account fields, and uses the same authenticated session source for backend events and career graph previews.
+- `ProfileView` exposes account status, Google sign-in, restore, and sign-out controls while preserving local/mock mode.
 
 The Firebase adapters also check that `FirebaseApp` is configured before touching Auth or Firestore. This lets CI and local mock builds continue safely when Firebase SDKs are linked but private runtime configuration has not been bundled.
 
@@ -37,6 +39,8 @@ Google Sign-In packages are also linked as the next auth UI integration point:
 - `GoogleSignInSwift`
 
 `GoogleService-Info.plist` remains ignored by Git and excluded from normal XcodeGen sources. The generated Xcode project includes an optional post-build copy script that copies the local plist into the app bundle only when the ignored local file exists.
+
+The generated project also includes a `GOOGLE_REVERSED_CLIENT_ID` build setting placeholder and a matching URL type entry for Google Sign-In callbacks. Do not commit the real local Firebase plist. For live local sign-in, set `GOOGLE_REVERSED_CLIENT_ID` to the `REVERSED_CLIENT_ID` value from the local plist in a non-committed Xcode setting or local build override before running on device/simulator.
 
 ## Security Rules
 
@@ -62,7 +66,7 @@ Only the signed-in owner can read/write proof attachments, and uploads are limit
 ## Next Backend Steps
 
 1. Enable Firebase Auth providers in the Firebase console, starting with Sign in with Apple and Google Sign-In.
-2. Add Google Sign-In UI presentation and `.onOpenURL` forwarding in the app.
+2. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
 3. Add Firestore career graph document uploads and Storage proof attachment uploads behind the existing sync boundaries.
 4. Deploy Cloud Functions only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
 5. Keep provider model IDs and API keys only on the backend.
