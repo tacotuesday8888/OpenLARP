@@ -3,6 +3,7 @@ import { HttpsError } from "firebase-functions/v2/https";
 export type OpenLARPFunctionErrorCode =
   | "unauthenticated"
   | "invalid-argument"
+  | "not-found"
   | "permission-denied"
   | "failed-precondition"
   | "internal";

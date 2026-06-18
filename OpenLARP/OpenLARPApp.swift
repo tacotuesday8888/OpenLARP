@@ -18,7 +18,8 @@ struct OpenLARPApp: App {
                 aiWorkflowService: aiWorkflowService,
                 careerGraphSyncService: FirebaseReadyCareerGraphSyncService(
                     firebaseService: FirebaseFirestoreCareerGraphSyncService(
-                        attachmentDataProvider: attachmentStore
+                        attachmentDataProvider: attachmentStore,
+                        proofAttachmentReceiptPromoter: FirebaseCallableProofAttachmentReceiptPromoter()
                     )
                 ),
                 authenticationService: authenticationService,

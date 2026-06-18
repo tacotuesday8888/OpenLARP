@@ -1,6 +1,10 @@
 import XCTest
 @testable import OpenLARP
 
+#if canImport(FirebaseFirestore)
+import FirebaseFirestore
+#endif
+
 @MainActor
 final class BackendSessionReadinessTests: XCTestCase {
     private let goal = CareerGoal(
@@ -135,6 +139,34 @@ final class BackendSessionReadinessTests: XCTestCase {
             "firebase_uid_456-proofClaimed-33333333-3333-4333-8333-333333333333"
         )
         XCTAssertFalse(event.idempotencyKey.contains(event.id.uuidString))
+    }
+
+    func testFirebaseFirestorePayloadEncodesDatesAsFirestoreTimestamps() throws {
+        let event = BackendEventRecord(
+            id: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!,
+            kind: .proofClaimed,
+            ownerUserID: "firebase_uid_789",
+            occurredAt: Date(timeIntervalSince1970: 20_600),
+            entityID: "33333333-3333-4333-8333-333333333333",
+            retryCount: 1,
+            lastAttemptAt: Date(timeIntervalSince1970: 20_650)
+        )
+        let document = FirebaseBackendEventDocument(
+            event: event,
+            acceptedAt: Date(timeIntervalSince1970: 20_700)
+        )
+
+        let data = try FirebaseFirestorePayload.dictionary(from: document)
+
+        #if canImport(FirebaseFirestore)
+        XCTAssertTrue(data["occurredAt"] is Timestamp)
+        XCTAssertTrue(data["lastAttemptAt"] is Timestamp)
+        XCTAssertTrue(data["acceptedAt"] is Timestamp)
+        #else
+        XCTAssertTrue((data["occurredAt"] as? String)?.contains("1970-01-01T05:43:20") == true)
+        XCTAssertTrue((data["lastAttemptAt"] as? String)?.contains("1970-01-01T05:44:10") == true)
+        XCTAssertTrue((data["acceptedAt"] as? String)?.contains("1970-01-01T05:45:00") == true)
+        #endif
     }
 
     func testFirebaseReadyUnauthenticatedSessionLeavesBackendEventsPending() async throws {

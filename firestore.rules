@@ -55,22 +55,9 @@ service cloud.firestore {
         && request.resource.data.metadata.localID == attachmentId;
     }
 
-    function hasSafeProofUploadReceipt(userId, attachmentId) {
-      return (
-          request.resource.data.uploadStatus == 'pendingUpload'
-          && !request.resource.data.keys().hasAny(['uploadReceipt'])
-        )
-        || (
-          request.resource.data.uploadStatus == 'uploaded'
-          && request.resource.data.keys().hasAll(['uploadReceipt'])
-          && request.resource.data.uploadReceipt.proofID == request.resource.data.proofID
-          && request.resource.data.uploadReceipt.attachmentID == attachmentId
-          && request.resource.data.uploadReceipt.storagePath == request.resource.data.storagePath
-          && request.resource.data.uploadReceipt.contentType == request.resource.data.contentType
-          && request.resource.data.uploadReceipt.byteCount == request.resource.data.byteCount
-          && request.resource.data.uploadReceipt.status == 'uploaded'
-          && request.resource.data.uploadReceipt.idempotencyKey == userId + "-" + attachmentId
-        );
+    function hasClientProofUploadState() {
+      return request.resource.data.uploadStatus == 'pendingUpload'
+        && !request.resource.data.keys().hasAny(['uploadReceipt']);
     }
 
     function isSafeProofAttachmentDocument(userId, attachmentId) {
@@ -78,8 +65,7 @@ service cloud.firestore {
         && hasProofAttachmentPath(userId, attachmentId)
         && request.resource.data.contentType is string
         && request.resource.data.byteCount is int
-        && request.resource.data.uploadStatus in ['pendingUpload', 'uploaded']
-        && hasSafeProofUploadReceipt(userId, attachmentId);
+        && hasClientProofUploadState();
     }
 
     function isSafeProofRecordDocument(userId) {
@@ -246,8 +232,9 @@ service cloud.firestore {
 
       match /proofAttachments/{attachmentId} {
         allow read: if isUser(userId);
-        allow create, update: if isUser(userId)
+        allow create: if isUser(userId)
           && isSafeProofAttachmentDocument(userId, attachmentId);
+        allow update: if false;
         allow delete: if false;
       }
 

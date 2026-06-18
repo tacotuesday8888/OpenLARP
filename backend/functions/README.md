@@ -1,6 +1,6 @@
 # OpenLARP Firebase Functions
 
-This package is the deployable Firebase Functions boundary for OpenLARP AI workflows.
+This package is the deployable Firebase Functions boundary for OpenLARP AI workflows and server-owned proof upload trust.
 
 The iOS app should call Firebase Auth-protected callable functions, not provider APIs. This package validates the existing `backend/ai` request envelope, enforces auth and external-action guardrails, then dispatches to deterministic backend workflow handlers while live model calls are disabled.
 
@@ -8,6 +8,7 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 
 - Callable export: `runOpenLARPWorkflow`
 - Callable export: `reconcileProofUploads`
+- Callable export: `promoteProofUploadReceipt`
 - Runtime: Node.js 22
 - Firebase Admin: pinned to `13.10.0` to satisfy
   `firebase-functions@7.2.5` peer dependencies
@@ -18,8 +19,9 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
   are disabled
 - Deploy lockfile: `backend/functions/package-lock.json` is committed so
   Firebase Cloud Build installs the same deploy-source dependency graph
-- Dev deploy: `runOpenLARPWorkflow` and `reconcileProofUploads` are active Gen 2
-  callables in `openlarp-dev-langqi` / `us-central1`
+- Dev deploy: `runOpenLARPWorkflow`, `reconcileProofUploads`, and
+  `promoteProofUploadReceipt` are expected active Gen 2 callables in
+  `openlarp-dev-langqi` / `us-central1`
 - Live endpoint smoke: unsigned workflow requests return `UNAUTHENTICATED`
 - Artifact cleanup: `gcf-artifacts` keeps the most recent 5 versions and deletes
   artifacts older than 7 days
@@ -28,6 +30,26 @@ The deployable Functions runtime validates shared request/response contracts wit
 direct Zod imports. Genkit stays isolated in `backend/ai` so deterministic
 callable functions can be built and deployed without bundling the current
 Genkit/OpenTelemetry dependency tree.
+
+## Proof Upload Promotion
+
+`promoteProofUploadReceipt` is an authenticated Firebase callable that turns an
+iOS Storage upload into a server-trusted Firestore proof attachment receipt.
+
+The callable:
+
+- requires Firebase Auth
+- accepts only deterministic `users/{uid}/proofAttachments/{attachmentId}` paths
+- validates proof ID, attachment ID, owner metadata, content type, byte count,
+  idempotency key, and Storage object existence with the Admin SDK
+- rejects extra Storage custom metadata, including local file paths
+- writes the Firestore `users/{uid}/proofAttachments/{attachmentId}` document
+  with `uploadStatus: uploaded` and a matching receipt
+- returns the uploaded receipt to iOS without provider secrets or local file
+  paths
+
+Firestore rules now allow clients to create only `pendingUpload` proof
+attachment metadata. Uploaded receipts are server-owned.
 
 ## Proof Upload Reconciliation
 

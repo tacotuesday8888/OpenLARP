@@ -926,6 +926,31 @@ protocol CareerGraphProofAttachmentUploading: Sendable {
     func upload(_ request: CareerGraphProofAttachmentUploadRequest) async throws -> CareerGraphSyncUploadReceipt
 }
 
+struct CareerGraphProofAttachmentPromotionRequest: Sendable {
+    var requestedAt: Date
+    var session: BackendUserSession
+    var uploadIntent: CareerGraphSyncUploadIntent
+    var uploadReceipt: CareerGraphSyncUploadReceipt
+
+    init(
+        requestedAt: Date,
+        session: BackendUserSession,
+        uploadIntent: CareerGraphSyncUploadIntent,
+        uploadReceipt: CareerGraphSyncUploadReceipt
+    ) {
+        self.requestedAt = requestedAt
+        self.session = session.redactedForCareerGraphSync()
+        self.uploadIntent = uploadIntent
+        self.uploadReceipt = uploadReceipt
+    }
+}
+
+protocol CareerGraphProofAttachmentReceiptPromoting: Sendable {
+    var writesProofAttachmentDocuments: Bool { get }
+
+    func promote(_ request: CareerGraphProofAttachmentPromotionRequest) async throws -> CareerGraphSyncUploadReceipt
+}
+
 enum CareerGraphSyncDocumentType: String, Codable, CaseIterable {
     case profile
     case goal

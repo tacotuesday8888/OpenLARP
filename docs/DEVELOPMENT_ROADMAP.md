@@ -4,7 +4,7 @@ This roadmap is for building OpenLARP from the current SwiftUI starter shell int
 
 ## Current Baseline
 
-OpenLARP is now past the starter-shell baseline. The current app has a local-first V0 loop that is suitable for public beta hardening, but not yet for a service-backed App Store launch.
+OpenLARP is now past the starter-shell baseline. The current app has a local-first V0 loop plus Firebase-ready beta infrastructure. It is suitable for deeper public beta hardening, but not yet for a fully service-backed App Store launch.
 
 OpenLARP currently has:
 
@@ -19,17 +19,21 @@ OpenLARP currently has:
 - Proof receipts, proof detail, proof archive, completed quest detail, and map preview screens
 - Daily cadence, intentional skip-today, and missed-day recovery behavior
 - XCTest coverage for the core local behavior
-- A passing simulator test suite and unsigned iOS build check as the main local validation gates
+- Firebase Auth, Firestore, Storage, Functions, Google Sign-In, and callable AI service boundaries behind local-safe adapters
+- A development Firebase project with deployed Firestore/Storage rules and deterministic Gen 2 callable functions
+- Server-trusted proof upload receipt promotion: the client uploads Storage bytes, then a callable verifies Storage metadata and writes the uploaded Firestore receipt
+- Backend AI contracts and a deterministic callable workflow boundary, with live model calls disabled until Genkit/Gemini safety, budget, and dependency work is ready
+- RevenueCat/subscription contracts and local entitlement state, without live App Store products
+- GitHub Actions CI plus local backend, rules, simulator, and unsigned iOS build validation gates
 
 OpenLARP does not yet have:
 
-- Real AI calls
-- Backend/auth or cross-device sync
-- Cloud proof uploads
+- Live Genkit/Gemini model calls
+- Fully server-authoritative career graph sync
+- Server-owned backend event acknowledgement
 - Push notifications
-- Subscriptions/paywalls
-- Production analytics
-- CI
+- Live App Store subscriptions/paywalls
+- Production analytics dashboards
 - TestFlight/App Store release setup
 
 ## Phase 0: Foundation
@@ -116,7 +120,7 @@ Success criteria:
 
 Goal: connect AI to narrow, controlled V0 jobs.
 
-Status: not started. Current diagnostic, quest, proof check, and progress behavior is deterministic local/mock logic.
+Status: partially complete as a backend-ready boundary. Current diagnostic, quest, proof check, and progress behavior is deterministic local/mock logic; authenticated Firebase callable routing exists, but live model calls remain disabled.
 
 Work:
 
@@ -138,13 +142,16 @@ Success criteria:
 
 Goal: make V0 usable across sessions/devices.
 
+Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, proof upload Storage writes, server-trusted proof upload receipt promotion, and live readiness checks exist. The remaining trust work is server-owned backend event acknowledgement, signed-in simulator/device smoke testing, App Check enforcement, quota/budget controls, and production-grade sync repair UX.
+
 Work:
 
-- Choose backend/auth stack
-- Add user accounts
-- Store goals, quests, proof records, streaks, and progress
-- Add privacy/memory controls
-- Add basic request logging and rate limits
+- Keep Firebase Auth/Google Sign-In as the current backend/auth stack
+- Finish account-backed sync smoke tests on simulator/device
+- Move backend event acknowledgement to Cloud Functions or Cloud Run
+- Add App Check enforcement after the iOS App Check provider is configured
+- Add per-user callable quota and budget controls before live AI or broad beta traffic
+- Add explicit cloud backup consent separate from public sharing language
 
 Success criteria:
 

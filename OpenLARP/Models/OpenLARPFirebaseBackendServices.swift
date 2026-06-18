@@ -16,12 +16,23 @@ import FirebaseFirestore
 import FirebaseStorage
 #endif
 
+#if canImport(FirebaseFunctions)
+@preconcurrency
+import FirebaseFunctions
+#endif
+
+#if canImport(FirebaseSharedSwift)
+import FirebaseSharedSwift
+#endif
+
 enum FirebaseBackendServiceError: Error, LocalizedError, Equatable {
     case sdkUnavailable
     case configurationMissing
     case authenticationRequired
     case unsupportedDocumentType
     case payloadEncodingFailed
+    case responseDecodingFailed
+    case contractMismatch(String)
     case attachmentBytesUnavailable
     case attachmentByteCountMismatch
     case attachmentPathRejected
@@ -40,6 +51,10 @@ enum FirebaseBackendServiceError: Error, LocalizedError, Equatable {
             "The career graph document type is not supported by this Firebase adapter."
         case .payloadEncodingFailed:
             "The backend event payload could not be encoded for Firestore."
+        case .responseDecodingFailed:
+            "The backend response did not match the OpenLARP Firebase contract."
+        case .contractMismatch(let detail):
+            detail
         case .attachmentBytesUnavailable:
             "The local proof attachment bytes are unavailable for upload."
         case .attachmentByteCountMismatch:
@@ -358,22 +373,144 @@ struct FirebaseStorageProofAttachmentUploader: CareerGraphProofAttachmentUploadi
     #endif
 }
 
+struct LocalProofAttachmentReceiptPromoter: CareerGraphProofAttachmentReceiptPromoting {
+    var writesProofAttachmentDocuments: Bool { false }
+
+    init() {}
+
+    func promote(_ request: CareerGraphProofAttachmentPromotionRequest) async throws -> CareerGraphSyncUploadReceipt {
+        request.uploadReceipt
+    }
+}
+
+struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
+    var proofUploadPromotionFunctionName: String
+    var usesEmulator: Bool
+    var emulatorHost: String
+    var emulatorPort: Int
+
+    static let production = OpenLARPFirebaseCallableBackendConfiguration()
+    static let localEmulator = OpenLARPFirebaseCallableBackendConfiguration(usesEmulator: true)
+
+    init(
+        proofUploadPromotionFunctionName: String = "promoteProofUploadReceipt",
+        usesEmulator: Bool = false,
+        emulatorHost: String = "localhost",
+        emulatorPort: Int = 5001
+    ) {
+        self.proofUploadPromotionFunctionName = proofUploadPromotionFunctionName
+        self.usesEmulator = usesEmulator
+        self.emulatorHost = emulatorHost
+        self.emulatorPort = emulatorPort
+    }
+}
+
+struct FirebaseCallableProofAttachmentReceiptPromoter: CareerGraphProofAttachmentReceiptPromoting {
+    var writesProofAttachmentDocuments: Bool { true }
+
+    private let configuration: OpenLARPFirebaseCallableBackendConfiguration
+
+    init(configuration: OpenLARPFirebaseCallableBackendConfiguration = .production) {
+        self.configuration = configuration
+    }
+
+    func promote(_ request: CareerGraphProofAttachmentPromotionRequest) async throws -> CareerGraphSyncUploadReceipt {
+        guard request.session.isAuthenticated else {
+            throw FirebaseBackendServiceError.authenticationRequired
+        }
+
+        #if canImport(FirebaseFunctions) && canImport(FirebaseCore) && canImport(FirebaseSharedSwift)
+        guard FirebaseApp.app() != nil else {
+            throw FirebaseBackendServiceError.configurationMissing
+        }
+
+        let functions = Functions.functions()
+        if configuration.usesEmulator {
+            functions.useEmulator(withHost: configuration.emulatorHost, port: configuration.emulatorPort)
+        }
+
+        let payload = FirebaseProofUploadPromotionPayload(intent: request.uploadIntent)
+        let callable: Callable<
+            FirebaseProofUploadPromotionPayload,
+            FirebaseProofUploadPromotionResponse
+        > = functions.httpsCallable(
+            configuration.proofUploadPromotionFunctionName,
+            requestAs: FirebaseProofUploadPromotionPayload.self,
+            responseAs: FirebaseProofUploadPromotionResponse.self,
+            encoder: FirebaseCallableAIWorkflowJSON.firebaseDataEncoder(),
+            decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
+        )
+        let response = try await callable.call(payload)
+        guard response.ok,
+              response.schemaVersion == 1,
+              response.userID == request.session.ownerUserID,
+              response.firestoreDocumentPath == request.uploadIntent.attachmentDocumentPath,
+              response.externalActionTaken == false
+        else {
+            throw FirebaseBackendServiceError.contractMismatch("Proof upload promotion response did not match the signed-in user or upload intent.")
+        }
+        return response.uploadReceipt
+        #else
+        throw FirebaseBackendServiceError.sdkUnavailable
+        #endif
+    }
+}
+
+private struct FirebaseProofUploadPromotionPayload: Codable, Equatable, Sendable {
+    var schemaVersion: Int
+    var proofID: String
+    var attachmentID: String
+    var fileName: String
+    var contentType: String
+    var byteCount: Int
+    var storagePath: String
+    var proofDocumentPath: String
+    var attachmentDocumentPath: String
+    var idempotencyKey: String
+
+    init(intent: CareerGraphSyncUploadIntent) {
+        schemaVersion = 1
+        proofID = intent.proofID
+        attachmentID = intent.attachmentID
+        fileName = intent.fileName
+        contentType = intent.contentType
+        byteCount = intent.byteCount
+        storagePath = intent.storagePath
+        proofDocumentPath = intent.proofDocumentPath
+        attachmentDocumentPath = intent.attachmentDocumentPath
+        idempotencyKey = intent.idempotencyKey
+    }
+}
+
+private struct FirebaseProofUploadPromotionResponse: Codable, Equatable, Sendable {
+    var ok: Bool
+    var schemaVersion: Int
+    var userID: String
+    var promotedAt: Date
+    var firestoreDocumentPath: String
+    var uploadReceipt: CareerGraphSyncUploadReceipt
+    var externalActionTaken: Bool
+}
+
 struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
     private let planner: CareerGraphSyncPlanner
     private let writer: any FirebaseCareerGraphDocumentWriting
     private let attachmentDataProvider: any CareerGraphProofAttachmentDataProviding
     private let proofAttachmentUploader: any CareerGraphProofAttachmentUploading
+    private let proofAttachmentReceiptPromoter: any CareerGraphProofAttachmentReceiptPromoting
 
     init(
         planner: CareerGraphSyncPlanner = CareerGraphSyncPlanner(),
         writer: any FirebaseCareerGraphDocumentWriting = FirebaseFirestoreCareerGraphDocumentWriter(),
         attachmentDataProvider: any CareerGraphProofAttachmentDataProviding = OpenLARPAttachmentStore.live,
-        proofAttachmentUploader: any CareerGraphProofAttachmentUploading = FirebaseStorageProofAttachmentUploader()
+        proofAttachmentUploader: any CareerGraphProofAttachmentUploading = FirebaseStorageProofAttachmentUploader(),
+        proofAttachmentReceiptPromoter: any CareerGraphProofAttachmentReceiptPromoting = LocalProofAttachmentReceiptPromoter()
     ) {
         self.planner = planner
         self.writer = writer
         self.attachmentDataProvider = attachmentDataProvider
         self.proofAttachmentUploader = proofAttachmentUploader
+        self.proofAttachmentReceiptPromoter = proofAttachmentReceiptPromoter
     }
 
     func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
@@ -387,7 +524,11 @@ struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
             request: request
         )
         let uploadedSnapshot = request.snapshot.applyingUploadReceipts(uploadReceipts)
-        let writes = try makeDocumentWrites(from: uploadedSnapshot, manifest: manifest)
+        let writes = try makeDocumentWrites(
+            from: uploadedSnapshot,
+            manifest: manifest,
+            skipProofAttachmentDocuments: proofAttachmentReceiptPromoter.writesProofAttachmentDocuments
+        )
         try await writer.writeDocuments(writes)
 
         return CareerGraphSyncResult(
@@ -429,7 +570,17 @@ struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
             guard isValidUploadedReceipt(receipt, for: uploadIntent) else {
                 throw FirebaseBackendServiceError.invalidUploadReceipt
             }
-            receipts.append(receipt)
+            let promotionRequest = CareerGraphProofAttachmentPromotionRequest(
+                requestedAt: request.requestedAt,
+                session: request.session,
+                uploadIntent: uploadIntent,
+                uploadReceipt: receipt
+            )
+            let promotedReceipt = try await proofAttachmentReceiptPromoter.promote(promotionRequest)
+            guard isValidUploadedReceipt(promotedReceipt, for: uploadIntent) else {
+                throw FirebaseBackendServiceError.invalidUploadReceipt
+            }
+            receipts.append(promotedReceipt)
         }
         return receipts
     }
@@ -449,9 +600,14 @@ struct FirebaseFirestoreCareerGraphSyncService: CareerGraphSyncServicing {
 
     private func makeDocumentWrites(
         from snapshot: CloudCareerGraphSnapshot,
-        manifest: CareerGraphSyncManifest
+        manifest: CareerGraphSyncManifest,
+        skipProofAttachmentDocuments: Bool
     ) throws -> [FirebaseCareerGraphDocumentWrite] {
-        try manifest.documentWrites.map { write in
+        let documentWrites = skipProofAttachmentDocuments
+            ? manifest.documentWrites.filter { $0.documentType != .proofAttachment }
+            : manifest.documentWrites
+
+        return try documentWrites.map { write in
             try FirebaseCareerGraphDocumentWrite(
                 documentType: write.documentType,
                 documentPath: write.documentPath,
@@ -519,7 +675,9 @@ struct FirebaseReadyCareerGraphSyncService: CareerGraphSyncServicing {
     private let localFallbackService: LocalMockCareerGraphSyncService
 
     init(
-        firebaseService: FirebaseFirestoreCareerGraphSyncService = FirebaseFirestoreCareerGraphSyncService(),
+        firebaseService: FirebaseFirestoreCareerGraphSyncService = FirebaseFirestoreCareerGraphSyncService(
+            proofAttachmentReceiptPromoter: FirebaseCallableProofAttachmentReceiptPromoter()
+        ),
         localFallbackService: LocalMockCareerGraphSyncService = LocalMockCareerGraphSyncService()
     ) {
         self.firebaseService = firebaseService
@@ -535,14 +693,64 @@ struct FirebaseReadyCareerGraphSyncService: CareerGraphSyncServicing {
     }
 }
 
-private enum FirebaseFirestorePayload {
+enum FirebaseFirestorePayload {
+    private static let dateMarkerKey = "__openlarpFirestoreDate"
+
     static func dictionary<T: Encodable>(from value: T) throws -> [String: Any] {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode([dateMarkerKey: iso8601String(from: date)])
+        }
         let data = try encoder.encode(value)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FirebaseBackendServiceError.payloadEncodingFailed
         }
-        return object
+        guard let converted = firestoreValue(from: object) as? [String: Any] else {
+            throw FirebaseBackendServiceError.payloadEncodingFailed
+        }
+        return converted
+    }
+
+    private static func firestoreValue(from value: Any) -> Any {
+        if let dictionary = value as? [String: Any] {
+            if dictionary.count == 1,
+               let dateString = dictionary[dateMarkerKey] as? String,
+               let date = date(from: dateString) {
+                #if canImport(FirebaseFirestore)
+                return Timestamp(date: date)
+                #else
+                return dateString
+                #endif
+            }
+
+            return dictionary.reduce(into: [String: Any]()) { result, item in
+                result[item.key] = firestoreValue(from: item.value)
+            }
+        }
+
+        if let array = value as? [Any] {
+            return array.map(firestoreValue(from:))
+        }
+
+        return value
+    }
+
+    private static func iso8601String(from date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    private static func date(from value: String) -> Date? {
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractionalFormatter.date(from: value) {
+            return date
+        }
+
+        let standardFormatter = ISO8601DateFormatter()
+        standardFormatter.formatOptions = [.withInternetDateTime]
+        return standardFormatter.date(from: value)
     }
 }
