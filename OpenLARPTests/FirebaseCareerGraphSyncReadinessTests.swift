@@ -297,6 +297,116 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
         }
     }
 
+    func testExistingStorageObjectReceiptRequiresExactOpenLARPMetadata() throws {
+        let now = Date(timeIntervalSince1970: 43_000)
+        let state = careerGraphStateWithProof(now: now)
+        let session = BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_existing")
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let intent = try XCTUnwrap(CareerGraphSyncPlanner().plan(request).storageUploads.first)
+        let metadata = CareerGraphStorageObjectMetadata(
+            storagePath: intent.storagePath,
+            contentType: intent.contentType,
+            byteCount: intent.byteCount,
+            customMetadata: CareerGraphStorageObjectMetadata.expectedCustomMetadata(
+                ownerUserID: session.ownerUserID,
+                intent: intent
+            ),
+            updatedAt: nil,
+            storageBucket: "openlarp-test.appspot.com",
+            storageGeneration: 101,
+            metadataGeneration: 2,
+            md5Hash: "mock-md5"
+        )
+
+        let receipt = try XCTUnwrap(CareerGraphSyncUploadReceipt(
+            existingObject: metadata,
+            intent: intent,
+            session: session,
+            uploadedAtFallback: now
+        ))
+        XCTAssertEqual(receipt.status, .uploaded)
+        XCTAssertEqual(receipt.storagePath, intent.storagePath)
+        XCTAssertEqual(receipt.storageBucket, "openlarp-test.appspot.com")
+        XCTAssertEqual(receipt.uploadedAt, now)
+
+        var extraMetadata = metadata
+        extraMetadata.customMetadata["localRelativePath"] = "ProofAttachments/private-local-path.png"
+        XCTAssertNil(CareerGraphSyncUploadReceipt(
+            existingObject: extraMetadata,
+            intent: intent,
+            session: session
+        ))
+
+        var wrongOwner = metadata
+        wrongOwner.customMetadata["ownerUserID"] = "other_uid"
+        XCTAssertNil(CareerGraphSyncUploadReceipt(
+            existingObject: wrongOwner,
+            intent: intent,
+            session: session
+        ))
+
+        var wrongProof = metadata
+        wrongProof.customMetadata["proofID"] = "other-proof"
+        XCTAssertNil(CareerGraphSyncUploadReceipt(
+            existingObject: wrongProof,
+            intent: intent,
+            session: session
+        ))
+
+        var mismatchedSize = metadata
+        mismatchedSize.byteCount += 1
+        XCTAssertNil(CareerGraphSyncUploadReceipt(
+            existingObject: mismatchedSize,
+            intent: intent,
+            session: session
+        ))
+
+        var wrongIdempotencyKey = metadata
+        wrongIdempotencyKey.customMetadata["idempotencyKey"] = "wrong-key"
+        XCTAssertNil(CareerGraphSyncUploadReceipt(
+            existingObject: wrongIdempotencyKey,
+            intent: intent,
+            session: session
+        ))
+    }
+
+    func testFirebaseCareerGraphSyncAcceptsExistingMatchingStorageObjectForRetry() async throws {
+        let now = Date(timeIntervalSince1970: 43_500)
+        let state = careerGraphStateWithProof(now: now)
+        let session = BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_retry")
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: now,
+            includePrivateEvidence: true
+        )
+        let writer = CapturingCareerGraphDocumentWriter()
+        let uploader = ExistingObjectProofAttachmentUploader()
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: StaticProofAttachmentDataProvider(),
+            proofAttachmentUploader: uploader
+        )
+
+        let firstResult = try await service.prepareSync(request)
+        let retryResult = try await service.prepareSync(request)
+
+        XCTAssertEqual(uploader.requests.count, 2)
+        XCTAssertEqual(firstResult.uploadReceipts.map(\.status), [.uploaded])
+        XCTAssertEqual(retryResult.uploadReceipts.map(\.status), [.uploaded])
+        XCTAssertEqual(firstResult.uploadReceipts.first?.storagePath, retryResult.uploadReceipts.first?.storagePath)
+        XCTAssertEqual(firstResult.uploadReceipts.first?.idempotencyKey, retryResult.uploadReceipts.first?.idempotencyKey)
+        XCTAssertEqual(
+            writer.writes.filter { $0.documentType == .proofAttachment }.count,
+            2
+        )
+    }
+
     private func careerGraphStateWithProof(now: Date) -> OpenLARPState {
         let attachment = ProofAttachment(
             id: UUID(uuidString: "E1E1E1E1-E1E1-E1E1-E1E1-E1E1E1E1E1E1")!,
@@ -378,6 +488,36 @@ private struct FailingIfCalledProofAttachmentUploader: CareerGraphProofAttachmen
     func upload(_ request: CareerGraphProofAttachmentUploadRequest) async throws -> CareerGraphSyncUploadReceipt {
         XCTFail("Proof attachment uploader should not be called when local bytes are missing.")
         return CareerGraphSyncUploadReceipt(intent: request.uploadIntent, status: .failed)
+    }
+}
+
+private final class ExistingObjectProofAttachmentUploader: CareerGraphProofAttachmentUploading, @unchecked Sendable {
+    private(set) var requests: [CareerGraphProofAttachmentUploadRequest] = []
+
+    func upload(_ request: CareerGraphProofAttachmentUploadRequest) async throws -> CareerGraphSyncUploadReceipt {
+        requests.append(request)
+        let metadata = CareerGraphStorageObjectMetadata(
+            storagePath: request.uploadIntent.storagePath,
+            contentType: request.uploadIntent.contentType,
+            byteCount: request.uploadIntent.byteCount,
+            customMetadata: CareerGraphStorageObjectMetadata.expectedCustomMetadata(
+                ownerUserID: request.session.ownerUserID,
+                intent: request.uploadIntent
+            ),
+            updatedAt: request.requestedAt,
+            storageBucket: "openlarp-test.appspot.com",
+            storageGeneration: 101,
+            metadataGeneration: 2,
+            md5Hash: "mock-md5"
+        )
+        guard let receipt = CareerGraphSyncUploadReceipt(
+            existingObject: metadata,
+            intent: request.uploadIntent,
+            session: request.session
+        ) else {
+            throw FirebaseBackendServiceError.invalidUploadReceipt
+        }
+        return receipt
     }
 }
 

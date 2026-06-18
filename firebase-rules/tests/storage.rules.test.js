@@ -155,6 +155,32 @@ describe("Storage rules", () => {
       }
     ));
   });
+
+  it("blocks extra or oversized proof attachment upload metadata", async () => {
+    const alice = testEnv.authenticatedContext("alice").storage();
+    const withExtraMetadata = storageMetadata("alice", "proof1", "extra-metadata.txt", "text/plain");
+    withExtraMetadata.customMetadata.localRelativePath = "ProofAttachments/private-local-path.txt";
+
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/extra-metadata.txt"),
+      "proof",
+      "raw",
+      withExtraMetadata
+    ));
+
+    const oversizedProofID = storageMetadata(
+      "alice",
+      "p".repeat(129),
+      "oversized-metadata.txt",
+      "text/plain"
+    );
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/oversized-metadata.txt"),
+      "proof",
+      "raw",
+      oversizedProofID
+    ));
+  });
 });
 
 function storageMetadata(ownerUserID, proofID, attachmentID, contentType) {

@@ -16,7 +16,25 @@ service firebase.storage {
         'proofID',
         'attachmentID',
         'idempotencyKey'
-      ]);
+      ])
+        && request.resource.metadata.keys().hasOnly([
+          'ownerUserID',
+          'proofID',
+          'attachmentID',
+          'idempotencyKey'
+        ])
+        && request.resource.metadata.ownerUserID is string
+        && request.resource.metadata.ownerUserID.size() > 0
+        && request.resource.metadata.ownerUserID.size() <= 128
+        && request.resource.metadata.proofID is string
+        && request.resource.metadata.proofID.size() > 0
+        && request.resource.metadata.proofID.size() <= 128
+        && request.resource.metadata.attachmentID is string
+        && request.resource.metadata.attachmentID.size() > 0
+        && request.resource.metadata.attachmentID.size() <= 128
+        && request.resource.metadata.idempotencyKey is string
+        && request.resource.metadata.idempotencyKey.size() > 0
+        && request.resource.metadata.idempotencyKey.size() <= 257;
     }
 
     match /users/{userId}/proofAttachments/{attachmentId} {
@@ -27,7 +45,6 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*|application/pdf|text/plain')
         && hasOpenLARPProofMetadata()
         && request.resource.metadata.ownerUserID == userId
-        && request.resource.metadata.proofID is string
         && request.resource.metadata.attachmentID == attachmentId
         && request.resource.metadata.idempotencyKey == userId + "-" + attachmentId;
       allow delete: if false;

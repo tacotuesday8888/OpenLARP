@@ -60,7 +60,7 @@ Storage rules currently reserve this path:
 users/{uid}/proofAttachments/{attachmentId}
 ```
 
-Only the signed-in owner can read proof attachments and create new proof attachment objects. Client-side proof attachment uploads are write-once: an existing object cannot be overwritten or deleted by the client. Uploads are limited to images, PDFs, and plain text under 10 MB. Uploads must include OpenLARP custom metadata: owner ID, proof ID, attachment ID, and idempotency key. Storage rules enforce the owner, attachment ID, and idempotency key against the signed-in user and path; the proof ID is carried forward into the Firestore upload receipt contract.
+Only the signed-in owner can read proof attachments and create new proof attachment objects. Client-side proof attachment uploads are write-once: an existing object cannot be overwritten or deleted by the client. Repeated syncs stay safe because the iOS Firebase Storage adapter accepts an existing object only when its path, content type, byte count, owner ID, proof ID, attachment ID, and idempotency key exactly match the intended upload, then repairs the Firestore upload receipt. Uploads are limited to images, PDFs, and plain text under 10 MB. Uploads must include only OpenLARP custom metadata: owner ID, proof ID, attachment ID, and idempotency key. Storage rules enforce the owner, attachment ID, and idempotency key against the signed-in user and path; the proof ID is carried forward into the Firestore upload receipt contract.
 
 Top-level proof attachment Firestore documents now require:
 
