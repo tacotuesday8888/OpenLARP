@@ -36,6 +36,25 @@ describe("Storage rules", () => {
     await assertSucceeds(getBytes(attachment));
   });
 
+  it("blocks overwriting existing proof attachment bytes", async () => {
+    const alice = testEnv.authenticatedContext("alice").storage();
+    const attachment = ref(alice, "users/alice/proofAttachments/write-once.txt");
+
+    await assertSucceeds(uploadString(
+      attachment,
+      "original-proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "write-once.txt", "text/plain")
+    ));
+
+    await assertFails(uploadString(
+      attachment,
+      "replacement-proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "write-once.txt", "text/plain")
+    ));
+  });
+
   it("blocks cross-user reads, unsupported content types, missing metadata, and deletes", async () => {
     const alice = testEnv.authenticatedContext("alice").storage();
     const bob = testEnv.authenticatedContext("bob").storage();

@@ -46,7 +46,7 @@ Use this command before each TestFlight-readiness pass:
 npm run firebase:live-readiness
 ```
 
-Expected current result is a clean pass with no missing Google OAuth ID or missing Storage bucket warnings.
+Expected current result is a clean pass with no missing Google OAuth ID or missing Storage bucket warnings. A clean readiness script does not replace the required signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage proof upload/read rules, and callable fallback behavior.
 
 ## Backend Dependency Risk
 

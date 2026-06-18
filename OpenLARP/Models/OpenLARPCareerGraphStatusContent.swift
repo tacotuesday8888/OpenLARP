@@ -213,3 +213,43 @@ struct CareerGraphSyncPreviewContent: Equatable {
         return "\(byteCount / 1_000_000) MB"
     }
 }
+
+struct CareerGraphSyncActionContent: Equatable {
+    var title: String
+    var progressLabel: String
+    var systemImage: String
+    var footnote: String
+
+    init(
+        isAuthenticated: Bool,
+        shareWinsEnabled: Bool,
+        proofFileCount: Int
+    ) {
+        if !isAuthenticated {
+            title = "Preview Saved Career Graph"
+            progressLabel = "Building Preview"
+            systemImage = "arrow.triangle.2.circlepath"
+            footnote = "This prepares a local preview only. It does not upload or sync anything."
+            return
+        }
+
+        if shareWinsEnabled && proofFileCount > 0 {
+            title = "Sync Career Graph & Proof Files"
+            progressLabel = "Syncing Proof Files"
+            systemImage = "icloud.and.arrow.up.fill"
+            footnote = "This writes account-owned career graph metadata to Firestore and uploads \(Self.proofFileCountText(proofFileCount)) to Firebase Storage because Shareable wins is on."
+            return
+        }
+
+        title = "Sync Career Graph Metadata"
+        progressLabel = "Syncing Metadata"
+        systemImage = "icloud.and.arrow.up"
+        footnote = shareWinsEnabled
+            ? "This writes account-owned career graph metadata to Firestore. Shareable wins is on, but there are no saved proof files to upload yet."
+            : "This writes account-owned career graph metadata to Firestore. Proof files are not uploaded while Shareable wins is off."
+    }
+
+    private static func proofFileCountText(_ count: Int) -> String {
+        count == 1 ? "1 proof file" : "\(count) proof files"
+    }
+}

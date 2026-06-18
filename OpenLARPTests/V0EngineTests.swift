@@ -2638,6 +2638,35 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(content.displayText.contains("uploaded"))
     }
 
+    func testCareerGraphSyncActionContentDisclosesWhenProofFilesWillUpload() {
+        let local = CareerGraphSyncActionContent(
+            isAuthenticated: false,
+            shareWinsEnabled: true,
+            proofFileCount: 2
+        )
+        XCTAssertEqual(local.title, "Preview Saved Career Graph")
+        XCTAssertEqual(local.progressLabel, "Building Preview")
+        XCTAssertTrue(local.footnote.contains("does not upload or sync anything"))
+
+        let metadataOnly = CareerGraphSyncActionContent(
+            isAuthenticated: true,
+            shareWinsEnabled: false,
+            proofFileCount: 2
+        )
+        XCTAssertEqual(metadataOnly.title, "Sync Career Graph Metadata")
+        XCTAssertEqual(metadataOnly.progressLabel, "Syncing Metadata")
+        XCTAssertTrue(metadataOnly.footnote.contains("Proof files are not uploaded"))
+
+        let proofUpload = CareerGraphSyncActionContent(
+            isAuthenticated: true,
+            shareWinsEnabled: true,
+            proofFileCount: 2
+        )
+        XCTAssertEqual(proofUpload.title, "Sync Career Graph & Proof Files")
+        XCTAssertEqual(proofUpload.progressLabel, "Syncing Proof Files")
+        XCTAssertTrue(proofUpload.footnote.contains("uploads 2 proof files to Firebase Storage"))
+    }
+
     @MainActor
     func testV0AIWorkflowContractsExposeOnlyNarrowV0Jobs() async throws {
         XCTAssertEqual(V0AIWorkflowKind.allCases, [
