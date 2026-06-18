@@ -142,13 +142,13 @@ Success criteria:
 
 Goal: make V0 usable across sessions/devices.
 
-Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, proof upload Storage writes, server-trusted proof upload receipt promotion, and live readiness checks exist. The remaining trust work is server-owned backend event acknowledgement, signed-in simulator/device smoke testing, App Check enforcement, quota/budget controls, and production-grade sync repair UX.
+Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned backend event acknowledgement, and live readiness checks exist. The remaining trust work is signed-in simulator/device smoke testing, App Check enforcement, quota/budget controls, derived readiness/history writes, and production-grade sync repair UX.
 
 Work:
 
 - Keep Firebase Auth/Google Sign-In as the current backend/auth stack
 - Finish account-backed sync smoke tests on simulator/device
-- Move backend event acknowledgement to Cloud Functions or Cloud Run
+- Keep backend event acknowledgement server-owned through Cloud Functions
 - Add App Check enforcement after the iOS App Check provider is configured
 - Add per-user callable quota and budget controls before live AI or broad beta traffic
 - Add explicit cloud backup consent separate from public sharing language

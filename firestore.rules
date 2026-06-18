@@ -27,8 +27,7 @@ service cloud.firestore {
     }
 
     function noUnsafeBackendSyncStatusWrite() {
-      return !request.resource.data.keys().hasAny(['syncStatus'])
-        || request.resource.data.syncStatus == 'acknowledged';
+      return !request.resource.data.keys().hasAny(['syncStatus']);
     }
 
     function noBackendEventBypassWrite() {
@@ -83,120 +82,6 @@ service cloud.firestore {
         && hasDocumentPath(collectionName, userId, documentId);
     }
 
-    function isKnownBackendEventKind(kind) {
-      return kind in [
-        'goalConfirmed',
-        'questStarted',
-        'proofReviewed',
-        'proofClaimed',
-        'outcomeLogged',
-        'outcomeUpdated',
-        'outcomeDeleted',
-        'privacyUpdated',
-        'syncPreviewPrepared'
-      ];
-    }
-
-    function isKnownCareerOutcomeKind(kind) {
-      return kind in [
-        'applied',
-        'interview',
-        'rejection',
-        'offer',
-        'changedGoal',
-        'other'
-      ];
-    }
-
-    function isKnownCareerMemoryMode(mode) {
-      return mode in ['localOnly', 'cloudReady', 'off'];
-    }
-
-    function hasSafeBackendEventSummary() {
-      return request.resource.data.summary is map
-        && request.resource.data.summary.keys().hasOnly([
-          'targetRoleTitle',
-          'questID',
-          'questDay',
-          'proofID',
-          'outcomeID',
-          'outcomeKind',
-          'readinessOverall',
-          'xp',
-          'proofCount',
-          'qualityAccepted',
-          'qualityScore',
-          'memoryMode',
-          'shareWins',
-          'documentCount',
-          'proofUploadCount'
-        ])
-        && (!request.resource.data.summary.keys().hasAny(['targetRoleTitle'])
-          || request.resource.data.summary.targetRoleTitle is string)
-        && (!request.resource.data.summary.keys().hasAny(['questID'])
-          || request.resource.data.summary.questID is string)
-        && (!request.resource.data.summary.keys().hasAny(['questDay'])
-          || request.resource.data.summary.questDay is int)
-        && (!request.resource.data.summary.keys().hasAny(['proofID'])
-          || request.resource.data.summary.proofID is string)
-        && (!request.resource.data.summary.keys().hasAny(['outcomeID'])
-          || request.resource.data.summary.outcomeID is string)
-        && (!request.resource.data.summary.keys().hasAny(['outcomeKind'])
-          || isKnownCareerOutcomeKind(request.resource.data.summary.outcomeKind))
-        && (!request.resource.data.summary.keys().hasAny(['readinessOverall'])
-          || request.resource.data.summary.readinessOverall is int)
-        && (!request.resource.data.summary.keys().hasAny(['xp'])
-          || request.resource.data.summary.xp is int)
-        && (!request.resource.data.summary.keys().hasAny(['proofCount'])
-          || request.resource.data.summary.proofCount is int)
-        && (!request.resource.data.summary.keys().hasAny(['qualityAccepted'])
-          || request.resource.data.summary.qualityAccepted is bool)
-        && (!request.resource.data.summary.keys().hasAny(['qualityScore'])
-          || request.resource.data.summary.qualityScore is int)
-        && (!request.resource.data.summary.keys().hasAny(['memoryMode'])
-          || isKnownCareerMemoryMode(request.resource.data.summary.memoryMode))
-        && (!request.resource.data.summary.keys().hasAny(['shareWins'])
-          || request.resource.data.summary.shareWins is bool)
-        && (!request.resource.data.summary.keys().hasAny(['documentCount'])
-          || request.resource.data.summary.documentCount is int)
-        && (!request.resource.data.summary.keys().hasAny(['proofUploadCount'])
-          || request.resource.data.summary.proofUploadCount is int);
-    }
-
-    function isSafeBackendEventDocument(userId, eventId) {
-      return request.resource.data.keys().hasOnly([
-          'schemaVersion',
-          'eventID',
-          'ownerUserID',
-          'entityID',
-          'kind',
-          'syncStatus',
-          'idempotencyKey',
-          'occurredAt',
-          'retryCount',
-          'lastAttemptAt',
-          'summary',
-          'acceptedAt'
-        ])
-        && request.resource.data.schemaVersion == 1
-        && request.resource.data.eventID == eventId
-        && request.resource.data.ownerUserID == userId
-        && request.resource.data.entityID is string
-        && request.resource.data.entityID.size() > 0
-        && request.resource.data.entityID.size() <= 128
-        && request.resource.data.kind is string
-        && isKnownBackendEventKind(request.resource.data.kind)
-        && request.resource.data.syncStatus == 'acknowledged'
-        && request.resource.data.idempotencyKey is string
-        && request.resource.data.idempotencyKey == userId + "-" + request.resource.data.kind + "-" + request.resource.data.entityID
-        && request.resource.data.occurredAt is timestamp
-        && request.resource.data.retryCount is int
-        && (!request.resource.data.keys().hasAny(['lastAttemptAt'])
-          || request.resource.data.lastAttemptAt is timestamp)
-        && hasSafeBackendEventSummary()
-        && request.resource.data.acceptedAt is timestamp;
-    }
-
     match /users/{userId} {
       allow read: if isUser(userId);
       allow create, update: if isUser(userId) && isSafeUserDocument(userId);
@@ -204,9 +89,8 @@ service cloud.firestore {
 
       match /backendEvents/{eventId} {
         allow read: if isUser(userId);
-        allow create, update: if isUser(userId)
-          && isSafeBackendEventDocument(userId, eventId);
         allow delete: if false;
+        allow create, update: if false;
       }
 
       match /profiles/{profileId} {

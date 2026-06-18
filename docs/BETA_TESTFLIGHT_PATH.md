@@ -16,7 +16,7 @@ This document tracks the practical path from the current local product foundatio
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
 - Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled, and its deploy package is kept free of Genkit runtime dependencies.
-- Deterministic Firebase Callable Functions are deployed to the `openlarp-dev-langqi` dev project in `us-central1` with Node.js 22: `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, and `reconcileProofUploads`.
+- Deterministic Firebase Callable Functions are deployed to the `openlarp-dev-langqi` dev project in `us-central1` with Node.js 22: `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents`.
 - The live callable endpoint is reachable and rejects unsigned workflow requests with `UNAUTHENTICATED`.
 - Functions Artifact Registry cleanup policies are installed for the dev project so old deployment images do not accumulate without a retention policy.
 - The iOS app now tries the Firebase callable Genkit route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.
@@ -27,7 +27,7 @@ This document tracks the practical path from the current local product foundatio
 - Firebase Storage proof attachment upload adapter exists and uploads owner-scoped proof bytes before server receipt promotion.
 - `promoteProofUploadReceipt` verifies Storage object metadata with the Admin SDK and writes uploaded proof attachment receipts server-side.
 - Firebase security rules tests exist for Firestore and Storage owner boundaries, upload metadata, server-owned proof attachment receipt protection, and nested local-path leak prevention.
-- Firestore rules now deny arbitrary recursive user-subcollection writes, limit client writes to named beta sync collections, and prevent clients from writing or downgrading uploaded proof attachment receipts. Backend event acknowledgement is still a client-owned beta path until a server verification function owns it.
+- Firestore rules now deny arbitrary recursive user-subcollection writes, limit client writes to named beta sync collections, prevent clients from writing or downgrading uploaded proof attachment receipts, and keep backend event acknowledgement server-owned through `acknowledgeBackendEvents`.
 - Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
 
 ## Required Before TestFlight
@@ -36,7 +36,7 @@ This document tracks the practical path from the current local product foundatio
 2. Test account-backed proof attachment uploads, Firestore career graph writes, and the signed-in deterministic callable AI fallback route.
 3. Test the iOS callable route signed-out fallback behavior.
 4. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
-5. Add server-owned backend event acknowledgement, App Check, and callable quota/budget controls before treating all cloud data as authoritative or enabling live AI.
+5. Add App Check and callable quota/budget controls before treating all cloud data as authoritative or enabling live AI.
 6. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way.
 7. Add privacy policy, support URL, App Store screenshots, and TestFlight notes.
 8. Run a signed archive on the Apple Developer team and upload to App Store Connect.

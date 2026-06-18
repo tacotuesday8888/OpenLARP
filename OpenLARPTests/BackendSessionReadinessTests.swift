@@ -142,17 +142,9 @@ final class BackendSessionReadinessTests: XCTestCase {
     }
 
     func testFirebaseFirestorePayloadEncodesDatesAsFirestoreTimestamps() throws {
-        let event = BackendEventRecord(
-            id: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!,
-            kind: .proofClaimed,
-            ownerUserID: "firebase_uid_789",
+        let document = FirestoreTimestampProbe(
             occurredAt: Date(timeIntervalSince1970: 20_600),
-            entityID: "33333333-3333-4333-8333-333333333333",
-            retryCount: 1,
-            lastAttemptAt: Date(timeIntervalSince1970: 20_650)
-        )
-        let document = FirebaseBackendEventDocument(
-            event: event,
+            lastAttemptAt: Date(timeIntervalSince1970: 20_650),
             acceptedAt: Date(timeIntervalSince1970: 20_700)
         )
 
@@ -167,6 +159,77 @@ final class BackendSessionReadinessTests: XCTestCase {
         XCTAssertTrue((data["lastAttemptAt"] as? String)?.contains("1970-01-01T05:44:10") == true)
         XCTAssertTrue((data["acceptedAt"] as? String)?.contains("1970-01-01T05:45:00") == true)
         #endif
+    }
+
+    func testFirebaseBackendEventSyncResponseValidatesReceiptsAndBuildsResult() throws {
+        let request = makeAuthenticatedBackendEventSyncRequest()
+        let response = validFirebaseBackendEventSyncResponse(for: request)
+
+        let result = try response.validatedResult(for: request)
+
+        XCTAssertEqual(result.requestedAt, request.requestedAt)
+        XCTAssertEqual(result.completedAt, response.completedAt)
+        XCTAssertEqual(result.didContactNetwork, true)
+        XCTAssertEqual(result.receipts, response.receipts)
+        XCTAssertEqual(result.integrationRoutes, request.integrationRoutes)
+    }
+
+    func testFirebaseBackendEventSyncResponseRejectsMismatchedUserID() throws {
+        let request = makeAuthenticatedBackendEventSyncRequest()
+        var response = validFirebaseBackendEventSyncResponse(for: request)
+        response.userID = "other_user"
+
+        XCTAssertThrowsError(try response.validatedResult(for: request)) { error in
+            guard case FirebaseBackendServiceError.contractMismatch = error else {
+                return XCTFail("Expected contract mismatch, got \(error)")
+            }
+        }
+    }
+
+    func testFirebaseBackendEventSyncResponseRejectsMismatchedRequestedAt() throws {
+        let request = makeAuthenticatedBackendEventSyncRequest()
+        var response = validFirebaseBackendEventSyncResponse(for: request)
+        response.requestedAt = Date(timeIntervalSince1970: 20_701)
+
+        XCTAssertThrowsError(try response.validatedResult(for: request)) { error in
+            guard case FirebaseBackendServiceError.contractMismatch = error else {
+                return XCTFail("Expected contract mismatch, got \(error)")
+            }
+        }
+    }
+
+    func testFirebaseBackendEventSyncResponseRejectsMismatchedReceipt() throws {
+        let request = makeAuthenticatedBackendEventSyncRequest()
+        var response = validFirebaseBackendEventSyncResponse(for: request)
+        response.receipts[0] = BackendEventSyncReceipt(
+            eventID: request.events[0].id,
+            idempotencyKey: "forged-key",
+            status: .acknowledged,
+            acceptedAt: response.completedAt
+        )
+
+        XCTAssertThrowsError(try response.validatedResult(for: request)) { error in
+            guard case FirebaseBackendServiceError.contractMismatch = error else {
+                return XCTFail("Expected contract mismatch, got \(error)")
+            }
+        }
+    }
+
+    func testFirebaseBackendEventSyncResponseRejectsReceiptAfterCompletion() throws {
+        let request = makeAuthenticatedBackendEventSyncRequest()
+        var response = validFirebaseBackendEventSyncResponse(for: request)
+        response.receipts[0] = BackendEventSyncReceipt(
+            eventID: request.events[0].id,
+            idempotencyKey: request.events[0].idempotencyKey,
+            status: .acknowledged,
+            acceptedAt: Date(timeIntervalSince1970: 20_900)
+        )
+
+        XCTAssertThrowsError(try response.validatedResult(for: request)) { error in
+            guard case FirebaseBackendServiceError.contractMismatch = error else {
+                return XCTFail("Expected contract mismatch, got \(error)")
+            }
+        }
     }
 
     func testFirebaseReadyUnauthenticatedSessionLeavesBackendEventsPending() async throws {
@@ -228,6 +291,58 @@ final class BackendSessionReadinessTests: XCTestCase {
         XCTAssertNil(eventAfterSync.lastAttemptAt)
         XCTAssertEqual(syncService.wasCalled, false)
     }
+
+    private func makeAuthenticatedBackendEventSyncRequest() -> BackendEventSyncRequest {
+        BackendEventSyncRequest(
+            session: BackendUserSession.firebaseAuthenticated(
+                ownerUserID: "firebase_uid_789",
+                accountID: "account-should-not-sync",
+                email: "private@example.com"
+            ),
+            events: [
+                BackendEventRecord(
+                    id: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!,
+                    kind: .proofClaimed,
+                    syncStatus: .inFlight,
+                    ownerUserID: "firebase_uid_789",
+                    occurredAt: Date(timeIntervalSince1970: 20_600),
+                    entityID: "33333333-3333-4333-8333-333333333333",
+                    retryCount: 1,
+                    lastAttemptAt: Date(timeIntervalSince1970: 20_650),
+                    summary: BackendEventSummary(proofCount: 1, qualityAccepted: true)
+                )
+            ],
+            requestedAt: Date(timeIntervalSince1970: 20_700)
+        )
+    }
+
+    private func validFirebaseBackendEventSyncResponse(
+        for request: BackendEventSyncRequest
+    ) -> FirebaseBackendEventSyncResponse {
+        FirebaseBackendEventSyncResponse(
+            ok: true,
+            schemaVersion: 1,
+            userID: request.session.ownerUserID,
+            requestedAt: request.requestedAt,
+            completedAt: Date(timeIntervalSince1970: 20_800),
+            didContactNetwork: true,
+            receipts: request.events.map {
+                BackendEventSyncReceipt(
+                    eventID: $0.id,
+                    idempotencyKey: $0.idempotencyKey,
+                    status: .acknowledged,
+                    acceptedAt: Date(timeIntervalSince1970: 20_800)
+                )
+            },
+            externalActionTaken: false
+        )
+    }
+}
+
+private struct FirestoreTimestampProbe: Encodable {
+    var occurredAt: Date
+    var lastAttemptAt: Date
+    var acceptedAt: Date
 }
 
 @MainActor
