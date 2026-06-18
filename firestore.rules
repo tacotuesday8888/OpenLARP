@@ -31,11 +31,16 @@ service cloud.firestore {
         || request.resource.data.syncStatus == 'acknowledged';
     }
 
+    function noBackendEventBypassWrite() {
+      return !request.resource.data.keys().hasAny(['idempotencyKey']);
+    }
+
     function isSafeUserDocument(userId) {
       return hasTopLevelOwner(userId)
         && hasMetadataOwner(userId)
         && noExternalActionWrite()
-        && noUnsafeBackendSyncStatusWrite();
+        && noUnsafeBackendSyncStatusWrite()
+        && noBackendEventBypassWrite();
     }
 
     match /users/{userId} {
@@ -55,7 +60,9 @@ service cloud.firestore {
 
       match /{document=**} {
         allow read: if isUser(userId);
-        allow create, update: if isUser(userId) && isSafeUserDocument(userId);
+        allow create, update: if isUser(userId)
+          && document[0] != 'backendEvents'
+          && isSafeUserDocument(userId);
         allow delete: if false;
       }
     }

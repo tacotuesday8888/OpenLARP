@@ -184,9 +184,10 @@ struct ProfileView: View {
     }
 
     private var careerGraphSetupStatusCard: some View {
+        let session = store.currentBackendSessionSnapshot()
         let content = CareerGraphSetupStatusContent(
             state: store.state,
-            session: store.currentBackendSessionSnapshot()
+            session: session
         )
 
         return Card {
@@ -202,7 +203,11 @@ struct ProfileView: View {
                     Label(content.nextActionTitle, systemImage: "arrow.right.circle.fill")
                         .font(.caption.weight(.black))
                         .foregroundStyle(Color.openLARPBlue)
-                    Pill(title: "Local only", systemImage: "lock.fill", color: .openLARPGreen)
+                    Pill(
+                        title: session.isAuthenticated ? "Firestore metadata" : "Local only",
+                        systemImage: session.isAuthenticated ? "icloud.fill" : "lock.fill",
+                        color: session.isAuthenticated ? .openLARPBlue : .openLARPGreen
+                    )
                 }
 
                 Text(content.nextActionDetail)
@@ -229,10 +234,13 @@ struct ProfileView: View {
                         HStack {
                             ProgressView()
                                 .tint(.white)
-                            Text("Building Preview")
+                            Text(session.isAuthenticated ? "Syncing Metadata" : "Building Preview")
                         }
                     } else {
-                        Label("Preview Saved Career Graph", systemImage: "arrow.triangle.2.circlepath")
+                        Label(
+                            session.isAuthenticated ? "Sync Career Graph Metadata" : "Preview Saved Career Graph",
+                            systemImage: session.isAuthenticated ? "icloud.and.arrow.up" : "arrow.triangle.2.circlepath"
+                        )
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -241,12 +249,20 @@ struct ProfileView: View {
 
                 Text(store.state.needsGoalSetup
                     ? "Set a career goal before previewing your career graph."
-                    : "This prepares a local preview only. It does not upload or sync anything.")
+                    : careerGraphActionFootnote(isAuthenticated: session.isAuthenticated))
                     .font(.caption)
                     .foregroundStyle(Color.openLARPSoftInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func careerGraphActionFootnote(isAuthenticated: Bool) -> String {
+        if isAuthenticated {
+            return "This writes account-owned career graph metadata to Firestore. Proof file bytes stay local until Storage uploads are enabled."
+        }
+
+        return "This prepares a local preview only. It does not upload or sync anything."
     }
 
     @ViewBuilder

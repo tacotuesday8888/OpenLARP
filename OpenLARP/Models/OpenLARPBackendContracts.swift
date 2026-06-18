@@ -897,28 +897,12 @@ protocol CareerGraphSyncServicing {
     func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult
 }
 
-struct LocalMockCareerGraphSyncService: CareerGraphSyncServicing {
+struct CareerGraphSyncPlanner {
     init() {}
 
-    func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
+    func plan(_ request: CareerGraphSyncPreparationRequest) -> CareerGraphSyncManifest {
         let uploadIntents = uploadIntents(in: request.snapshot)
-        let manifest = syncManifest(for: request, uploadIntents: uploadIntents)
-
-        return CareerGraphSyncResult(
-            status: .preparedLocally,
-            request: request,
-            didContactNetwork: false,
-            firestoreDocumentPaths: manifest.documentWrites.map(\.documentPath),
-            uploadIntents: uploadIntents,
-            syncManifest: manifest
-        )
-    }
-
-    private func syncManifest(
-        for request: CareerGraphSyncPreparationRequest,
-        uploadIntents: [CareerGraphSyncUploadIntent]
-    ) -> CareerGraphSyncManifest {
-        CareerGraphSyncManifest(
+        return CareerGraphSyncManifest(
             ownerUserID: request.session.ownerUserID,
             firestoreRootPath: request.firestoreRootPath,
             generatedAt: request.requestedAt,
@@ -931,19 +915,7 @@ struct LocalMockCareerGraphSyncService: CareerGraphSyncServicing {
         )
     }
 
-    private func requiredRoutes(
-        from routes: [BackendIntegrationRoute],
-        needsStorage: Bool
-    ) -> [BackendIntegrationRoute] {
-        let requiredKinds: [BackendIntegrationRoute.Kind] = needsStorage
-            ? [.firebaseAuth, .firestore, .firebaseStorage]
-            : [.firebaseAuth, .firestore]
-        return requiredKinds.compactMap { kind in
-            routes.first { $0.kind == kind }
-        }
-    }
-
-    private func documentWrites(in snapshot: CloudCareerGraphSnapshot) -> [CareerGraphSyncDocumentWrite] {
+    func documentWrites(in snapshot: CloudCareerGraphSnapshot) -> [CareerGraphSyncDocumentWrite] {
         var writes: [CareerGraphSyncDocumentWrite] = []
 
         if let userProfile = snapshot.userProfile {
@@ -972,6 +944,29 @@ struct LocalMockCareerGraphSyncService: CareerGraphSyncServicing {
         return writes.filter { seen.insert($0.documentPath).inserted }
     }
 
+    func uploadIntents(in snapshot: CloudCareerGraphSnapshot) -> [CareerGraphSyncUploadIntent] {
+        snapshot.proofRecords.flatMap { proof in
+            proof.attachments.map { attachment in
+                CareerGraphSyncUploadIntent(
+                    proofID: proof.metadata.localID,
+                    attachment: attachment
+                )
+            }
+        }
+    }
+
+    private func requiredRoutes(
+        from routes: [BackendIntegrationRoute],
+        needsStorage: Bool
+    ) -> [BackendIntegrationRoute] {
+        let requiredKinds: [BackendIntegrationRoute.Kind] = needsStorage
+            ? [.firebaseAuth, .firestore, .firebaseStorage]
+            : [.firebaseAuth, .firestore]
+        return requiredKinds.compactMap { kind in
+            routes.first { $0.kind == kind }
+        }
+    }
+
     private func write(
         _ documentType: CareerGraphSyncDocumentType,
         collectionPath: String,
@@ -983,15 +978,25 @@ struct LocalMockCareerGraphSyncService: CareerGraphSyncServicing {
             documentPath: documentPath
         )
     }
+}
 
-    private func uploadIntents(in snapshot: CloudCareerGraphSnapshot) -> [CareerGraphSyncUploadIntent] {
-        snapshot.proofRecords.flatMap { proof in
-            proof.attachments.map { attachment in
-                CareerGraphSyncUploadIntent(
-                    proofID: proof.metadata.localID,
-                    attachment: attachment
-                )
-            }
-        }
+struct LocalMockCareerGraphSyncService: CareerGraphSyncServicing {
+    private let planner: CareerGraphSyncPlanner
+
+    init(planner: CareerGraphSyncPlanner = CareerGraphSyncPlanner()) {
+        self.planner = planner
+    }
+
+    func prepareSync(_ request: CareerGraphSyncPreparationRequest) async throws -> CareerGraphSyncResult {
+        let manifest = planner.plan(request)
+
+        return CareerGraphSyncResult(
+            status: .preparedLocally,
+            request: request,
+            didContactNetwork: false,
+            firestoreDocumentPaths: manifest.documentWrites.map(\.documentPath),
+            uploadIntents: manifest.storageUploads,
+            syncManifest: manifest
+        )
     }
 }

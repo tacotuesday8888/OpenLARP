@@ -12,6 +12,7 @@
 		18AA6945B54DDDD4ACD98B26 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 91678A069E8588A1DBE74162 /* FirebaseAuth */; };
 		1DF572B1E3E57EE7FA87AC82 /* OpenLARPFirebaseBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 946A052D9DA62A642F46B6FC /* OpenLARPFirebaseBootstrap.swift */; };
 		21B103163CA3864EA5AD74C8 /* OpenLARPAuthenticationServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03A8E9EE6A89191074062ABB /* OpenLARPAuthenticationServices.swift */; };
+		2E0F095308879A0FF0E744BC /* FirebaseCareerGraphSyncReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B52AD535F1C64725BDCE83B /* FirebaseCareerGraphSyncReadinessTests.swift */; };
 		32C31764411CEAE637F3BF77 /* ProofArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38A7544CA52F69EBE427B74 /* ProofArchiveView.swift */; };
 		3469E86770713FB77ADC6000 /* AuthenticationReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FE9FFE5F44B22B0A266078 /* AuthenticationReadinessTests.swift */; };
 		360F811DA782621C64896A27 /* SubscriptionReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558B84EBAC143D9553A0A62E /* SubscriptionReadinessTests.swift */; };
@@ -88,6 +89,7 @@
 		87BE10675BD57C8E1C60DEF5 /* OpenLARPTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenLARPTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9264BE7F3F697BC161B14E50 /* OpenLARPFirebaseBackendServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPFirebaseBackendServices.swift; sourceTree = "<group>"; };
 		946A052D9DA62A642F46B6FC /* OpenLARPFirebaseBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPFirebaseBootstrap.swift; sourceTree = "<group>"; };
+		9B52AD535F1C64725BDCE83B /* FirebaseCareerGraphSyncReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseCareerGraphSyncReadinessTests.swift; sourceTree = "<group>"; };
 		A1D35430DA658F76CC63EB78 /* OpenLARPCloudContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPCloudContracts.swift; sourceTree = "<group>"; };
 		A24A3F46612F09ED9FC79C08 /* ProofDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofDetailView.swift; sourceTree = "<group>"; };
 		A32FE957054753A00B9C9E6F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -133,6 +135,7 @@
 				C5FE9FFE5F44B22B0A266078 /* AuthenticationReadinessTests.swift */,
 				071E3A0FAFA43659976349F9 /* BackendSessionReadinessTests.swift */,
 				2D94367071D26EC53B70E4C2 /* BetaMeasurementTests.swift */,
+				9B52AD535F1C64725BDCE83B /* FirebaseCareerGraphSyncReadinessTests.swift */,
 				39D289D644FCC10CBC98DD5C /* ShareCardExportTests.swift */,
 				558B84EBAC143D9553A0A62E /* SubscriptionReadinessTests.swift */,
 				164D2BA7F6FBB1EFCC90AED1 /* V0EngineTests.swift */,
@@ -354,6 +357,7 @@
 				3469E86770713FB77ADC6000 /* AuthenticationReadinessTests.swift in Sources */,
 				36487711E483C13DA799C091 /* BackendSessionReadinessTests.swift in Sources */,
 				52877978FB95B59C9302B2B9 /* BetaMeasurementTests.swift in Sources */,
+				2E0F095308879A0FF0E744BC /* FirebaseCareerGraphSyncReadinessTests.swift in Sources */,
 				90703ABE6E8B564BA1179B96 /* ShareCardExportTests.swift in Sources */,
 				360F811DA782621C64896A27 /* SubscriptionReadinessTests.swift in Sources */,
 				066022B6F446EAEBE1111E35 /* V0EngineTests.swift in Sources */,

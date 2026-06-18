@@ -23,6 +23,8 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `OpenLARPFirebaseBootstrap.configureIfAvailable()` configures Firebase only when the SDK and plist are both available.
 - `OpenLARPStore` now owns authentication state through `OpenLARPAuthenticationServicing`, restores previous sessions on app launch/foreground, forwards auth callback URLs, updates local profile account fields, and uses the same authenticated session source for backend events and career graph previews.
 - `ProfileView` exposes account status, Google sign-in, restore, and sign-out controls while preserving local/mock mode.
+- `FirebaseReadyCareerGraphSyncService` routes signed-in users to a Firestore-backed career graph metadata sync and keeps signed-out users in local preview mode.
+- `FirebaseFirestoreCareerGraphSyncService` writes account-owned career graph metadata for profiles, goals, target roles, proof records, proof attachment metadata, outcomes, and readiness snapshots in one Firestore write batch. Proof file bytes are not uploaded yet; `CareerGraphSyncUploadIntent` still records the future Storage paths.
 
 The Firebase adapters also check that `FirebaseApp` is configured before touching Auth or Firestore. This lets CI and local mock builds continue safely when Firebase SDKs are linked but private runtime configuration has not been bundled.
 
@@ -54,20 +56,22 @@ users/{uid}/proofAttachments/{attachmentId}
 
 Only the signed-in owner can read/write proof attachments, and uploads are limited to images, PDFs, and plain text under 10 MB.
 
+Firestore rules now prevent backend event documents from bypassing the dedicated `backendEvents` rule through the broad user-tree rule. This keeps career graph metadata flexible while requiring backend event outbox records to use the acknowledged event shape.
+
 ## Current Setup Status
 
 - Firestore rules deploy successfully.
 - Storage rules are tracked locally, but Firebase CLI currently reports that Firebase Storage still needs product setup in the Firebase console before rules can be released.
-- The Firebase MCP environment is authenticated for `langqizhao1@gmail.com`, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
+- The Firebase MCP environment has been authenticated locally, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
 - Security rules validate through Firebase MCP.
-- Emulator-based rules tests now exist under `firebase-rules/`. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
+- Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, and proof attachment storage constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22 and `runOpenLARPWorkflow` as the callable AI workflow boundary.
 
 ## Next Backend Steps
 
 1. Enable Firebase Auth providers in the Firebase console, starting with Sign in with Apple and Google Sign-In.
 2. Configure the non-committed `GOOGLE_REVERSED_CLIENT_ID` build setting for local live Google Sign-In testing.
-3. Add Firestore career graph document uploads and Storage proof attachment uploads behind the existing sync boundaries.
+3. Add Firebase Storage proof attachment byte uploads behind a narrow local attachment-byte provider, then reconcile completed upload receipts with proof attachment metadata.
 4. Deploy Cloud Functions only after backend dependency advisories, prompts, evaluations, budget controls, and secrets are resolved.
 5. Keep provider model IDs and API keys only on the backend.
 6. Add App Check enforcement after local device and TestFlight auth flows are verified.
@@ -75,9 +79,9 @@ Only the signed-in owner can read/write proof attachments, and uploads are limit
 ## Local Commands
 
 ```bash
-firebase deploy --only firestore:rules --project openlarp-dev-langqi
-firebase deploy --only storage:rules --project openlarp-dev-langqi
+npx -y firebase-tools@15.21.0 deploy --only firestore:rules --project openlarp-dev-langqi
+npx -y firebase-tools@15.21.0 deploy --only storage:rules --project openlarp-dev-langqi
 npm run build:backend
-firebase emulators:start --only auth,firestore,storage
+npx -y firebase-tools@15.21.0 emulators:start --project openlarp-rules-test --only auth,firestore,storage
 npm run test:rules:emulators
 ```
