@@ -52,7 +52,7 @@ describe("Firestore rules", () => {
     }));
   });
 
-  it("rejects unsafe sync status on regular user-tree documents", async () => {
+  it("rejects client-written sync status on regular user-tree documents", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
 
     await assertFails(setDoc(doc(alice, "users/alice/proofRecords/pending-sync"), {
@@ -60,10 +60,18 @@ describe("Firestore rules", () => {
       syncStatus: "pending",
       title: "Unsafe status"
     }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofRecords/acknowledged-sync"), {
+      ownerUserID: "alice",
+      syncStatus: "acknowledged",
+      title: "Server-only status"
+    }));
   });
 
-  it("requires acknowledged backend event shape and denies deletes", async () => {
+  it("prevents clients from writing backend event acknowledgements", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
+    const bob = testEnv.authenticatedContext("bob").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
     const eventRef = doc(alice, "users/alice/backendEvents/event1");
 
     await assertFails(setDoc(eventRef, {
@@ -74,20 +82,19 @@ describe("Firestore rules", () => {
       idempotencyKey: "alice-questStarted-quest1"
     }));
 
-    await assertSucceeds(setDoc(eventRef, {
-      schemaVersion: 1,
-      eventID: "event1",
-      ownerUserID: "alice",
-      kind: "questStarted",
-      syncStatus: "acknowledged",
-      entityID: "quest1",
-      idempotencyKey: "alice-questStarted-quest1",
-      occurredAt: new Date("2026-06-18T00:00:00.000Z"),
-      retryCount: 0,
-      summary: {},
-      acceptedAt: new Date("2026-06-18T00:00:00.000Z")
-    }));
+    await assertFails(setDoc(eventRef, safeBackendEvent("alice", "event1", timestamp)));
 
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "users/alice/backendEvents/event1"),
+        safeBackendEvent("alice", "event1", timestamp)
+      );
+    });
+
+    await assertSucceeds(getDoc(eventRef));
+    await assertFails(getDoc(doc(bob, "users/alice/backendEvents/event1")));
+    await assertFails(updateDoc(eventRef, { syncStatus: "failed" }));
+    await assertFails(updateDoc(eventRef, { acceptedAt: new Date("2026-06-18T01:00:00.000Z") }));
     await assertFails(deleteDoc(eventRef));
   });
 
@@ -341,24 +348,13 @@ describe("Firestore rules", () => {
     }));
   });
 
-  it("allows Firebase backend event document shape and blocks spoofed backend events", async () => {
+  it("keeps backend event history server-owned even for valid acknowledged payloads", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
+    const bob = testEnv.authenticatedContext("bob").firestore();
     const timestamp = new Date("2026-06-18T00:00:00.000Z");
+    const eventRef = doc(alice, "users/alice/backendEvents/event1");
 
-    await assertSucceeds(setDoc(doc(alice, "users/alice/backendEvents/event1"), {
-      schemaVersion: 1,
-      eventID: "event1",
-      ownerUserID: "alice",
-      entityID: "event1",
-      kind: "proofClaimed",
-      syncStatus: "acknowledged",
-      idempotencyKey: "alice-proofClaimed-event1",
-      occurredAt: timestamp,
-      retryCount: 0,
-      lastAttemptAt: timestamp,
-      summary: { proofCount: 1, qualityAccepted: true },
-      acceptedAt: timestamp
-    }));
+    await assertFails(setDoc(eventRef, safeBackendEvent("alice", "event1", timestamp)));
 
     await assertFails(setDoc(doc(alice, "users/alice/backendEvents/bad-owner"), {
       ownerUserID: "bob",
@@ -440,32 +436,16 @@ describe("Firestore rules", () => {
       syncStatus: "acknowledged"
     }));
 
-    const removableKeyRef = doc(alice, "users/alice/backendEvents/removable-key");
-    await assertSucceeds(setDoc(removableKeyRef, {
-      schemaVersion: 1,
-      eventID: "removable-key",
-      ownerUserID: "alice",
-      entityID: "removable-key",
-      kind: "proofClaimed",
-      syncStatus: "acknowledged",
-      idempotencyKey: "alice-proofClaimed-removable-key",
-      occurredAt: timestamp,
-      retryCount: 0,
-      summary: { proofCount: 1 },
-      acceptedAt: timestamp
-    }));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "users/alice/backendEvents/event1"),
+        safeBackendEvent("alice", "event1", timestamp)
+      );
+    });
 
-    await assertFails(setDoc(removableKeyRef, {
-      schemaVersion: 1,
-      eventID: "removable-key",
-      ownerUserID: "alice",
-      kind: "proofClaimed",
-      syncStatus: "acknowledged",
-      occurredAt: timestamp,
-      retryCount: 0,
-      summary: { proofCount: 1 },
-      acceptedAt: timestamp
-    }));
+    await assertSucceeds(getDoc(eventRef));
+    await assertFails(getDoc(doc(bob, "users/alice/backendEvents/event1")));
+    await assertFails(setDoc(eventRef, safeBackendEvent("alice", "event1", timestamp)));
   });
 });
 
@@ -494,5 +474,22 @@ function safeUploadedReceipt(ownerUserID, proofID, attachmentID, contentType, by
     metadataGeneration: 2,
     md5Hash: "mock-md5",
     idempotencyKey: `${ownerUserID}-${attachmentID}`
+  };
+}
+
+function safeBackendEvent(ownerUserID, eventID, timestamp) {
+  return {
+    schemaVersion: 1,
+    eventID,
+    ownerUserID,
+    entityID: eventID,
+    kind: "proofClaimed",
+    syncStatus: "acknowledged",
+    idempotencyKey: `${ownerUserID}-proofClaimed-${eventID}`,
+    occurredAt: timestamp,
+    retryCount: 0,
+    lastAttemptAt: timestamp,
+    summary: { proofCount: 1, qualityAccepted: true },
+    acceptedAt: timestamp
   };
 }

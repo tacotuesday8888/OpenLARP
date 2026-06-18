@@ -138,85 +138,98 @@ struct FirebaseBackendSessionProvider: BackendSessionProviding {
     }
 }
 
-struct FirebaseBackendEventDocument: Codable, Equatable {
-    var schemaVersion: Int
-    var eventID: String
-    var ownerUserID: String
-    var entityID: String
-    var kind: BackendEventKind
-    var syncStatus: BackendEventSyncStatus
-    var idempotencyKey: String
-    var occurredAt: Date
-    var retryCount: Int
-    var lastAttemptAt: Date?
-    var summary: BackendEventSummary
-    var acceptedAt: Date
+struct FirebaseCallableBackendEventSyncService: BackendEventSyncServicing {
+    private let configuration: OpenLARPFirebaseCallableBackendConfiguration
 
-    init(event: BackendEventRecord, acceptedAt: Date) {
-        schemaVersion = event.schemaVersion
-        eventID = event.id.uuidString
-        ownerUserID = event.ownerUserID
-        entityID = event.entityID
-        kind = event.kind
-        syncStatus = .acknowledged
-        idempotencyKey = event.idempotencyKey
-        occurredAt = event.occurredAt
-        retryCount = event.retryCount
-        lastAttemptAt = event.lastAttemptAt
-        summary = event.summary
-        self.acceptedAt = acceptedAt
+    init(configuration: OpenLARPFirebaseCallableBackendConfiguration = .production) {
+        self.configuration = configuration
     }
-}
-
-struct FirebaseFirestoreBackendEventSyncService: BackendEventSyncServicing {
-    init() {}
 
     func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult {
         guard request.session.isAuthenticated else {
             throw FirebaseBackendServiceError.authenticationRequired
         }
 
-        #if canImport(FirebaseFirestore) && canImport(FirebaseCore)
+        #if canImport(FirebaseFunctions) && canImport(FirebaseCore) && canImport(FirebaseSharedSwift)
         guard FirebaseApp.app() != nil else {
             throw FirebaseBackendServiceError.configurationMissing
         }
 
-        let db = Firestore.firestore()
-        for event in request.events {
-            let document = FirebaseBackendEventDocument(event: event, acceptedAt: request.requestedAt)
-            let data = try FirebaseFirestorePayload.dictionary(from: document)
-            try await db
-                .collection("users")
-                .document(request.session.ownerUserID)
-                .collection("backendEvents")
-                .document(event.id.uuidString)
-                .setData(data, merge: true)
+        let functions = Functions.functions()
+        if configuration.usesEmulator {
+            functions.useEmulator(withHost: configuration.emulatorHost, port: configuration.emulatorPort)
         }
 
-        return BackendEventSyncResult(
-            request: request,
-            didContactNetwork: true,
-            receipts: request.events.map {
-                BackendEventSyncReceipt(
-                    eventID: $0.id,
-                    idempotencyKey: $0.idempotencyKey,
-                    status: .acknowledged,
-                    acceptedAt: request.requestedAt
-                )
-            }
+        let callable: Callable<
+            BackendEventSyncRequest,
+            FirebaseBackendEventSyncResponse
+        > = functions.httpsCallable(
+            configuration.backendEventSyncFunctionName,
+            requestAs: BackendEventSyncRequest.self,
+            responseAs: FirebaseBackendEventSyncResponse.self,
+            encoder: FirebaseCallableAIWorkflowJSON.firebaseDataEncoder(),
+            decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
         )
+        let response = try await callable.call(request)
+        return try response.validatedResult(for: request)
         #else
         throw FirebaseBackendServiceError.sdkUnavailable
         #endif
     }
 }
 
+struct FirebaseBackendEventSyncResponse: Codable, Equatable {
+    var ok: Bool
+    var schemaVersion: Int
+    var userID: String
+    var requestedAt: Date
+    var completedAt: Date
+    var didContactNetwork: Bool
+    var receipts: [BackendEventSyncReceipt]
+    var externalActionTaken: Bool
+
+    func validatedResult(for request: BackendEventSyncRequest) throws -> BackendEventSyncResult {
+        guard ok,
+              schemaVersion == 1,
+              userID == request.session.ownerUserID,
+              requestedAt == request.requestedAt,
+              didContactNetwork,
+              externalActionTaken == false
+        else {
+            throw FirebaseBackendServiceError.contractMismatch("Backend event acknowledgement response did not match the signed-in user or sync contract.")
+        }
+
+        let expectedReceipts = Dictionary(uniqueKeysWithValues: request.events.map {
+            ($0.id, $0.idempotencyKey)
+        })
+        guard receipts.count == expectedReceipts.count else {
+            throw FirebaseBackendServiceError.contractMismatch("Backend event acknowledgement receipt count did not match the request.")
+        }
+        for receipt in receipts {
+            guard receipt.schemaVersion == 1,
+                  receipt.status == .acknowledged,
+                  expectedReceipts[receipt.eventID] == receipt.idempotencyKey,
+                  receipt.acceptedAt <= completedAt
+            else {
+                throw FirebaseBackendServiceError.contractMismatch("Backend event acknowledgement receipt did not match a requested event.")
+            }
+        }
+
+        return BackendEventSyncResult(
+            request: request,
+            completedAt: completedAt,
+            didContactNetwork: didContactNetwork,
+            receipts: receipts
+        )
+    }
+}
+
 struct FirebaseReadyBackendEventSyncService: BackendEventSyncServicing {
-    private let firebaseService: FirebaseFirestoreBackendEventSyncService
+    private let firebaseService: any BackendEventSyncServicing
     private let localFallbackService: LocalMockBackendEventSyncService
 
     init(
-        firebaseService: FirebaseFirestoreBackendEventSyncService = FirebaseFirestoreBackendEventSyncService(),
+        firebaseService: any BackendEventSyncServicing = FirebaseCallableBackendEventSyncService(),
         localFallbackService: LocalMockBackendEventSyncService = LocalMockBackendEventSyncService()
     ) {
         self.firebaseService = firebaseService
@@ -384,6 +397,7 @@ struct LocalProofAttachmentReceiptPromoter: CareerGraphProofAttachmentReceiptPro
 }
 
 struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
+    var backendEventSyncFunctionName: String
     var proofUploadPromotionFunctionName: String
     var usesEmulator: Bool
     var emulatorHost: String
@@ -393,11 +407,13 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
     static let localEmulator = OpenLARPFirebaseCallableBackendConfiguration(usesEmulator: true)
 
     init(
+        backendEventSyncFunctionName: String = "acknowledgeBackendEvents",
         proofUploadPromotionFunctionName: String = "promoteProofUploadReceipt",
         usesEmulator: Bool = false,
         emulatorHost: String = "localhost",
         emulatorPort: Int = 5001
     ) {
+        self.backendEventSyncFunctionName = backendEventSyncFunctionName
         self.proofUploadPromotionFunctionName = proofUploadPromotionFunctionName
         self.usesEmulator = usesEmulator
         self.emulatorHost = emulatorHost

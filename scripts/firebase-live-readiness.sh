@@ -66,7 +66,8 @@ const functions = payload.result ?? [];
 const required = new Map([
   ["runOpenLARPWorkflow", "nodejs22"],
   ["reconcileProofUploads", "nodejs22"],
-  ["promoteProofUploadReceipt", "nodejs22"]
+  ["promoteProofUploadReceipt", "nodejs22"],
+  ["acknowledgeBackendEvents", "nodejs22"]
 ]);
 for (const [id, runtime] of required) {
   const entry = functions.find((item) => item.id === id);
@@ -122,6 +123,26 @@ if (payload.error?.status !== "UNAUTHENTICATED") {
 }
 NODE
 pass "Proof upload promotion callable rejects unauthenticated requests"
+
+event_ack_response="$tmp_dir/event-ack-response.txt"
+event_ack_http_status="$(
+  curl -sS -o "$event_ack_response" -w '%{http_code}' \
+    -X POST "https://${FUNCTION_REGION}-${PROJECT_ID}.cloudfunctions.net/acknowledgeBackendEvents" \
+    -H 'Content-Type: application/json' \
+    -d '{"data":{"schemaVersion":1,"requestedAt":"2026-06-18T10:00:00.000Z","session":{"ownerUserID":"user_123","isAuthenticated":true,"authProvider":"firebaseAuth"},"events":[{"id":"11111111-1111-4111-8111-111111111111","schemaVersion":1,"kind":"proofClaimed","syncStatus":"inFlight","ownerUserID":"user_123","entityID":"33333333-3333-4333-8333-333333333333","idempotencyKey":"user_123-proofClaimed-33333333-3333-4333-8333-333333333333","occurredAt":"2026-06-18T09:59:00.000Z","retryCount":0,"summary":{"proofID":"33333333-3333-4333-8333-333333333333","proofCount":1}}],"integrationRoutes":[]}}'
+)"
+if [[ "$event_ack_http_status" != "401" ]]; then
+  fail "Unauthenticated backend event acknowledgement callable returned HTTP $event_ack_http_status instead of 401"
+fi
+node --input-type=module - "$event_ack_response" <<'NODE'
+import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (payload.error?.status !== "UNAUTHENTICATED") {
+  throw new Error(`Unexpected backend event acknowledgement callable error: ${JSON.stringify(payload)}`);
+}
+NODE
+pass "Backend event acknowledgement callable rejects unauthenticated requests"
 
 sdk_config="$tmp_dir/GoogleService-Info.plist"
 $FIREBASE apps:sdkconfig IOS "$IOS_APP_ID" --project "$PROJECT_ID" > "$sdk_config"

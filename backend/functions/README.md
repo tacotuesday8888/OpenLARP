@@ -1,6 +1,6 @@
 # OpenLARP Firebase Functions
 
-This package is the deployable Firebase Functions boundary for OpenLARP AI workflows and server-owned proof upload trust.
+This package is the deployable Firebase Functions boundary for OpenLARP AI workflows, proof upload trust, and server-owned backend event acknowledgement.
 
 The iOS app should call Firebase Auth-protected callable functions, not provider APIs. This package validates the existing `backend/ai` request envelope, enforces auth and external-action guardrails, then dispatches to deterministic backend workflow handlers while live model calls are disabled.
 
@@ -9,6 +9,7 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 - Callable export: `runOpenLARPWorkflow`
 - Callable export: `reconcileProofUploads`
 - Callable export: `promoteProofUploadReceipt`
+- Callable export: `acknowledgeBackendEvents`
 - Runtime: Node.js 22
 - Firebase Admin: pinned to `13.10.0` to satisfy
   `firebase-functions@7.2.5` peer dependencies
@@ -19,8 +20,9 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
   are disabled
 - Deploy lockfile: `backend/functions/package-lock.json` is committed so
   Firebase Cloud Build installs the same deploy-source dependency graph
-- Dev deploy: `runOpenLARPWorkflow`, `reconcileProofUploads`, and
-  `promoteProofUploadReceipt` are expected active Gen 2 callables in
+- Dev deploy: `runOpenLARPWorkflow`, `reconcileProofUploads`,
+  `promoteProofUploadReceipt`, and `acknowledgeBackendEvents` are expected
+  active Gen 2 callables in
   `openlarp-dev-langqi` / `us-central1`
 - Live endpoint smoke: unsigned workflow requests return `UNAUTHENTICATED`
 - Artifact cleanup: `gcf-artifacts` keeps the most recent 5 versions and deletes
@@ -50,6 +52,30 @@ The callable:
 
 Firestore rules now allow clients to create only `pendingUpload` proof
 attachment metadata. Uploaded receipts are server-owned.
+
+## Backend Event Acknowledgement
+
+`acknowledgeBackendEvents` is an authenticated Firebase callable that promotes
+the local iOS backend event outbox into server-owned Firestore history.
+
+The callable:
+
+- requires Firebase Auth
+- accepts only redacted Firebase sessions whose owner matches the signed-in UID
+- accepts only `inFlight` local outbox events with schema version 1
+- validates supported event kinds, UUID event IDs, owner IDs, entity IDs,
+  idempotency keys, ISO timestamps, retry counts, and allowlisted summary fields
+- rejects duplicate event IDs or duplicate idempotency keys in one request
+- writes acknowledged history under `users/{uid}/backendEvents/{eventId}` using
+  Admin SDK server time for `acceptedAt`
+- treats exact repeated submissions as idempotent and rejects conflicting
+  documents instead of overwriting server history
+- returns acknowledgement receipts to iOS without raw proof payloads, provider
+  secrets, local file paths, account IDs, or email addresses
+
+Firestore rules allow users to read only their own backend event history. Client
+create, update, and delete are denied for backend events; only Admin-backed
+server code can write acknowledgements.
 
 ## Proof Upload Reconciliation
 

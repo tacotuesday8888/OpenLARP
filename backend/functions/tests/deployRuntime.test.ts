@@ -30,6 +30,7 @@ describe("Firebase Functions deploy runtime", () => {
     expect(entrypoint).toContain("export const runOpenLARPWorkflow = onCall");
     expect(entrypoint).toContain("export const reconcileProofUploads = onCall");
     expect(entrypoint).toContain("export const promoteProofUploadReceipt = onCall");
+    expect(entrypoint).toContain("export const acknowledgeBackendEvents = onCall");
   });
 
   it("keeps the deployable Functions package free of Genkit runtime dependencies", () => {
