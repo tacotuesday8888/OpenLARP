@@ -3,6 +3,13 @@ options:
   bundleIdPrefix: com.openlarp
   deploymentTarget:
     iOS: "18.0"
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    exactVersion: 12.15.0
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    exactVersion: 9.2.0
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -16,6 +23,30 @@ targets:
       - path: OpenLARP
         excludes:
           - GoogleService-Info.plist
+    dependencies:
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: Firebase
+        product: FirebaseStorage
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
+    postBuildScripts:
+      - name: Copy Local Firebase Configuration
+        script: |
+          CONFIG_FILE="${SRCROOT}/OpenLARP/GoogleService-Info.plist"
+          TARGET_FILE="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/GoogleService-Info.plist"
+          if [ -f "$CONFIG_FILE" ]; then
+            mkdir -p "$(dirname "$TARGET_FILE")"
+            cp "$CONFIG_FILE" "$TARGET_FILE"
+          fi
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/GoogleService-Info.plist
     scheme:
       testTargets:
         - OpenLARPTests

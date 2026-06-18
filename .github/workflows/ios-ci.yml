@@ -17,6 +17,30 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Set up Java for Firebase emulators
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Typecheck Genkit backend
+        run: npm run typecheck:backend
+
+      - name: Test Genkit backend
+        run: npm run test:backend
+
+      - name: Test Firebase security rules
+        run: npm run test:rules:emulators
+
       - name: Install XcodeGen
         run: |
           if ! command -v xcodegen >/dev/null 2>&1; then

@@ -26,10 +26,16 @@ service cloud.firestore {
         || request.resource.data.externalActionTaken == false;
     }
 
+    function noUnsafeBackendSyncStatusWrite() {
+      return !request.resource.data.keys().hasAny(['syncStatus'])
+        || request.resource.data.syncStatus == 'acknowledged';
+    }
+
     function isSafeUserDocument(userId) {
       return hasTopLevelOwner(userId)
         && hasMetadataOwner(userId)
-        && noExternalActionWrite();
+        && noExternalActionWrite()
+        && noUnsafeBackendSyncStatusWrite();
     }
 
     match /users/{userId} {

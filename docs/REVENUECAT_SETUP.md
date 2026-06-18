@@ -15,6 +15,7 @@ OpenLARP has a RevenueCat-ready subscription model, but it does not include the 
 - `RevenueCatCustomerInfoSnapshot` and offering/product snapshots keep the app code SDK-independent until the real adapter is added.
 - `OpenLARPSubscriptionServicing` defines the service boundary for refresh and restore.
 - `MockOpenLARPSubscriptionService` supports local tests and future UI wiring.
+- `OpenLARPStore` now injects `OpenLARPSubscriptionServicing`, refreshes subscription state, restores purchases, records paywall exposure, and records the first local free sprint start.
 - Beta exports include access status and payment event counts, but intentionally omit product IDs, customer identifiers, and billing URLs.
 
 ## Product Policy

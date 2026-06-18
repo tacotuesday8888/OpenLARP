@@ -18,9 +18,24 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `LocalMockBackendSessionProvider` keeps local builds unauthenticated and safe.
 - `FirebaseBackendSessionProvider` is compile-gated behind Firebase SDK imports and can expose the current Firebase Auth user when the SDK is linked.
 - `FirebaseFirestoreBackendEventSyncService` is compile-gated and writes backend event outbox records to `users/{uid}/backendEvents/{eventId}` when Firebase Firestore is linked.
+- `FirebaseReadyBackendEventSyncService` routes authenticated sessions to Firestore and quietly keeps events pending when Firebase Auth needs sign-in.
 - `OpenLARPFirebaseBootstrap.configureIfAvailable()` configures Firebase only when the SDK and plist are both available.
 
 The Firebase adapters also check that `FirebaseApp` is configured before touching Auth or Firestore. This lets CI and local mock builds continue safely when Firebase SDKs are linked but private runtime configuration has not been bundled.
+
+Firebase Apple SDK products are now linked through Swift Package Manager via `project.yml`:
+
+- `FirebaseCore`
+- `FirebaseAuth`
+- `FirebaseFirestore`
+- `FirebaseStorage`
+
+Google Sign-In packages are also linked as the next auth UI integration point:
+
+- `GoogleSignIn`
+- `GoogleSignInSwift`
+
+`GoogleService-Info.plist` remains ignored by Git and excluded from normal XcodeGen sources. The generated Xcode project includes an optional post-build copy script that copies the local plist into the app bundle only when the ignored local file exists.
 
 ## Security Rules
 
@@ -38,13 +53,16 @@ Only the signed-in owner can read/write proof attachments, and uploads are limit
 
 - Firestore rules deploy successfully.
 - Storage rules are tracked locally, but Firebase CLI currently reports that Firebase Storage still needs product setup in the Firebase console before rules can be released.
+- The Firebase MCP environment is authenticated for `langqizhao1@gmail.com`, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
+- Security rules validate through Firebase MCP.
+- Emulator-based rules tests now exist under `firebase-rules/`, but local execution requires Java.
 
 ## Next Backend Steps
 
-1. Add Firebase SDKs through Swift Package Manager: `FirebaseCore`, `FirebaseAuth`, `FirebaseFirestore`, and `FirebaseStorage`.
-2. Enable Firebase Auth providers in the Firebase console, starting with Sign in with Apple and Google Sign-In.
-3. Wire the app root to use `FirebaseBackendSessionProvider` and `FirebaseFirestoreBackendEventSyncService` once sign-in exists.
-4. Add Cloud Run or Cloud Functions endpoints for Genkit-backed AI workflows.
+1. Enable Firebase Auth providers in the Firebase console, starting with Sign in with Apple and Google Sign-In.
+2. Add Google Sign-In UI and a Firebase Auth adapter in the app.
+3. Add Firestore career graph document uploads and Storage proof attachment uploads behind the existing sync boundaries.
+4. Deploy Cloud Run or Cloud Functions endpoints for Genkit-backed AI workflows.
 5. Keep provider model IDs and API keys only on the backend.
 6. Add App Check enforcement after local device and TestFlight auth flows are verified.
 
@@ -54,4 +72,5 @@ Only the signed-in owner can read/write proof attachments, and uploads are limit
 firebase deploy --only firestore:rules --project openlarp-dev-langqi
 firebase deploy --only storage:rules --project openlarp-dev-langqi
 firebase emulators:start --only auth,firestore,storage
+npm run test:rules:emulators
 ```

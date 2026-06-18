@@ -21,6 +21,11 @@ build/
 Packages/
 .swiftpm/
 
+# Node and backend tooling
+node_modules/
+backend/ai/dist/
+coverage/
+
 # XcodeGen and local tooling
 .xcodebuildmcp/
 

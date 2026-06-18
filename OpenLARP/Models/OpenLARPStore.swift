@@ -11,6 +11,7 @@ final class OpenLARPStore {
     private let careerGraphSyncService: any CareerGraphSyncServicing
     private let backendEventSyncService: any BackendEventSyncServicing
     private let backendSessionProvider: any BackendSessionProviding
+    private let subscriptionService: any OpenLARPSubscriptionServicing
     private let now: () -> Date
     private let calendar: Calendar
     private let backendEventRetryDelay: TimeInterval
@@ -25,6 +26,8 @@ final class OpenLARPStore {
     var isProofChecking = false
     var isPreparingCareerGraphSyncPreview = false
     var isSyncingBackendEvents = false
+    var isRefreshingSubscriptionStatus = false
+    var isRestoringPurchases = false
     var careerGraphSyncPreview: CareerGraphSyncPreview?
     private var careerGraphSyncPreviewGeneration = 0
 
@@ -36,6 +39,7 @@ final class OpenLARPStore {
         careerGraphSyncService: any CareerGraphSyncServicing = LocalMockCareerGraphSyncService(),
         backendEventSyncService: any BackendEventSyncServicing = LocalMockBackendEventSyncService(),
         backendSessionProvider: any BackendSessionProviding = LocalMockBackendSessionProvider(),
+        subscriptionService: any OpenLARPSubscriptionServicing = MockOpenLARPSubscriptionService(),
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .autoupdatingCurrent,
         backendEventRetryDelay: TimeInterval = 300,
@@ -48,6 +52,7 @@ final class OpenLARPStore {
         self.careerGraphSyncService = careerGraphSyncService
         self.backendEventSyncService = backendEventSyncService
         self.backendSessionProvider = backendSessionProvider
+        self.subscriptionService = subscriptionService
         self.now = now
         self.calendar = calendar
         self.backendEventRetryDelay = backendEventRetryDelay
@@ -82,7 +87,7 @@ final class OpenLARPStore {
         let previousBetaEvents = state.betaEvents
         let previousAIWorkflowRuns = state.aiWorkflowRuns
         let previousBackendEvents = state.backendEvents
-        let previousSubscriptionState = state.needsGoalSetup ? nil : state.subscriptionState
+        let previousSubscriptionState = state.subscriptionState
         var completedAIWorkflowRuns: [V0AIWorkflowRun] = []
         let requestedAt = now()
         isGoalSetupRunning = true
@@ -130,7 +135,7 @@ final class OpenLARPStore {
         state.betaEvents = previousBetaEvents
         state.aiWorkflowRuns = previousAIWorkflowRuns
         state.backendEvents = previousBackendEvents
-        if let previousSubscriptionState {
+        if previousSubscriptionState.hasStartedAccessLifecycle {
             state.subscriptionState = previousSubscriptionState
         }
         recordAIWorkflowRuns(completedAIWorkflowRuns)
@@ -146,6 +151,7 @@ final class OpenLARPStore {
         )
         recordBetaEvent(.goalConfirmed, occurredAt: requestedAt)
         recordBetaEvent(.diagnosticShown, occurredAt: requestedAt)
+        recordFreeSprintStartedIfNeeded(at: requestedAt)
         state.agentBrief = AgentBriefFactory.makeBrief(for: state, generatedAt: requestedAt)
         pendingProof = nil
         pendingQualityResult = nil
@@ -592,6 +598,8 @@ final class OpenLARPStore {
         guard !events.isEmpty else { return }
 
         let session = currentBackendSession()
+        guard session.auth.status != .needsAuthentication else { return }
+
         let eventIDs = Set(events.map(\.id))
         let previousBackendEvents = state.backendEvents
         if session.isAuthenticated {
@@ -630,6 +638,68 @@ final class OpenLARPStore {
     func recordCookedCardPrepared() {
         recordBetaEvent(.cookedCardPrepared)
         save()
+    }
+
+    func subscriptionAccess() -> OpenLARPSubscriptionAccess {
+        state.subscriptionState.access(at: now(), calendar: calendar)
+    }
+
+    func recordSubscriptionPaywallViewed() {
+        recordBetaEvent(.subscriptionPaywallViewed)
+        save()
+    }
+
+    func refreshSubscriptionStatus() async {
+        guard !isRefreshingSubscriptionStatus else { return }
+        let requestedAt = now()
+
+        isRefreshingSubscriptionStatus = true
+        defer { isRefreshingSubscriptionStatus = false }
+
+        do {
+            state.subscriptionState = try await subscriptionService.refreshSubscriptionState(
+                currentState: state.subscriptionState,
+                at: requestedAt
+            )
+            recordBetaEvent(.subscriptionStatusChecked, occurredAt: requestedAt)
+            errorMessage = nil
+            save()
+        } catch {
+            recordBetaEvent(.subscriptionStatusChecked, occurredAt: requestedAt)
+            errorMessage = "Subscription status could not be refreshed."
+            save()
+        }
+    }
+
+    func restorePurchases() async {
+        guard !isRestoringPurchases else { return }
+        let requestedAt = now()
+        state.subscriptionState = state.subscriptionState.restoreRequested(at: requestedAt)
+        recordBetaEvent(.subscriptionRestoreRequested, occurredAt: requestedAt)
+        save()
+
+        isRestoringPurchases = true
+        defer { isRestoringPurchases = false }
+
+        do {
+            state.subscriptionState = try await subscriptionService.restorePurchases(
+                currentState: state.subscriptionState,
+                at: requestedAt
+            )
+            let status = state.subscriptionState.restoreState.status
+            recordBetaEvent(
+                status == .restored ? .subscriptionRestoreCompleted : .subscriptionRestoreFailed,
+                occurredAt: state.subscriptionState.restoreState.completedAt ?? now()
+            )
+            errorMessage = nil
+            save()
+        } catch {
+            let failedAt = now()
+            state.subscriptionState = state.subscriptionState.restoreFailed(at: failedAt)
+            recordBetaEvent(.subscriptionRestoreFailed, occurredAt: failedAt)
+            errorMessage = "Purchases could not be restored."
+            save()
+        }
     }
 
     func runAgentScan() async {
@@ -714,6 +784,17 @@ final class OpenLARPStore {
         if state.betaEvents.count > 500 {
             state.betaEvents.removeFirst(state.betaEvents.count - 500)
         }
+    }
+
+    private func recordFreeSprintStartedIfNeeded(at timestamp: Date) {
+        let access = state.subscriptionState.access(at: timestamp, calendar: calendar)
+        guard access.status == .freeSprint else { return }
+        guard !state.betaEvents.contains(where: { $0.kind == .freeSprintStarted }) else { return }
+
+        recordBetaEvent(
+            .freeSprintStarted,
+            occurredAt: state.subscriptionState.freeSprint?.startedAt ?? timestamp
+        )
     }
 
     private func recordAIWorkflowRun(_ run: V0AIWorkflowRun) {

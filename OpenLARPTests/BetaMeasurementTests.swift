@@ -51,7 +51,7 @@ final class BetaMeasurementTests: XCTestCase {
 
         let eventKinds = store.state.betaEvents.map(\.kind)
 
-        XCTAssertEqual(eventKinds.prefix(3), [.goalConfirmed, .diagnosticShown, .firstQuestStarted])
+        XCTAssertEqual(eventKinds.prefix(4), [.goalConfirmed, .diagnosticShown, .freeSprintStarted, .firstQuestStarted])
         XCTAssertTrue(eventKinds.contains(.proofSubmitted))
         XCTAssertTrue(eventKinds.contains(.proofAccepted))
         XCTAssertTrue(eventKinds.contains(.xpClaimed))
@@ -316,6 +316,28 @@ final class BetaMeasurementTests: XCTestCase {
 
         XCTAssertTrue(store.state.needsGoalSetup)
         XCTAssertEqual(store.state.betaEvents, beforeReset)
+    }
+
+    func testPaywallViewedEventDoesNotRewriteMainStateTimestamp() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let goalSetupTime = localDate(year: 2026, month: 6, day: 1, hour: 9)
+        let paywallTime = localDate(year: 2026, month: 6, day: 2, hour: 11)
+        var currentDate = goalSetupTime
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { currentDate },
+            calendar: testCalendar
+        )
+        await store.confirmGoal(privateGoal)
+        let stateUpdatedAt = store.state.updatedAt
+
+        currentDate = paywallTime
+        store.recordSubscriptionPaywallViewed()
+
+        XCTAssertEqual(store.state.updatedAt, stateUpdatedAt)
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionPaywallViewed)
+        XCTAssertEqual(store.state.betaEvents.last?.occurredAt, paywallTime)
     }
 
     private func privateProof() -> ProofRecord {

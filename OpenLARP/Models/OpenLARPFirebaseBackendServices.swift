@@ -170,6 +170,27 @@ struct FirebaseFirestoreBackendEventSyncService: BackendEventSyncServicing {
     }
 }
 
+struct FirebaseReadyBackendEventSyncService: BackendEventSyncServicing {
+    private let firebaseService: FirebaseFirestoreBackendEventSyncService
+    private let localFallbackService: LocalMockBackendEventSyncService
+
+    init(
+        firebaseService: FirebaseFirestoreBackendEventSyncService = FirebaseFirestoreBackendEventSyncService(),
+        localFallbackService: LocalMockBackendEventSyncService = LocalMockBackendEventSyncService()
+    ) {
+        self.firebaseService = firebaseService
+        self.localFallbackService = localFallbackService
+    }
+
+    func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult {
+        guard request.session.isAuthenticated else {
+            return try await localFallbackService.syncEvents(request)
+        }
+
+        return try await firebaseService.syncEvents(request)
+    }
+}
+
 private enum FirebaseFirestorePayload {
     static func dictionary<T: Encodable>(from value: T) throws -> [String: Any] {
         let encoder = JSONEncoder()

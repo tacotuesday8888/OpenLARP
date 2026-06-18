@@ -1,0 +1,18 @@
+{
+  "name": "openlarp-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "backend/ai",
+    "firebase-rules"
+  ],
+  "scripts": {
+    "typecheck:backend": "npm --workspace backend/ai run typecheck",
+    "test:backend": "npm --workspace backend/ai test",
+    "test:rules": "npm --workspace firebase-rules test",
+    "test:rules:emulators": "firebase emulators:exec --only firestore,storage \"npm run test:rules\""
+  },
+  "devDependencies": {
+    "firebase-tools": "15.21.0"
+  }
+}

@@ -47,3 +47,29 @@ Every envelope carries `V0AISafetyRules`. The default rules preserve OpenLARP's 
 - carries provider route only
 - includes safety rules
 - round-trips stable JSON with ISO-8601 dates
+
+## Backend Package
+
+The repo now includes a Genkit-ready backend package in `backend/ai/`.
+
+Current backend verification commands:
+
+```bash
+npm run typecheck:backend
+npm run test:backend
+```
+
+The backend package defines server-side schemas, deterministic mock workflow handlers, safety validation, and Genkit flow definitions for:
+
+- cooked diagnostic generation
+- quest plan generation
+- proof quality checks
+- progress summaries
+- career briefs
+- safe share-card text
+- future opportunity ranking
+- future approved-source agent scans
+
+The default backend target model is `gemini-3.1-flash-lite`, kept in backend config only. The iOS app still carries only `V0AIProviderRoute` values and does not encode model IDs, API keys, provider credentials, or direct prompts.
+
+Live model calls remain disabled until backend deployment, secrets, budget controls, and evaluation gates are configured.

@@ -117,6 +117,33 @@ final class BackendSessionReadinessTests: XCTestCase {
         let reloaded = try persistence.load()
         XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
     }
+
+    func testFirebaseReadyUnauthenticatedSessionLeavesBackendEventsPending() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let syncService = FailingIfCalledBackendEventSyncService()
+        var session = BackendUserSession.localOnly(for: .empty)
+        session.auth = BackendIntegrationRoute(kind: .firebaseAuth, status: .needsAuthentication)
+        session.firestore = BackendIntegrationRoute(kind: .firestore, status: .configured)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            backendEventSyncService: syncService,
+            backendSessionProvider: StaticBackendSessionProvider(session: session),
+            now: { Date(timeIntervalSince1970: 21_000) }
+        )
+
+        await store.confirmGoal(goal)
+        let eventBeforeSync = try XCTUnwrap(store.state.backendEvents.first)
+
+        await store.syncBackendEvents()
+
+        let eventAfterSync = try XCTUnwrap(store.state.backendEvents.first)
+        XCTAssertEqual(eventAfterSync.id, eventBeforeSync.id)
+        XCTAssertEqual(eventAfterSync.syncStatus, .pending)
+        XCTAssertNil(eventAfterSync.lastAttemptAt)
+        XCTAssertEqual(syncService.wasCalled, false)
+    }
 }
 
 @MainActor
@@ -155,5 +182,16 @@ private final class CapturingBackendEventSyncService: BackendEventSyncServicing 
                 )
             }
         )
+    }
+}
+
+@MainActor
+private final class FailingIfCalledBackendEventSyncService: BackendEventSyncServicing {
+    private(set) var wasCalled = false
+
+    func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult {
+        wasCalled = true
+        XCTFail("Sync service should not be called before Firebase authentication.")
+        return BackendEventSyncResult(request: request, receipts: [])
     }
 }
