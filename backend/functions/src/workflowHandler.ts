@@ -20,6 +20,13 @@ import {
   type WorkflowKind
 } from "../../ai/src/contracts.js";
 import {
+  configFromEnvironment,
+  providerBudgetPolicyFromEnvironment,
+  type OpenLARPAIBackendConfig,
+  type OpenLARPAIProviderBudgetPolicy
+} from "../../ai/src/config.js";
+import { estimateProviderUsage, providerUsageMetadata } from "../../ai/src/costAccounting.js";
+import {
   checkProofQuality,
   makeAgentScan,
   makeCareerBrief,
@@ -61,6 +68,8 @@ export type OpenLARPWorkflowCallableResponse =
   | OpenLARPFunctionError;
 
 export type OpenLARPWorkflowDependencies = {
+  aiConfig?: OpenLARPAIBackendConfig;
+  budgetPolicy?: OpenLARPAIProviderBudgetPolicy | null;
   quotaGuard?: CallableQuotaGuard;
   now?: () => Date;
 };
@@ -97,6 +106,40 @@ export async function handleOpenLARPWorkflowRequest(
   }
 
   const evaluatedAt = dependencies.now?.() ?? new Date();
+  let aiConfig: OpenLARPAIBackendConfig;
+  let budgetPolicy: OpenLARPAIProviderBudgetPolicy | null;
+  try {
+    aiConfig = dependencies.aiConfig ?? configFromEnvironment();
+    budgetPolicy = dependencies.budgetPolicy ?? providerBudgetPolicyFromEnvironment();
+  } catch (error) {
+    return functionError("failed-precondition", "OpenLARP AI provider budget configuration is invalid.", {
+      message: error instanceof Error ? error.message : "Unknown AI provider budget configuration error."
+    });
+  }
+  const providerUsage = estimateProviderUsage({
+    config: aiConfig,
+    workflowKind: parsedEnvelope.data.run.kind,
+    payload: parsedEnvelope.data.payload,
+    budgetPolicy
+  });
+  if (providerUsage.liveModelCallsEnabled && !providerUsage.priceConfigured) {
+    return functionError("failed-precondition", "Live OpenLARP AI requires provider token pricing and a daily budget.", {
+      schemaVersion: 1,
+      provider: providerUsage.provider,
+      workflowKind: providerUsage.workflowKind,
+      estimatedInputTokens: providerUsage.estimatedInputTokens,
+      maxOutputTokens: providerUsage.maxOutputTokens
+    });
+  }
+  if (providerUsage.liveModelCallsEnabled && providerUsage.budgetExceeded) {
+    return functionError("resource-exhausted", "OpenLARP AI provider budget would be exceeded.", {
+      schemaVersion: 1,
+      provider: providerUsage.provider,
+      workflowKind: providerUsage.workflowKind,
+      estimatedCostMicros: providerUsage.estimatedCostMicros,
+      dailyBudgetMicros: providerUsage.dailyBudgetMicros
+    });
+  }
   const quotaDecision = await dependencies.quotaGuard?.checkAndRecord({
     userID,
     callable: "runOpenLARPWorkflow",
@@ -105,8 +148,8 @@ export async function handleOpenLARPWorkflowRequest(
     auditKey: parsedEnvelope.data.run.requestID,
     occurredAt: evaluatedAt,
     metadata: {
-      workflowKind: parsedEnvelope.data.run.kind,
-      providerRoute: parsedEnvelope.data.run.providerRoute
+      providerRoute: parsedEnvelope.data.run.providerRoute,
+      ...providerUsageMetadata(providerUsage)
     }
   });
   if (quotaDecision && !quotaDecision.ok) {

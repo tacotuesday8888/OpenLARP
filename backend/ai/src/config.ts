@@ -10,6 +10,12 @@ export type OpenLARPAIBackendConfig = {
   maxOutputTokens: number;
 };
 
+export type OpenLARPAIProviderBudgetPolicy = {
+  inputTokenMicrosPerThousand: number;
+  outputTokenMicrosPerThousand: number;
+  dailyBudgetMicros: number;
+};
+
 export function configFromEnvironment(env: NodeJS.ProcessEnv = process.env): OpenLARPAIBackendConfig {
   const provider = parseProvider(env.OPENLARP_AI_PROVIDER);
   const maxOutputTokens = parseMaxOutputTokens(env.OPENLARP_AI_MAX_OUTPUT_TOKENS);
@@ -19,6 +25,27 @@ export function configFromEnvironment(env: NodeJS.ProcessEnv = process.env): Ope
     provider,
     enableLiveGeneration: env.OPENLARP_ENABLE_LIVE_AI === "true",
     maxOutputTokens
+  };
+}
+
+export function providerBudgetPolicyFromEnvironment(
+  env: NodeJS.ProcessEnv = process.env
+): OpenLARPAIProviderBudgetPolicy | null {
+  const input = env.OPENLARP_AI_INPUT_TOKEN_MICROS_PER_1K;
+  const output = env.OPENLARP_AI_OUTPUT_TOKEN_MICROS_PER_1K;
+  const dailyBudget = env.OPENLARP_AI_DAILY_BUDGET_MICROS;
+
+  if (!input && !output && !dailyBudget) {
+    return null;
+  }
+  if (!input || !output || !dailyBudget) {
+    throw new Error("AI provider budget config requires input, output, and daily budget micros.");
+  }
+
+  return {
+    inputTokenMicrosPerThousand: parseNonnegativeInteger(input, "OPENLARP_AI_INPUT_TOKEN_MICROS_PER_1K"),
+    outputTokenMicrosPerThousand: parseNonnegativeInteger(output, "OPENLARP_AI_OUTPUT_TOKEN_MICROS_PER_1K"),
+    dailyBudgetMicros: parsePositiveInteger(dailyBudget, "OPENLARP_AI_DAILY_BUDGET_MICROS")
   };
 }
 
@@ -44,5 +71,21 @@ function parseMaxOutputTokens(value: string | undefined): number {
     throw new Error("OPENLARP_AI_MAX_OUTPUT_TOKENS must be an integer between 128 and 8192.");
   }
 
+  return parsed;
+}
+
+function parseNonnegativeInteger(value: string, name: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+    throw new Error(`${name} must be a nonnegative integer.`);
+  }
+  return parsed;
+}
+
+function parsePositiveInteger(value: string, name: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
   return parsed;
 }

@@ -65,6 +65,7 @@ The adapter:
 - strips local proof attachment filenames, UUIDs, and `localRelativePath` before network dispatch
 - validates response schema, workflow kind, request ID, provider route, live-model flag, and external-action flag before recording a run
 - supports a local Functions emulator configuration for authenticated development
+- relies on backend-only token/cost accounting; model IDs, provider prices, and budget policy stay out of iOS
 
 ## Backend Packages
 
@@ -96,10 +97,12 @@ The backend package defines server-side schemas, deterministic mock workflow han
 - future opportunity ranking
 - future approved-source agent scans
 
-The default backend target model is `gemini-3.1-flash-lite`, kept in backend config only. The iOS app still carries only `V0AIProviderRoute` values and does not encode model IDs, API keys, provider credentials, or direct prompts.
+The default backend target model is `gemini-3.1-flash-lite`, kept in backend config only. The iOS app still carries only `V0AIProviderRoute` values and does not encode model IDs, API keys, provider credentials, pricing, budgets, or direct prompts.
 
 The callable exports are `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and `deleteOpenLARPAccount`, configured in `firebase.json` under `backend/functions` and deployed to the `openlarp-dev-langqi` dev project with live model calls disabled.
 
-The deterministic callable package includes server-side per-user daily quota units for all authenticated callables. `runOpenLARPWorkflow` is capped before deterministic AI dispatch, and the proof/event callables are capped before Storage or Firestore side effects. Exhausted users receive `resource-exhausted` with safe quota details only.
+The deterministic callable package includes server-side per-user daily quota units for all authenticated callables. `runOpenLARPWorkflow` is capped before deterministic AI dispatch, records provider token/cost estimate metadata without prompt or proof text, and the proof/event callables are capped before Storage or Firestore side effects. Exhausted users receive `resource-exhausted` with safe quota details only.
 
-Live Genkit/Gemini model calls remain disabled until backend secrets, provider token/cost accounting, observability, and evaluation gates are configured. The deterministic Firebase Functions package is kept Genkit-free for safer callable deployment. `npm audit --workspace backend/ai --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories, so do not deploy live Genkit/Gemini AI until those dependencies are remediated or explicitly risk-accepted.
+The backend AI package estimates provider token pressure without persisting prompt or proof text. Live model calls require explicit backend pricing and daily budget config via `OPENLARP_AI_INPUT_TOKEN_MICROS_PER_1K`, `OPENLARP_AI_OUTPUT_TOKEN_MICROS_PER_1K`, and `OPENLARP_AI_DAILY_BUDGET_MICROS`; partial config is rejected, and budget-exceeded requests are blocked before dispatch. No provider price is hardcoded because provider pricing changes over time.
+
+Live Genkit/Gemini model calls remain disabled until backend secrets, observability, and evaluation gates are configured. The deterministic Firebase Functions package is kept Genkit-free for safer callable deployment. `npm audit --workspace backend/ai --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories, so do not deploy live Genkit/Gemini AI until those dependencies are remediated or explicitly risk-accepted.

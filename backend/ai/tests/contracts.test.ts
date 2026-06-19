@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_GEMINI_MODEL_ID, configFromEnvironment } from "../src/config.js";
+import {
+  DEFAULT_GEMINI_MODEL_ID,
+  configFromEnvironment,
+  providerBudgetPolicyFromEnvironment
+} from "../src/config.js";
+import { estimateProviderUsage, providerUsageMetadata } from "../src/costAccounting.js";
 import {
   agentScanPayloadSchema,
   careerBriefPayloadSchema,
@@ -131,6 +136,52 @@ describe("OpenLARP AI backend contracts", () => {
     expect(configFromEnvironment({ OPENLARP_AI_MAX_OUTPUT_TOKENS: "2048" }).maxOutputTokens).toBe(2048);
     expect(() => configFromEnvironment({ OPENLARP_AI_PROVIDER: "client-llm" })).toThrow(/Unsupported/);
     expect(() => configFromEnvironment({ OPENLARP_AI_MAX_OUTPUT_TOKENS: "not-a-number" })).toThrow(/MAX_OUTPUT_TOKENS/);
+  });
+
+  it("requires explicit provider pricing before cost estimates become enforceable", () => {
+    expect(providerBudgetPolicyFromEnvironment({})).toBeNull();
+    expect(providerBudgetPolicyFromEnvironment({
+      OPENLARP_AI_INPUT_TOKEN_MICROS_PER_1K: "15",
+      OPENLARP_AI_OUTPUT_TOKEN_MICROS_PER_1K: "60",
+      OPENLARP_AI_DAILY_BUDGET_MICROS: "50000"
+    })).toEqual({
+      inputTokenMicrosPerThousand: 15,
+      outputTokenMicrosPerThousand: 60,
+      dailyBudgetMicros: 50000
+    });
+    expect(() => providerBudgetPolicyFromEnvironment({
+      OPENLARP_AI_INPUT_TOKEN_MICROS_PER_1K: "15"
+    })).toThrow(/requires input, output, and daily budget/);
+  });
+
+  it("estimates provider token pressure without exposing prompt or proof text", () => {
+    const estimate = estimateProviderUsage({
+      config: {
+        modelId: DEFAULT_GEMINI_MODEL_ID,
+        provider: "firebase-ai-logic",
+        enableLiveGeneration: true,
+        maxOutputTokens: 1200
+      },
+      workflowKind: "proofQualityCheck",
+      payload: {
+        proof: {
+          text: "Private proof with langqi@example.com and sk-test-secret details."
+        }
+      },
+      budgetPolicy: {
+        inputTokenMicrosPerThousand: 20,
+        outputTokenMicrosPerThousand: 80,
+        dailyBudgetMicros: 50
+      }
+    });
+    const metadata = providerUsageMetadata(estimate);
+
+    expect(estimate.estimatedInputTokens).toBeGreaterThan(1);
+    expect(estimate.estimatedCostMicros).toBeGreaterThan(0);
+    expect(estimate.budgetExceeded).toBe(true);
+    expect(JSON.stringify(estimate)).not.toContain("langqi@example.com");
+    expect(JSON.stringify(estimate)).not.toContain("sk-test-secret");
+    expect(JSON.stringify(metadata)).not.toContain(DEFAULT_GEMINI_MODEL_ID);
   });
 
   it("validates backend-safe request envelopes and safety rules", () => {
