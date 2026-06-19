@@ -24,6 +24,11 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
     case subscriptionRestoreRequested
     case subscriptionRestoreCompleted
     case subscriptionRestoreFailed
+    case privateEvidenceBackupCleanupReported
+    case privateEvidenceBackupCleanupDeleted
+    case accountDeletionRequested
+    case accountDeletionCompleted
+    case accountDeletionPartial
 
     var id: String { rawValue }
 
@@ -52,6 +57,11 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
         case .subscriptionRestoreRequested: "Subscription restore requested"
         case .subscriptionRestoreCompleted: "Subscription restore completed"
         case .subscriptionRestoreFailed: "Subscription restore failed"
+        case .privateEvidenceBackupCleanupReported: "Private evidence backup cleanup reported"
+        case .privateEvidenceBackupCleanupDeleted: "Private evidence backup cleanup deleted"
+        case .accountDeletionRequested: "Account deletion requested"
+        case .accountDeletionCompleted: "Account deletion completed"
+        case .accountDeletionPartial: "Account deletion partial"
         }
     }
 }

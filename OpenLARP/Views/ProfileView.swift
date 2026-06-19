@@ -10,6 +10,9 @@ struct ProfileView: View {
     @State private var showingProofArchive = false
     @State private var outcomeSheetDestination: OutcomeSheetDestination?
     @State private var authenticationPresentationAnchor: OpenLARPAuthenticationPresentationAnchor?
+    @State private var showingBackupCleanupConfirmation = false
+    @State private var showingAccountDeletionConfirmation = false
+    @State private var accountDeletionConfirmationText = ""
 
     var body: some View {
         ScrollView {
@@ -24,6 +27,7 @@ struct ProfileView: View {
 
                 careerSummaryCard
                 accountProfileCard
+                accountDataControlsCard
                 subscriptionStatusCard
                 careerGraphSetupStatusCard
                 betaMeasurementCard
@@ -66,6 +70,43 @@ struct ProfileView: View {
         } message: {
             Text("This clears the local diagnostic and questline so you can set a new target.")
         }
+        .confirmationDialog(
+            "Delete synced private proof backups?",
+            isPresented: $showingBackupCleanupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Eligible Backups", role: .destructive) {
+                let attachmentIDs = privateEvidenceBackupDeletionIDs
+                Task {
+                    await store.deletePrivateEvidenceBackups(attachmentIDs: attachmentIDs)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes \(privateEvidenceBackupDeletionIDs.count) uploaded private proof backup file(s) that the backend reports as safe to delete. Local proof stays on this device.")
+        }
+        .alert(
+            "Delete cloud account?",
+            isPresented: $showingAccountDeletionConfirmation,
+            actions: {
+                TextField(AccountDeletionRequest.confirmationText, text: $accountDeletionConfirmationText)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                Button("Delete Cloud Account", role: .destructive) {
+                    let confirmationText = accountDeletionConfirmationText
+                    accountDeletionConfirmationText = ""
+                    Task {
+                        await store.deleteCloudAccount(confirmationText: confirmationText)
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    accountDeletionConfirmationText = ""
+                }
+            },
+            message: {
+                Text("Type \(AccountDeletionRequest.confirmationText) exactly. This deletes cloud account data and Firebase Auth. Local on-device progress remains.")
+            }
+        )
         .alert(
             "OpenLARP",
             isPresented: Binding(
@@ -283,6 +324,142 @@ struct ProfileView: View {
         }
     }
 
+    private var accountDataControlsCard: some View {
+        let session = store.currentBackendSessionSnapshot()
+        let cleanupResult = store.privateEvidenceBackupCleanupResult
+        let deletionResult = store.accountDeletionResult
+
+        return Card {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionHeader(feature: .privacy, eyebrow: "Account data", title: "Cloud controls")
+
+                Text(accountDataControlsDetail(session: session))
+                    .font(.subheadline)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Private proof backups", systemImage: "externaldrive.badge.xmark")
+                        .font(.subheadline.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+
+                    Text(privateEvidenceBackupCleanupSummary(cleanupResult))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let cleanupResult, !cleanupResult.candidates.isEmpty {
+                        VStack(spacing: 8) {
+                            ForEach(cleanupResult.candidates.prefix(3)) { candidate in
+                                PrivateEvidenceBackupCleanupCandidateRow(candidate: candidate)
+                            }
+                        }
+                        if cleanupResult.candidates.count > 3 {
+                            Text("\(cleanupResult.candidates.count - 3) more synced backup candidate(s) are included in the latest report.")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.openLARPSoftInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        Button {
+                            Task {
+                                await store.checkPrivateEvidenceBackupCleanupCandidates()
+                            }
+                        } label: {
+                            if store.isCheckingPrivateEvidenceBackups {
+                                HStack {
+                                    ProgressView()
+                                        .tint(.white)
+                                    Text("Checking")
+                                }
+                            } else {
+                                Label("Check Backups", systemImage: "magnifyingglass")
+                            }
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(
+                            !session.isAuthenticated ||
+                                store.isAuthenticationOperationInFlight ||
+                                store.isCheckingPrivateEvidenceBackups ||
+                                store.isDeletingPrivateEvidenceBackups ||
+                                store.isDeletingAccount
+                        )
+
+                        Button {
+                            showingBackupCleanupConfirmation = true
+                        } label: {
+                            if store.isDeletingPrivateEvidenceBackups {
+                                HStack {
+                                    ProgressView()
+                                        .tint(.white)
+                                    Text("Deleting")
+                                }
+                            } else {
+                                Label("Delete Eligible", systemImage: "trash")
+                            }
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(
+                            privateEvidenceBackupDeletionIDs.isEmpty ||
+                                store.isAuthenticationOperationInFlight ||
+                                store.isCheckingPrivateEvidenceBackups ||
+                                store.isDeletingPrivateEvidenceBackups ||
+                                store.isDeletingAccount
+                        )
+                    }
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Cloud account deletion", systemImage: "person.crop.circle.badge.xmark")
+                        .font(.subheadline.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+
+                    Text(accountDeletionSummary(deletionResult))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(deletionResult?.status == .partial ? Color.openLARPCoral : Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let deletionResult {
+                        VStack(spacing: 8) {
+                            AccountDeletionScopeRow(title: "Firestore data", result: deletionResult.firestoreUserTree)
+                            AccountDeletionScopeRow(title: "Storage files", result: deletionResult.storageUserPrefix)
+                            AccountDeletionScopeRow(title: "Quota records", result: deletionResult.quotaUsageTree)
+                            AccountDeletionAuthRow(title: "Firebase Auth", result: deletionResult.firebaseAuthUser)
+                            AccountDeletionMarkerRow(title: "Deletion marker", result: deletionResult.deletionRequestMarker)
+                        }
+                    }
+
+                    Button {
+                        accountDeletionConfirmationText = ""
+                        showingAccountDeletionConfirmation = true
+                    } label: {
+                        if store.isDeletingAccount {
+                            HStack {
+                                ProgressView()
+                                    .tint(.white)
+                                Text("Deleting")
+                            }
+                        } else {
+                            Label("Delete Cloud Account", systemImage: "trash.slash")
+                        }
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(
+                        !session.isAuthenticated ||
+                            store.isAuthenticationOperationInFlight ||
+                            store.isCheckingPrivateEvidenceBackups ||
+                            store.isDeletingPrivateEvidenceBackups ||
+                            store.isDeletingAccount
+                    )
+                }
+            }
+        }
+    }
+
     private var careerGraphSetupStatusCard: some View {
         let session = store.currentBackendSessionSnapshot()
         let content = CareerGraphSetupStatusContent(
@@ -368,6 +545,53 @@ struct ProfileView: View {
         }
     }
 
+    private var privateEvidenceBackupDeletionIDs: [String] {
+        guard let result = store.privateEvidenceBackupCleanupResult else { return [] }
+        return result.candidates
+            .filter(\.canDelete)
+            .map(\.attachmentID)
+    }
+
+    private func accountDataControlsDetail(session: BackendUserSession) -> String {
+        if session.isAuthenticated {
+            return "Use these controls for cloud data created by account sync. Local on-device progress is kept separate."
+        }
+
+        return "Sign in to check or delete cloud backups. Local on-device progress is still available without an account."
+    }
+
+    private func privateEvidenceBackupCleanupSummary(_ result: PrivateEvidenceBackupCleanupResult?) -> String {
+        guard let result else {
+            return "Check synced backups after turning off private evidence cloud sync or before deleting account data."
+        }
+
+        switch result.mode {
+        case .reportOnly:
+            if result.eligibleCount == 0 {
+                return "Checked \(result.scannedCount) synced backup records. No eligible private proof backups were found."
+            }
+            return "\(result.eligibleCount) of \(result.scannedCount) synced private proof backups are eligible for deletion."
+        case .deleteSyncedEvidence:
+            if result.partialFailureCount > 0 {
+                return "Deleted \(result.deletedCount) synced backups. \(result.partialFailureCount) item(s) still need retry or support."
+            }
+            return "Deleted \(result.deletedCount) synced private proof backup(s). Local proof receipts remain on this device."
+        }
+    }
+
+    private func accountDeletionSummary(_ result: AccountDeletionResult?) -> String {
+        guard let result else {
+            return "Cloud account deletion requires recent sign-in and the exact confirmation phrase. Local progress remains on this device."
+        }
+
+        switch result.status {
+        case .deleted:
+            return "Cloud account deletion completed. Firebase Auth and account-owned cloud data were removed."
+        case .partial:
+            return "Cloud account deletion is partial. Retry after reauthenticating or keep this result for support."
+        }
+    }
+
     @ViewBuilder
     private var authenticationPresentationAnchorReader: some View {
         #if canImport(UIKit)
@@ -413,7 +637,7 @@ struct ProfileView: View {
                     }
                 }
                 .buttonStyle(SecondaryButtonStyle())
-                .disabled(store.isAuthenticationOperationInFlight)
+                .disabled(store.isAuthenticationOperationInFlight || store.isAccountDataOperationInFlight)
             } else {
                 VStack(spacing: 8) {
                     Button {
@@ -432,7 +656,7 @@ struct ProfileView: View {
                         }
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(store.isAuthenticationOperationInFlight)
+                    .disabled(store.isAuthenticationOperationInFlight || store.isAccountDataOperationInFlight)
 
                     Button {
                         Task {
@@ -449,7 +673,7 @@ struct ProfileView: View {
                         }
                     }
                     .buttonStyle(SecondaryButtonStyle())
-                    .disabled(store.isAuthenticationOperationInFlight)
+                    .disabled(store.isAuthenticationOperationInFlight || store.isAccountDataOperationInFlight)
                 }
             }
         }
@@ -749,6 +973,242 @@ struct ProfileView: View {
             .font(.subheadline)
             .foregroundStyle(Color.openLARPSoftInk)
         }
+    }
+}
+
+private struct PrivateEvidenceBackupCleanupCandidateRow: View {
+    let candidate: PrivateEvidenceBackupCleanupCandidate
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: candidate.deleted ? "checkmark.circle.fill" : "doc.badge.gearshape")
+                .font(.system(size: 14, weight: .black, design: .rounded))
+                .foregroundStyle(statusColor)
+                .frame(width: 25, height: 25)
+                .background(statusColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(candidate.attachmentID)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Spacer(minLength: 8)
+
+                    Text(candidate.status.rawValue)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+
+                Text(candidate.reason)
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(Color.openLARPBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var statusColor: Color {
+        if candidate.deleted {
+            return .openLARPGreen
+        }
+
+        if candidate.canDelete {
+            return .openLARPBlue
+        }
+
+        switch candidate.status {
+        case .storageDeleteFailed, .firestoreDeleteFailed:
+            return .openLARPCoral
+        case .eligible, .deleted, .missingFirestoreAttachment, .firestoreReceiptMismatch, .storageObjectMissing, .storageMetadataMismatch:
+            return .openLARPSoftInk
+        }
+    }
+}
+
+private struct AccountDeletionScopeRow: View {
+    let title: String
+    let result: AccountDeletionScopeResult
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: result.status == .completed ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 14, weight: .black, design: .rounded))
+                .foregroundStyle(statusColor)
+                .frame(width: 25, height: 25)
+                .background(statusColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+                        .textCase(.uppercase)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Spacer(minLength: 8)
+
+                    Text(result.status.rawValue)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(Color.openLARPBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var detail: String {
+        var parts = ["deleted \(result.deletedCount)"]
+        if let attemptedCount = result.attemptedCount {
+            parts.append("attempted \(attemptedCount)")
+        }
+        if let failedCount = result.failedCount, failedCount > 0 {
+            parts.append("failed \(failedCount)")
+        }
+        if result.status == .failed {
+            parts.append("retry or contact support")
+        }
+        return parts.joined(separator: " | ")
+    }
+
+    private var statusColor: Color {
+        result.status == .completed ? .openLARPGreen : .openLARPCoral
+    }
+}
+
+private struct AccountDeletionAuthRow: View {
+    let title: String
+    let result: AccountDeletionAuthResult
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isComplete ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 14, weight: .black, design: .rounded))
+                .foregroundStyle(statusColor)
+                .frame(width: 25, height: 25)
+                .background(statusColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+                        .textCase(.uppercase)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Spacer(minLength: 8)
+
+                    Text(result.status.rawValue)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(Color.openLARPBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var isComplete: Bool {
+        result.status == .deleted || result.status == .alreadyMissing
+    }
+
+    private var detail: String {
+        switch result.status {
+        case .deleted:
+            return "Firebase Auth user was deleted."
+        case .alreadyMissing:
+            return "Firebase Auth user was already missing."
+        case .skipped:
+            return "Firebase Auth deletion was skipped because cloud data cleanup is incomplete."
+        case .failed:
+            return "Firebase Auth deletion failed. Retry after reauthenticating or contact support."
+        }
+    }
+
+    private var statusColor: Color {
+        isComplete ? .openLARPGreen : .openLARPCoral
+    }
+}
+
+private struct AccountDeletionMarkerRow: View {
+    let title: String
+    let result: AccountDeletionMarkerResult
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: result.status == .completed ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 14, weight: .black, design: .rounded))
+                .foregroundStyle(statusColor)
+                .frame(width: 25, height: 25)
+                .background(statusColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+                        .textCase(.uppercase)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Spacer(minLength: 8)
+
+                    Text(result.status.rawValue)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(Color.openLARPBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var detail: String {
+        result.status == .completed
+            ? "Deletion marker finalized."
+            : "Deletion marker finalization failed. Retry or contact support."
+    }
+
+    private var statusColor: Color {
+        result.status == .completed ? .openLARPGreen : .openLARPCoral
     }
 }
 
