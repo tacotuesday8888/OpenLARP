@@ -1388,30 +1388,44 @@ final class OpenLARPStore {
 
     private func synchronizeSubscriptionIdentity(for session: BackendUserSession) async {
         guard session.isAuthenticated else { return }
-        let syncedState = try? await subscriptionService.synchronizeSubscriberIdentity(
-            session: session,
-            currentState: state.subscriptionState,
-            at: now()
-        )
-        guard let syncedState else { return }
-        state.subscriptionState = syncedState
-        save()
+        let requestedAt = now()
+        do {
+            let syncedState = try await subscriptionService.synchronizeSubscriberIdentity(
+                session: session,
+                currentState: state.subscriptionState,
+                at: requestedAt
+            )
+            state.subscriptionState = syncedState
+            recordBetaEvent(
+                syncedState.connectionStatus == .failed
+                    ? .subscriptionIdentityCheckFailed
+                    : .subscriptionIdentityChecked,
+                occurredAt: requestedAt
+            )
+            save()
+        } catch {
+            recordBetaEvent(.subscriptionIdentityCheckFailed, occurredAt: requestedAt)
+            save()
+        }
     }
 
     private func resetSubscriptionIdentityAfterSignOut() async {
         currentSubscriptionOffering = nil
+        let requestedAt = now()
         let resetState = try? await subscriptionService.resetSubscriberIdentity(
             currentState: state.subscriptionState,
-            at: now()
+            at: requestedAt
         )
         guard let resetState else {
             state.subscriptionState.customerInfo = nil
             state.subscriptionState.connectionStatus = .notConfigured
-            state.subscriptionState.lastUpdatedAt = now()
+            state.subscriptionState.lastUpdatedAt = requestedAt
+            recordBetaEvent(.subscriptionIdentityReset, occurredAt: requestedAt)
             save()
             return
         }
         state.subscriptionState = resetState
+        recordBetaEvent(.subscriptionIdentityReset, occurredAt: requestedAt)
         save()
     }
 

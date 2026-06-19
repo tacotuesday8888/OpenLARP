@@ -129,6 +129,7 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(subscriptionService.syncIdentityRequestCount, 1)
         XCTAssertEqual(subscriptionService.synchronizedOwnerUserIDs, ["firebase_uid_subscription_restore"])
         XCTAssertEqual(store.state.subscriptionState, subscriptionState)
+        XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .subscriptionIdentityChecked })
         XCTAssertEqual(try persistence.load().subscriptionState, subscriptionState)
     }
 
@@ -150,6 +151,7 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(subscriptionService.resetIdentityRequestCount, 0)
         XCTAssertNil(store.state.subscriptionState.customerInfo)
         XCTAssertEqual(store.state.subscriptionState.connectionStatus, .notConfigured)
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .subscriptionIdentityReset })
     }
 
     func testStoreSignedOutAuthenticationRestoreResetsStaleSubscriptionIdentity() async throws {
@@ -205,6 +207,7 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(subscriptionService.resetIdentityRequestCount, 1)
         XCTAssertNil(store.currentSubscriptionOffering)
         XCTAssertEqual(store.state.subscriptionState, resetState)
+        XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .subscriptionIdentityReset })
         XCTAssertEqual(try persistence.load().subscriptionState, resetState)
         XCTAssertEqual(store.subscriptionAccess().status, .freeSprint)
     }
@@ -290,6 +293,41 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(subscriptionService.syncIdentityRequestCount, 1)
         XCTAssertEqual(subscriptionService.synchronizedOwnerUserIDs, ["firebase_uid_subscription_google"])
         XCTAssertEqual(store.state.subscriptionState, subscriptionState)
+        XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .subscriptionIdentityChecked })
+        XCTAssertEqual(backendEventService.requests.count, 1)
+    }
+
+    func testStoreSubscriptionIdentityFailureRecordsPaymentEventWithoutBlockingBackendSync() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = Date(timeIntervalSince1970: 32_300)
+        let googleSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_subscription_failed",
+            accountID: "firebase_uid_subscription_failed",
+            email: "newgrad@example.com"
+        )
+        let failedState = OpenLARPSubscriptionState(
+            customerInfo: nil,
+            connectionStatus: .failed,
+            lastUpdatedAt: now
+        )
+        let subscriptionService = RecordingSubscriptionIdentityService(synchronizedState: failedState)
+        let backendEventService = RecordingAuthenticationBackendEventSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(googleSignInSession: googleSession),
+            backendEventSyncService: backendEventService,
+            subscriptionService: subscriptionService,
+            now: { now }
+        )
+
+        await store.confirmGoal(goal)
+        await store.signInWithGoogle(presenting: nil)
+
+        XCTAssertEqual(subscriptionService.syncIdentityRequestCount, 1)
+        XCTAssertEqual(store.state.subscriptionState.connectionStatus, .failed)
+        XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .subscriptionIdentityCheckFailed })
         XCTAssertEqual(backendEventService.requests.count, 1)
     }
 
@@ -451,6 +489,7 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(subscriptionService.resetIdentityRequestCount, 1)
         XCTAssertNil(store.currentSubscriptionOffering)
         XCTAssertEqual(store.state.subscriptionState, resetState)
+        XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .subscriptionIdentityReset })
         XCTAssertEqual(try persistence.load().subscriptionState, resetState)
         XCTAssertEqual(store.subscriptionAccess().status, .freeSprint)
     }

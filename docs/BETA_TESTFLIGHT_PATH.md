@@ -11,7 +11,7 @@ This document tracks the practical path from the current local product foundatio
 - AI workflow request envelopes keep private identifiers, model IDs, and provider credentials out of the iOS client.
 - RevenueCat-shaped subscription contracts support free sprint, entitlement, restore, offline access, and expired states.
 - RevenueCat iOS SDK `5.79.0` is linked through XcodeGen/SPM behind `OpenLARPSubscriptionServicing`, with ignored local plist configuration, Firebase UID identity sync, sign-out reset, offering/package purchase boundaries, and a no-key fallback that keeps local beta mode working.
-- Beta measurement exports include AI, backend, quest, and payment readiness signals without private proof or billing identifiers.
+- Beta measurement exports include AI, backend, quest, and payment readiness signals, including subscription identity check/reset/failure counts, without private proof or billing identifiers.
 - GitHub Actions now has an iOS build/test workflow.
 - Firebase Auth, Sign in with Apple capability, and Google Sign-In packages are declared through XcodeGen/SPM while private plist config remains ignored.
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.

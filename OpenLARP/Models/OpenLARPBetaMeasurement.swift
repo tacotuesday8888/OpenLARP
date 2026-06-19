@@ -23,6 +23,9 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
     case subscriptionPaywallViewed
     case subscriptionOfferingLoaded
     case subscriptionOfferingUnavailable
+    case subscriptionIdentityChecked
+    case subscriptionIdentityCheckFailed
+    case subscriptionIdentityReset
     case subscriptionRestoreRequested
     case subscriptionRestoreCompleted
     case subscriptionRestoreFailed
@@ -62,6 +65,9 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
         case .subscriptionPaywallViewed: "Subscription paywall viewed"
         case .subscriptionOfferingLoaded: "Subscription offering loaded"
         case .subscriptionOfferingUnavailable: "Subscription offering unavailable"
+        case .subscriptionIdentityChecked: "Subscription identity checked"
+        case .subscriptionIdentityCheckFailed: "Subscription identity check failed"
+        case .subscriptionIdentityReset: "Subscription identity reset"
         case .subscriptionRestoreRequested: "Subscription restore requested"
         case .subscriptionRestoreCompleted: "Subscription restore completed"
         case .subscriptionRestoreFailed: "Subscription restore failed"
@@ -290,6 +296,9 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
         .subscriptionPaywallViewed,
         .subscriptionOfferingLoaded,
         .subscriptionOfferingUnavailable,
+        .subscriptionIdentityChecked,
+        .subscriptionIdentityCheckFailed,
+        .subscriptionIdentityReset,
         .subscriptionRestoreRequested,
         .subscriptionRestoreCompleted,
         .subscriptionRestoreFailed,

@@ -205,6 +205,9 @@ final class SubscriptionReadinessTests: XCTestCase {
         )
         state.betaEvents = [
             BetaEventRecord(kind: .freeSprintStarted, occurredAt: now),
+            BetaEventRecord(kind: .subscriptionIdentityChecked, occurredAt: date(year: 2026, month: 6, day: 1, hour: 1)),
+            BetaEventRecord(kind: .subscriptionIdentityReset, occurredAt: date(year: 2026, month: 6, day: 1, hour: 2)),
+            BetaEventRecord(kind: .subscriptionIdentityCheckFailed, occurredAt: date(year: 2026, month: 6, day: 1, hour: 3)),
             BetaEventRecord(kind: .subscriptionRestoreRequested, occurredAt: date(year: 2026, month: 6, day: 2)),
             BetaEventRecord(kind: .subscriptionRestoreCompleted, occurredAt: date(year: 2026, month: 6, day: 2, hour: 1)),
             BetaEventRecord(kind: .subscriptionPurchaseStarted, occurredAt: date(year: 2026, month: 6, day: 3)),
@@ -218,13 +221,16 @@ final class SubscriptionReadinessTests: XCTestCase {
             as: UTF8.self
         )
 
-        XCTAssertEqual(summary.paymentEventCount, 5)
+        XCTAssertEqual(summary.paymentEventCount, 8)
         XCTAssertEqual(summary.subscriptionAccessStatus, .active)
         XCTAssertEqual(summary.subscriptionAccessSource, .revenueCatCustomerInfo)
         XCTAssertTrue(summary.subscriptionHasAccess)
         XCTAssertFalse(summary.subscriptionNeedsPaywall)
-        XCTAssertTrue(exportedText.contains("Payment events: 5"))
+        XCTAssertTrue(exportedText.contains("Payment events: 8"))
         XCTAssertTrue(exportedText.contains("Subscription access: Active"))
+        XCTAssertTrue(exportedText.contains("Subscription identity checked: 1"))
+        XCTAssertTrue(exportedText.contains("Subscription identity check failed: 1"))
+        XCTAssertTrue(exportedText.contains("Subscription identity reset: 1"))
         XCTAssertFalse(exportedText.contains(OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID))
         XCTAssertFalse(exportedText.contains("private-product-id-should-not-export"))
         XCTAssertFalse(exportedText.contains("billing.example.com"))
