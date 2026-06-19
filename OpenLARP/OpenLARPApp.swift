@@ -7,7 +7,7 @@ struct OpenLARPApp: App {
     init() {
         OpenLARPFirebaseBootstrap.configureIfAvailable()
         let attachmentStore = OpenLARPAttachmentStore.live
-        let authenticationService = FirebaseGoogleSignInAuthenticationService()
+        let authenticationService = FirebaseOpenLARPAuthenticationService()
         let aiWorkflowService = FallbackV0AIWorkflowService(
             primary: FirebaseCallableV0AIWorkflowService(),
             fallback: LocalMockV0AIWorkflowService()

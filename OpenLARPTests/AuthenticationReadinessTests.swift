@@ -139,6 +139,72 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountSignInCompleted })
     }
 
+    func testStoreAppleSignInUpdatesAccountFieldsWithoutOverwritingCareerProfile() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let previousSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_previous_apple",
+            accountID: "firebase_uid_previous_apple",
+            email: "previous@example.com"
+        )
+        let appleSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_apple",
+            accountID: "firebase_uid_apple",
+            email: "apple-user@example.com"
+        )
+        let authService = MockOpenLARPAuthenticationService(
+            restoredSession: previousSession,
+            appleSignInSession: appleSession
+        )
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: authService,
+            privateEvidenceCloudSyncConsentService: LocalMockPrivateEvidenceCloudSyncConsentService(),
+            now: { Date(timeIntervalSince1970: 30_750) }
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        await store.setPrivateEvidenceCloudSyncEnabled(true)
+        let originalDisplayName = try XCTUnwrap(store.state.userProfile?.displayName)
+        let originalGoal = store.state.goal
+
+        await store.signInWithApple(presenting: nil)
+
+        XCTAssertEqual(store.authenticationResult?.operation, .signInWithApple)
+        XCTAssertEqual(store.authenticationResult?.status, .authenticated)
+        XCTAssertEqual(store.currentBackendSessionSnapshot().ownerUserID, "firebase_uid_apple")
+        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_apple")
+        XCTAssertEqual(store.state.userProfile?.email, "apple-user@example.com")
+        XCTAssertEqual(store.state.userProfile?.displayName, originalDisplayName)
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
+        XCTAssertEqual(store.state.goal, originalGoal)
+        XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountSignInCompleted })
+    }
+
+    func testCancelledAppleSignInLeavesLocalAccountStateUnchanged() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let authService = MockOpenLARPAuthenticationService(appleSignInStatus: .cancelled)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: authService,
+            now: { Date(timeIntervalSince1970: 30_800) }
+        )
+
+        await store.confirmGoal(goal)
+        let originalProfile = store.state.userProfile
+        await store.signInWithApple(presenting: nil)
+
+        XCTAssertEqual(store.authenticationResult?.operation, .signInWithApple)
+        XCTAssertEqual(store.authenticationResult?.status, .cancelled)
+        XCTAssertEqual(store.state.userProfile, originalProfile)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .accountSignInFailed })
+    }
+
     func testStoreSignOutClearsAccountFieldsAndReturnsToLocalSession() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -172,7 +238,7 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountSignedOut })
     }
 
-    func testPrivateEvidenceConsentResultIsIgnoredWhenAccountChangesDuringRequest() async throws {
+    func testAuthenticationAndAccountDataActionsWaitDuringPrivateEvidenceConsentUpdate() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let previousSession = BackendUserSession.firebaseAuthenticated(
@@ -190,11 +256,13 @@ final class AuthenticationReadinessTests: XCTestCase {
             googleSignInSession: nextSession
         )
         let consentService = DelayedPrivateEvidenceCloudSyncConsentService()
+        let cleanupService = RecordingPrivateEvidenceBackupCleanupService()
         let store = OpenLARPStore(
             persistence: OpenLARPPersistence(directory: directory),
             attachmentStore: OpenLARPAttachmentStore(directory: directory),
             authenticationService: authService,
             privateEvidenceCloudSyncConsentService: consentService,
+            privateEvidenceBackupCleanupService: cleanupService,
             now: { Date(timeIntervalSince1970: 31_250) }
         )
 
@@ -203,12 +271,16 @@ final class AuthenticationReadinessTests: XCTestCase {
         let consentTask = Task { await store.setPrivateEvidenceCloudSyncEnabled(true) }
         await consentService.waitUntilRequestStarted()
         await store.signInWithGoogle(presenting: nil)
+        XCTAssertEqual(store.errorMessage, "Wait for account data controls to finish before changing accounts.")
+        await store.checkPrivateEvidenceBackupCleanupCandidates()
+        XCTAssertTrue(cleanupService.requests.isEmpty)
+        XCTAssertEqual(store.errorMessage, "Wait for account data controls to finish before checking synced private proof backups.")
         consentService.completePendingRequest()
         await consentTask.value
 
-        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_slow_next")
-        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
-        XCTAssertEqual(store.errorMessage, "Private evidence cloud sync could not be enabled.")
+        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_slow_previous")
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, true)
+        XCTAssertNil(store.errorMessage)
     }
 
     func testStoreForwardsAuthenticationOpenURLToInjectedService() async {
@@ -227,13 +299,14 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertFalse(store.handleOpenURL(URL(string: "openlarp:/not-google")!))
     }
 
-    func testFirebaseGoogleSignInServiceReportsReadinessWithoutFakeSuccess() async {
+    func testFirebaseAuthenticationServiceReportsReadinessWithoutFakeSuccess() async {
         let state = OpenLARPEngine.confirmGoal(goal)
-        let service = FirebaseGoogleSignInAuthenticationService()
+        let service = FirebaseOpenLARPAuthenticationService()
 
         _ = await service.signOut(for: state)
         let restoreResult = await service.restorePreviousSession(for: state)
         let signInResult = await service.signInWithGoogle(presenting: nil, for: state)
+        let appleSignInResult = await service.signInWithApple(presenting: nil, for: state)
 
         #if canImport(FirebaseCore)
         let hasRuntimeGoogleConfiguration = FirebaseApp.app()?.options.clientID?.isEmpty == false
@@ -244,13 +317,28 @@ final class AuthenticationReadinessTests: XCTestCase {
         if hasRuntimeGoogleConfiguration {
             XCTAssertEqual(restoreResult.status, .signedOut)
             XCTAssertEqual(signInResult.status, .presentationRequired)
+            XCTAssertEqual(appleSignInResult.status, .presentationRequired)
         } else {
             XCTAssertEqual(restoreResult.status, .configurationMissing)
             XCTAssertEqual(signInResult.status, .configurationMissing)
+            XCTAssertEqual(appleSignInResult.status, .configurationMissing)
         }
 
         XCTAssertFalse(restoreResult.session.isAuthenticated)
         XCTAssertFalse(signInResult.session.isAuthenticated)
+        XCTAssertFalse(appleSignInResult.session.isAuthenticated)
+    }
+
+    func testAppleNonceHelperUsesExpectedCharacterSetAndSHA256() throws {
+        let bytes = Array(UInt8(0)..<UInt8(32))
+        let nonce = OpenLARPAppleSignInCrypto.nonceString(from: bytes)
+
+        XCTAssertEqual(nonce.count, 32)
+        XCTAssertTrue(nonce.allSatisfy { OpenLARPAppleSignInCrypto.nonceCharacterSet.contains($0) })
+        XCTAssertEqual(
+            OpenLARPAppleSignInCrypto.sha256("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        )
     }
 
     func testPrivateEvidenceBackupCleanupRequiresAuthenticatedSession() async throws {
@@ -426,6 +514,89 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(cleanupService.requests.last?.attachmentIDs, ["eligible_a"])
     }
 
+    func testBackupDeletionRejectsIncompleteBackendResponse() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let authenticatedSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_cleanup_incomplete",
+            accountID: "firebase_uid_cleanup_incomplete",
+            email: "student@example.com"
+        )
+        let cleanupService = RecordingPrivateEvidenceBackupCleanupService { request in
+            if request.mode == .reportOnly {
+                return PrivateEvidenceBackupCleanupResult(
+                    request: request,
+                    completedAt: request.requestedAt.addingTimeInterval(1),
+                    didContactNetwork: true,
+                    scannedCount: 2,
+                    eligibleCount: 2,
+                    candidates: [
+                        PrivateEvidenceBackupCleanupCandidate(
+                            attachmentID: "eligible_a",
+                            proofID: "proof_a",
+                            storagePath: "users/firebase_uid_cleanup_incomplete/proofAttachments/eligible_a",
+                            storageGeneration: "1",
+                            status: .eligible,
+                            canDelete: true,
+                            deleted: false,
+                            reason: "Eligible for cleanup."
+                        ),
+                        PrivateEvidenceBackupCleanupCandidate(
+                            attachmentID: "eligible_b",
+                            proofID: "proof_b",
+                            storagePath: "users/firebase_uid_cleanup_incomplete/proofAttachments/eligible_b",
+                            storageGeneration: "2",
+                            status: .eligible,
+                            canDelete: true,
+                            deleted: false,
+                            reason: "Eligible for cleanup."
+                        )
+                    ]
+                )
+            }
+
+            XCTAssertEqual(request.attachmentIDs, ["eligible_a", "eligible_b"])
+            return PrivateEvidenceBackupCleanupResult(
+                request: request,
+                completedAt: request.requestedAt.addingTimeInterval(1),
+                didContactNetwork: true,
+                scannedCount: 1,
+                eligibleCount: 1,
+                deletedCount: 1,
+                candidates: [
+                    PrivateEvidenceBackupCleanupCandidate(
+                        attachmentID: "eligible_a",
+                        proofID: "proof_a",
+                        storagePath: "users/firebase_uid_cleanup_incomplete/proofAttachments/eligible_a",
+                        storageGeneration: "1",
+                        status: .deleted,
+                        canDelete: false,
+                        deleted: true,
+                        reason: "Uploaded proof backup was deleted."
+                    )
+                ],
+                externalActionTaken: true
+            )
+        }
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(restoredSession: authenticatedSession),
+            privateEvidenceBackupCleanupService: cleanupService
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        await store.checkPrivateEvidenceBackupCleanupCandidates()
+        await store.deletePrivateEvidenceBackups(attachmentIDs: ["eligible_a", "eligible_b"])
+
+        XCTAssertEqual(cleanupService.requests.count, 2)
+        XCTAssertEqual(store.privateEvidenceBackupCleanupResult?.mode, .reportOnly)
+        XCTAssertEqual(store.privateEvidenceBackupCleanupResult?.candidates.count, 2)
+        XCTAssertEqual(store.errorMessage, "Synced private proof backups could not be deleted.")
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .privateEvidenceBackupCleanupDeleted })
+    }
+
     func testAccountDeletionRequiresExactConfirmationBeforeCallingBackend() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -450,6 +621,39 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertNil(store.accountDeletionResult)
         XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_delete_guard")
         XCTAssertEqual(store.errorMessage, "Type \(AccountDeletionRequest.confirmationText) exactly before deleting the cloud account.")
+    }
+
+    func testAccountDeletionCancelledDuringProviderPreparationDoesNotCallBackend() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let authenticatedSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_delete_prepare_cancel",
+            accountID: "firebase_uid_delete_prepare_cancel",
+            email: "student@example.com"
+        )
+        let authService = MockOpenLARPAuthenticationService(
+            restoredSession: authenticatedSession,
+            accountDeletionPreparationStatus: .cancelled
+        )
+        let deletionService = RecordingAccountDeletionService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: authService,
+            accountDeletionService: deletionService
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        await store.deleteCloudAccount(confirmationText: AccountDeletionRequest.confirmationText)
+
+        XCTAssertEqual(store.authenticationResult?.operation, .prepareAccountDeletion)
+        XCTAssertEqual(store.authenticationResult?.status, .cancelled)
+        XCTAssertTrue(deletionService.requests.isEmpty)
+        XCTAssertNil(store.accountDeletionResult)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_delete_prepare_cancel")
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .accountDeletionRequested })
     }
 
     func testFullAccountDeletionClearsCloudAccountLinkAndSignsOut() async throws {
@@ -652,6 +856,71 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(store.errorMessage, "Cloud account deletion is partial. Keep this result for support and retry after reauthenticating.")
         XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountDeletionPartial })
     }
+
+    func testPartialAccountDeletionAfterAuthRemovalRetainsSupportResultAcrossReauth() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let deletedAccountSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_delete_auth_removed",
+            accountID: "firebase_uid_delete_auth_removed",
+            email: "student@example.com"
+        )
+        let nextAccountSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_after_partial_delete",
+            accountID: "firebase_uid_after_partial_delete",
+            email: "next@example.com"
+        )
+        let authService = MockOpenLARPAuthenticationService(
+            restoredSession: deletedAccountSession,
+            googleSignInSession: nextAccountSession
+        )
+        let deletionService = RecordingAccountDeletionService { request in
+            AccountDeletionResult(
+                request: request,
+                completedAt: request.requestedAt.addingTimeInterval(2),
+                didContactNetwork: true,
+                status: .partial,
+                firestoreUserTree: AccountDeletionScopeResult(
+                    status: .failed,
+                    deletedCount: 0,
+                    attemptedCount: 1,
+                    failedCount: 1,
+                    failedPathSamples: ["users/firebase_uid_delete_auth_removed/proofAttachments/private.txt"],
+                    errorMessage: "Firestore cleanup failed."
+                ),
+                storageUserPrefix: AccountDeletionScopeResult(status: .completed, deletedCount: 1, attemptedCount: 1, failedCount: 0),
+                quotaUsageTree: AccountDeletionScopeResult(status: .completed, deletedCount: 1, attemptedCount: 1, failedCount: 0),
+                firebaseAuthUser: AccountDeletionAuthResult(status: .deleted),
+                deletionRequestMarker: AccountDeletionMarkerResult(status: .completed),
+                externalActionTaken: true
+            )
+        }
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: authService,
+            accountDeletionService: deletionService
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        await store.deleteCloudAccount(confirmationText: AccountDeletionRequest.confirmationText)
+
+        XCTAssertEqual(store.accountDeletionResult?.status, .partial)
+        XCTAssertEqual(store.accountDeletionResult?.firebaseAuthUser.status, .deleted)
+        XCTAssertFalse(store.currentBackendSessionSnapshot().isAuthenticated)
+        XCTAssertNil(store.state.userProfile?.accountID)
+        XCTAssertEqual(store.errorMessage, "Cloud account deletion is partial after Firebase Auth was removed. Keep this result for support and contact support.")
+
+        await store.signInWithGoogle(presenting: nil)
+
+        XCTAssertEqual(store.currentBackendSessionSnapshot().ownerUserID, "firebase_uid_after_partial_delete")
+        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_after_partial_delete")
+        XCTAssertEqual(store.accountDeletionResult?.status, .partial)
+        XCTAssertEqual(store.accountDeletionResult?.firebaseAuthUser.status, .deleted)
+        XCTAssertNil(store.accountDeletionResult?.firestoreUserTree.failedPathSamples)
+        XCTAssertNil(store.accountDeletionResult?.firestoreUserTree.errorMessage)
+    }
 }
 
 @MainActor
@@ -784,6 +1053,29 @@ private final class MutableRestoreAuthenticationService: OpenLARPAuthenticationS
             operation: .signInWithGoogle,
             status: .providerSetupRequired,
             session: currentSession(for: state)
+        )
+    }
+
+    func signInWithApple(
+        presenting anchor: OpenLARPAuthenticationPresentationAnchor?,
+        for state: OpenLARPState
+    ) async -> OpenLARPAuthenticationResult {
+        OpenLARPAuthenticationResult(
+            operation: .signInWithApple,
+            status: .providerSetupRequired,
+            session: currentSession(for: state)
+        )
+    }
+
+    func prepareAccountDeletion(
+        presenting anchor: OpenLARPAuthenticationPresentationAnchor?,
+        for state: OpenLARPState
+    ) async -> OpenLARPAuthenticationResult {
+        let session = currentSession(for: state)
+        return OpenLARPAuthenticationResult(
+            operation: .prepareAccountDeletion,
+            status: session.isAuthenticated ? .authenticated : .signedOut,
+            session: session
         )
     }
 

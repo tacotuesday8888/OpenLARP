@@ -12,7 +12,7 @@ This document tracks the practical path from the current local product foundatio
 - RevenueCat-shaped subscription contracts support free sprint, entitlement, restore, offline access, and expired states without importing the SDK.
 - Beta measurement exports include AI, backend, quest, and payment readiness signals without private proof or billing identifiers.
 - GitHub Actions now has an iOS build/test workflow.
-- Firebase Apple SDKs and Google Sign-In packages are declared through XcodeGen/SPM while private plist config remains ignored.
+- Firebase Auth, Sign in with Apple capability, and Google Sign-In packages are declared through XcodeGen/SPM while private plist config remains ignored.
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
 - Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled, and its deploy package is kept free of Genkit runtime dependencies.
@@ -21,7 +21,7 @@ This document tracks the practical path from the current local product foundatio
 - Functions Artifact Registry cleanup policies are installed for the dev project so old deployment images do not accumulate without a retention policy.
 - The iOS app now tries the Firebase callable Genkit route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.
 - Authenticated proof upload reconciliation callable exists for report-only scans and explicit safe deletion of orphaned Storage proof uploads.
-- Google Sign-In auth service boundary exists for restore, sign-in, sign-out, missing-config states, and callback URL handling.
+- Firebase Auth service boundary exists for restore, Google sign-in, Apple sign-in, sign-out, missing-config states, callback URL handling, and Apple token revocation preparation before account deletion.
 - Google Sign-In is enabled in the Firebase dev project, the ignored local iOS plist has OAuth client IDs, and the XcodeGen project declares the public reversed client ID URL scheme.
 - Firebase Storage is initialized in the Firebase dev project, and Storage rules are deployed for owner-scoped proof attachments.
 - Firebase Storage proof attachment upload adapter exists and uploads owner-scoped proof bytes before server receipt promotion.
@@ -33,16 +33,16 @@ This document tracks the practical path from the current local product foundatio
 - Private proof records, proof attachment metadata, and proof attachment Storage uploads are gated behind explicit server-owned private evidence cloud sync consent. Public "share wins" permission no longer allows private proof backup by itself.
 - Uploaded proof backup cleanup after revoked consent has a server-owned callable foundation. It defaults to report-only, requires explicit attachment IDs plus deletion confirmation for deletes, and returns per-item skipped/deleted/partial-failure statuses. It is not a full account/private-data deletion feature.
 - Account deletion has a server-owned callable foundation. It requires recent Firebase Auth and exact destructive confirmation, writes a minimal retained deletion marker that blocks stale client and Admin callable writes, deletes the user Storage prefix, Firestore user tree, hashed quota tree, and then the Firebase Auth user, and reports partial failures including marker-finalization failures for retry/support handling.
-- Profile now exposes account data controls for signed-in users: report-only synced private proof backup checks, confirmed eligible backup deletion, exact-phrase cloud account deletion, and partial-failure result visibility for retry/support. Local on-device career progress is intentionally kept separate from cloud account deletion.
+- Profile now exposes account controls for Google/Apple sign-in plus signed-in account data controls: report-only synced private proof backup checks, confirmed eligible backup deletion, exact-phrase cloud account deletion, and partial-failure result visibility for retry/support. Local on-device career progress is intentionally kept separate from cloud account deletion.
 - iOS App Check provider scaffolding is linked, real-device builds have the production App Attest entitlement, and simulator debug App Check is explicit opt-in to avoid leaking debug tokens in logs. Firebase product enforcement is still off until console registration, debug tokens, and device metrics are verified.
 - Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
 
 ## Required Before TestFlight
 
-1. Verify live Google Sign-In in the simulator/device with the refreshed ignored local plist, then add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary account option.
+1. Verify live Google Sign-In and Sign in with Apple in the simulator/device with the refreshed ignored local plist, signed Apple capability, Firebase Auth providers enabled, and regenerated provisioning profiles.
 2. Run `npm run firebase:signed-in-smoke` before each backend-readiness pass, then test account-backed proof attachment uploads, Firestore career graph writes, and the signed-in deterministic callable AI fallback route on a simulator/device.
 3. Test the iOS callable route signed-out fallback behavior.
-4. Verify the new uploaded proof backup cleanup and account deletion controls on a signed-in simulator/device, then finalize privacy/legal/support copy for broad external TestFlight.
+4. Verify uploaded proof backup cleanup and account deletion controls on signed-in Google and Apple simulator/device sessions, including Apple token revocation before deletion, then finalize privacy/legal/support copy for broad external TestFlight.
 5. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
 6. Register App Check in Firebase Console, register simulator debug tokens as private secrets, verify device App Attest metrics, update live smoke tooling for App Check tokens, then enable App Check enforcement before treating all cloud data as authoritative or enabling live AI.
 7. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way.
