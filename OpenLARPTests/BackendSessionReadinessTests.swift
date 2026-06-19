@@ -232,6 +232,24 @@ final class BackendSessionReadinessTests: XCTestCase {
         }
     }
 
+    func testFirebaseAccountDeletionResponseRejectsUnknownStatusesFromBackend() throws {
+        let request = makeAuthenticatedAccountDeletionRequest()
+        var response = validFirebaseAccountDeletionResponse(for: request)
+        response.status = .partial
+        response.firestoreUserTree = AccountDeletionScopeResult(
+            status: .unknown,
+            deletedCount: 0,
+            attemptedCount: nil,
+            failedCount: nil
+        )
+
+        XCTAssertThrowsError(try response.validatedResult(for: request)) { error in
+            guard case FirebaseBackendServiceError.contractMismatch = error else {
+                return XCTFail("Expected contract mismatch, got \(error)")
+            }
+        }
+    }
+
     func testFirebaseReadyUnauthenticatedSessionLeavesBackendEventsPending() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -335,6 +353,53 @@ final class BackendSessionReadinessTests: XCTestCase {
                 )
             },
             externalActionTaken: false
+        )
+    }
+
+    private func makeAuthenticatedAccountDeletionRequest() -> AccountDeletionRequest {
+        AccountDeletionRequest(
+            session: BackendUserSession.firebaseAuthenticated(
+                ownerUserID: "firebase_uid_delete_contract",
+                accountID: "account-should-not-sync",
+                email: "private@example.com"
+            ),
+            confirmDeletion: true,
+            confirmationText: AccountDeletionRequest.confirmationText,
+            requestedAt: Date(timeIntervalSince1970: 21_000)
+        )
+    }
+
+    private func validFirebaseAccountDeletionResponse(
+        for request: AccountDeletionRequest
+    ) -> FirebaseAccountDeletionResponse {
+        FirebaseAccountDeletionResponse(
+            ok: true,
+            schemaVersion: 1,
+            userID: request.session.ownerUserID,
+            status: .deleted,
+            requestedAt: request.requestedAt,
+            completedAt: Date(timeIntervalSince1970: 21_100),
+            firestoreUserTree: AccountDeletionScopeResult(
+                status: .completed,
+                deletedCount: 4,
+                attemptedCount: 4,
+                failedCount: 0
+            ),
+            storageUserPrefix: AccountDeletionScopeResult(
+                status: .completed,
+                deletedCount: 2,
+                attemptedCount: 2,
+                failedCount: 0
+            ),
+            quotaUsageTree: AccountDeletionScopeResult(
+                status: .completed,
+                deletedCount: 1,
+                attemptedCount: 1,
+                failedCount: 0
+            ),
+            firebaseAuthUser: AccountDeletionAuthResult(status: .deleted),
+            deletionRequestMarker: AccountDeletionMarkerResult(status: .completed),
+            externalActionTaken: true
         )
     }
 }

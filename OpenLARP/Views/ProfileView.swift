@@ -423,7 +423,7 @@ struct ProfileView: View {
 
                     Text(accountDeletionSummary(deletionResult))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(deletionResult?.status == .partial ? Color.openLARPCoral : Color.openLARPSoftInk)
+                        .foregroundStyle(accountDeletionSummaryColor(deletionResult))
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let deletionResult {
@@ -594,10 +594,17 @@ struct ProfileView: View {
             switch result.firebaseAuthUser.status {
             case .deleted, .alreadyMissing:
                 return "Cloud account deletion is partial after Firebase Auth was removed. Keep this result for support and contact support."
-            case .skipped, .failed:
+            case .skipped, .failed, .unknown:
                 return "Cloud account deletion is partial. Retry after reauthenticating or keep this result for support."
             }
+        case .unknown:
+            return "Cloud account deletion started, but the final backend result is unknown. Keep this status for support, sign in again, and retry before assuming cloud data still exists."
         }
+    }
+
+    private func accountDeletionSummaryColor(_ result: AccountDeletionResult?) -> Color {
+        guard let result else { return .openLARPSoftInk }
+        return result.status == .deleted ? .openLARPSoftInk : .openLARPCoral
     }
 
     @ViewBuilder
@@ -748,15 +755,19 @@ struct ProfileView: View {
         case .configurationMissing:
             return "The app is Firebase-ready, but this local build needs GoogleService-Info.plist and provider setup for live sign-in."
         case .providerSetupRequired:
-            if result?.operation == .signInWithApple || result?.operation == .prepareAccountDeletion {
+            if result?.operation == .signInWithApple {
                 return "Enable Sign in with Apple in Apple Developer and Firebase Auth before live Apple sign-in."
+            } else if result?.operation == .prepareAccountDeletion {
+                return "Enable the signed-in provider in Firebase Auth before cloud account deletion."
             }
             return "Enable the Google provider in Firebase Auth and add the reversed client ID URL scheme before live Google sign-in."
         case .sdkUnavailable:
             return "FirebaseAuth plus the selected provider SDKs must be linked in this build before live account sync."
         case .presentationRequired:
-            if result?.operation == .signInWithApple || result?.operation == .prepareAccountDeletion {
+            if result?.operation == .signInWithApple {
                 return "Sign in with Apple needs a presentation window from the current iOS screen."
+            } else if result?.operation == .prepareAccountDeletion {
+                return "Cloud account deletion needs a fresh Google or Apple confirmation window from the current iOS screen."
             }
             return "Google Sign-In needs a presentation anchor from the current iOS screen."
         case .cancelled:
@@ -770,8 +781,10 @@ struct ProfileView: View {
 
     private func accountProviderName(for operation: OpenLARPAuthenticationOperation?) -> String {
         switch operation {
-        case .signInWithApple, .prepareAccountDeletion:
+        case .signInWithApple:
             return "Apple"
+        case .prepareAccountDeletion:
+            return "Account"
         case .restorePreviousSession, .signInWithGoogle, .signOut, .handleOpenURL, nil:
             return "Google"
         }
@@ -1129,7 +1142,7 @@ private struct AccountDeletionScopeRow: View {
         if let failedCount = result.failedCount, failedCount > 0 {
             parts.append("failed \(failedCount)")
         }
-        if result.status == .failed {
+        if result.status == .failed || result.status == .unknown {
             parts.append("retry or contact support")
         }
         return parts.joined(separator: " | ")
@@ -1196,6 +1209,8 @@ private struct AccountDeletionAuthRow: View {
             return "Firebase Auth deletion was skipped because cloud data cleanup is incomplete."
         case .failed:
             return "Firebase Auth deletion failed. Retry after reauthenticating or contact support."
+        case .unknown:
+            return "Firebase Auth deletion result is unknown. Retry after reauthenticating or contact support."
         }
     }
 
@@ -1247,9 +1262,14 @@ private struct AccountDeletionMarkerRow: View {
     }
 
     private var detail: String {
-        result.status == .completed
-            ? "Deletion marker finalized."
-            : "Deletion marker finalization failed. Retry or contact support."
+        switch result.status {
+        case .completed:
+            "Deletion marker finalized."
+        case .failed:
+            "Deletion marker finalization failed. Retry or contact support."
+        case .unknown:
+            "Deletion marker finalization is unknown. Retry or contact support."
+        }
     }
 
     private var statusColor: Color {
