@@ -157,7 +157,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - iOS App Check provider scaffolding is linked and configured, but Firebase product enforcement is still off until console registration, debug token handling, metrics, and signed-in simulator/device checks are complete.
 - `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and `deleteOpenLARPAccount` are expected deployed active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
 - The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
-- `npm run firebase:signed-in-smoke` creates a temporary Firebase Auth smoke user through a local Admin custom token, calls the live workflow/proof/event callables as that signed-in user, validates Storage and Firestore side effects, and deletes its temporary Auth, Storage, Firestore, and quota data.
+- `npm run firebase:signed-in-smoke` creates a temporary Firebase Auth smoke user through a local Admin custom token, first verifies that Firestore and Storage App Check enforcement are still off for this no-App-Check-token CLI path, calls the live workflow/proof/event callables as that signed-in user, validates Storage and Firestore side effects, and deletes its temporary Auth, Storage, Firestore, and quota data.
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
 - Google Sign-In is enabled in Firebase Auth for `openlarp-dev-langqi`.
 - A fresh Firebase iOS SDK config can be retrieved by CLI and now includes `CLIENT_ID` and `REVERSED_CLIENT_ID`. The ignored local `OpenLARP/GoogleService-Info.plist` has been refreshed on this workstation.
@@ -212,6 +212,7 @@ Prerequisites:
 - Google Application Default Credentials, usually from `gcloud auth application-default login`
 - IAM Credentials API enabled for the project
 - the active Application Default Credentials principal has `iam.serviceAccounts.signBlob` on the Firebase Admin SDK service account, usually via `roles/iam.serviceAccountTokenCreator`
+- Firestore and Storage App Check enforcement are still off, unless the smoke tooling has been extended to mint and attach registered App Check debug/device tokens
 
 Optional environment overrides:
 
