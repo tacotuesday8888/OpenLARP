@@ -39,6 +39,7 @@ coverage/
 *.mobileprovision
 *.provisionprofile
 GoogleService-Info.plist
+RevenueCat-Info.plist
 
 # Private founder/application working material
 docs/accelerator/

@@ -26,7 +26,8 @@ struct OpenLARPApp: App {
                 backendEventSyncService: FirebaseReadyBackendEventSyncService(),
                 privateEvidenceCloudSyncConsentService: FirebaseCallablePrivateEvidenceCloudSyncConsentService(),
                 privateEvidenceBackupCleanupService: FirebaseCallablePrivateEvidenceBackupCleanupService(),
-                accountDeletionService: FirebaseCallableAccountDeletionService()
+                accountDeletionService: FirebaseCallableAccountDeletionService(),
+                subscriptionService: OpenLARPRevenueCatSubscriptionService.live()
             )
         )
     }

@@ -358,6 +358,174 @@ final class SubscriptionReadinessTests: XCTestCase {
         XCTAssertEqual(try persistence.load().subscriptionState.restoreState.status, .failed)
     }
 
+    func testRevenueCatRuntimeConfigurationMapsPlistLikeValues() {
+        let configuration = OpenLARPRevenueCatRuntimeConfiguration.fromDictionary([
+            OpenLARPRevenueCatConfigurationKey.iosAPIKey.rawValue: "  appl_public_test_key  ",
+            OpenLARPRevenueCatConfigurationKey.entitlementID.rawValue: "openlarp_pro",
+            OpenLARPRevenueCatConfigurationKey.offeringID.rawValue: "beta",
+            OpenLARPRevenueCatConfigurationKey.monthlyProductID.rawValue: "com.openlarp.monthly",
+            OpenLARPRevenueCatConfigurationKey.studentMonthlyProductID.rawValue: "com.openlarp.student.monthly"
+        ])
+
+        XCTAssertEqual(configuration.normalizedPublicIOSAPIKey, "appl_public_test_key")
+        XCTAssertTrue(configuration.canConfigureLiveSDK)
+        XCTAssertEqual(configuration.subscriptionConfiguration.revenueCatEntitlementID, "openlarp_pro")
+        XCTAssertEqual(configuration.subscriptionConfiguration.defaultOfferingID, "beta")
+        XCTAssertEqual(configuration.subscriptionConfiguration.monthlyProductID, "com.openlarp.monthly")
+        XCTAssertEqual(configuration.subscriptionConfiguration.studentMonthlyProductID, "com.openlarp.student.monthly")
+    }
+
+    func testRevenueCatRuntimeConfigurationSupportsRevenueCatTestStoreKey() {
+        let configuration = OpenLARPRevenueCatRuntimeConfiguration.fromDictionary([
+            OpenLARPRevenueCatConfigurationKey.iosAPIKey.rawValue: "test_public_store_key",
+            OpenLARPRevenueCatConfigurationKey.entitlementID.rawValue: "openlarp_pro"
+        ])
+
+        XCTAssertEqual(configuration.normalizedPublicIOSAPIKey, "test_public_store_key")
+        XCTAssertTrue(configuration.canConfigureLiveSDK)
+    }
+
+    func testRevenueCatRuntimeConfigurationRejectsMissingOrNonIOSSDKKey() {
+        let missingKeyConfiguration = OpenLARPRevenueCatRuntimeConfiguration.fromDictionary([
+            OpenLARPRevenueCatConfigurationKey.iosAPIKey.rawValue: "   ",
+            OpenLARPRevenueCatConfigurationKey.entitlementID.rawValue: "openlarp_pro"
+        ])
+        let wrongPlatformConfiguration = OpenLARPRevenueCatRuntimeConfiguration.fromDictionary([
+            OpenLARPRevenueCatConfigurationKey.iosAPIKey.rawValue: "goog_public_test_key",
+            OpenLARPRevenueCatConfigurationKey.entitlementID.rawValue: "openlarp_pro"
+        ])
+
+        XCTAssertNil(missingKeyConfiguration.normalizedPublicIOSAPIKey)
+        XCTAssertFalse(missingKeyConfiguration.canConfigureLiveSDK)
+        XCTAssertNil(wrongPlatformConfiguration.normalizedPublicIOSAPIKey)
+        XCTAssertFalse(wrongPlatformConfiguration.canConfigureLiveSDK)
+    }
+
+    @MainActor
+    func testRevenueCatServiceMissingConfigurationDoesNotCallSDKAndPreservesCurrentState() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let currentState = OpenLARPSubscriptionState.localFreeSprint(startedAt: now)
+        let client = FakeRevenueCatClient()
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: OpenLARPRevenueCatRuntimeConfiguration(),
+            client: client
+        )
+
+        let refreshed = try await service.refreshSubscriptionState(currentState: currentState, at: now)
+
+        XCTAssertEqual(client.configuredPublicIOSAPIKeys, [])
+        XCTAssertEqual(client.customerInfoRequestCount, 0)
+        XCTAssertEqual(refreshed.freeSprint, currentState.freeSprint)
+        XCTAssertEqual(refreshed.connectionStatus, .notConfigured)
+        XCTAssertEqual(refreshed.lastUpdatedAt, now)
+    }
+
+    @MainActor
+    func testRevenueCatServiceRefreshAppliesActiveConfiguredEntitlement() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let expiration = date(year: 2026, month: 7, day: 20)
+        let client = FakeRevenueCatClient()
+        client.customerInfoSnapshot = RevenueCatCustomerInfoSnapshot(
+            fetchedAt: now,
+            activeEntitlementIDs: ["openlarp_pro"],
+            activeProductIDs: ["com.openlarp.monthly"],
+            entitlementExpirationDate: expiration
+        )
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+
+        let refreshed = try await service.refreshSubscriptionState(
+            currentState: .notStarted(),
+            at: now
+        )
+
+        XCTAssertEqual(client.configuredPublicIOSAPIKeys, ["appl_public_test_key"])
+        XCTAssertEqual(client.customerInfoRequestCount, 1)
+        XCTAssertEqual(refreshed.connectionStatus, .online)
+        XCTAssertEqual(refreshed.configuration.revenueCatEntitlementID, "openlarp_pro")
+        XCTAssertEqual(refreshed.access(at: now, calendar: calendar).status, .active)
+        XCTAssertEqual(refreshed.access(at: now, calendar: calendar).expiresAt, expiration)
+    }
+
+    @MainActor
+    func testRevenueCatServiceRefreshFailurePreservesCachedAccessAsOffline() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let expiration = date(year: 2026, month: 7, day: 20)
+        let currentState = OpenLARPSubscriptionState(
+            configuration: revenueCatConfiguration().subscriptionConfiguration,
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: date(year: 2026, month: 6, day: 19),
+                activeEntitlementIDs: ["openlarp_pro"],
+                activeProductIDs: ["com.openlarp.monthly"],
+                entitlementExpirationDate: expiration
+            ),
+            connectionStatus: .online,
+            lastUpdatedAt: date(year: 2026, month: 6, day: 19)
+        )
+        let client = FakeRevenueCatClient()
+        client.customerInfoError = RevenueCatAdapterTestError.offline
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+
+        let refreshed = try await service.refreshSubscriptionState(currentState: currentState, at: now)
+
+        XCTAssertEqual(client.customerInfoRequestCount, 1)
+        XCTAssertEqual(refreshed.customerInfo, currentState.customerInfo)
+        XCTAssertEqual(refreshed.connectionStatus, .offline)
+        XCTAssertEqual(refreshed.access(at: now, calendar: calendar).status, .offline)
+        XCTAssertEqual(refreshed.access(at: now, calendar: calendar).source, .revenueCatOfflineEntitlement)
+    }
+
+    @MainActor
+    func testRevenueCatServiceRestoreWithoutConfiguredEntitlementFails() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let startedAt = date(year: 2026, month: 6, day: 1)
+        let client = FakeRevenueCatClient()
+        client.restoreSnapshot = RevenueCatCustomerInfoSnapshot(
+            fetchedAt: now,
+            activeEntitlementIDs: ["different_entitlement"],
+            activeProductIDs: ["com.openlarp.monthly"],
+            entitlementExpirationDate: date(year: 2026, month: 7, day: 20)
+        )
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+        let restoring = OpenLARPSubscriptionState
+            .localFreeSprint(startedAt: startedAt)
+            .restoreRequested(at: now)
+
+        let restored = try await service.restorePurchases(currentState: restoring, at: now)
+
+        XCTAssertEqual(client.restoreRequestCount, 1)
+        XCTAssertEqual(restored.connectionStatus, .online)
+        XCTAssertEqual(restored.restoreState.status, .failed)
+        XCTAssertEqual(restored.restoreState.requestedAt, now)
+        XCTAssertFalse(restored.access(at: now, calendar: calendar).isEntitled)
+        XCTAssertEqual(restored.access(at: now, calendar: calendar).status, .restoreFailed)
+    }
+
+    func testRevenueCatPureMapperSortsAndDeduplicatesPrivateIdentifiers() {
+        let now = date(year: 2026, month: 6, day: 20)
+
+        let snapshot = OpenLARPRevenueCatSnapshotMapper.snapshot(
+            fetchedAt: now,
+            activeEntitlementIDs: ["openlarp_pro", "openlarp_pro", "student"],
+            activeProductIDs: ["com.openlarp.monthly", "com.openlarp.monthly", "com.openlarp.student.monthly"],
+            entitlementExpirationDate: nil,
+            managementURLString: "https://apps.apple.com/account/subscriptions"
+        )
+
+        XCTAssertEqual(snapshot.activeEntitlementIDs, ["openlarp_pro", "student"])
+        XCTAssertEqual(snapshot.activeProductIDs, ["com.openlarp.monthly", "com.openlarp.student.monthly"])
+        XCTAssertEqual(OpenLARPRevenueCatSnapshotMapper.subscriptionPeriodDescription(value: 1, unit: "month"), "1 month")
+        XCTAssertEqual(OpenLARPRevenueCatSnapshotMapper.subscriptionPeriodDescription(value: 2, unit: "month"), "2 months")
+    }
+
     @MainActor
     func testExpiredSprintBlocksQuestProgressionAndRecordsPaywallExposure() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -564,6 +732,18 @@ final class SubscriptionReadinessTests: XCTestCase {
             hour: hour
         ))!
     }
+
+    private func revenueCatConfiguration() -> OpenLARPRevenueCatRuntimeConfiguration {
+        OpenLARPRevenueCatRuntimeConfiguration(
+            publicIOSAPIKey: "appl_public_test_key",
+            subscriptionConfiguration: OpenLARPSubscriptionConfiguration(
+                revenueCatEntitlementID: "openlarp_pro",
+                monthlyProductID: "com.openlarp.monthly",
+                defaultOfferingID: "beta",
+                studentMonthlyProductID: "com.openlarp.student.monthly"
+            )
+        )
+    }
 }
 
 private struct FailingSubscriptionGateAIWorkflowService: V0AIWorkflowServicing {
@@ -624,5 +804,57 @@ private final class CapturingSubscriptionService: OpenLARPSubscriptionServicing 
             return currentState.restoreFailed(at: timestamp)
         }
         return currentState.restoreSucceeded(with: restoredCustomerInfo, at: timestamp)
+    }
+}
+
+private enum RevenueCatAdapterTestError: Error {
+    case offline
+}
+
+@MainActor
+private final class FakeRevenueCatClient: OpenLARPRevenueCatClient {
+    var customerInfoSnapshot: RevenueCatCustomerInfoSnapshot?
+    var restoreSnapshot: RevenueCatCustomerInfoSnapshot?
+    var currentOffering: RevenueCatOfferingSnapshot?
+    var customerInfoError: Error?
+    var restoreError: Error?
+    var offeringError: Error?
+    private(set) var configuredPublicIOSAPIKeys: [String] = []
+    private(set) var customerInfoRequestCount = 0
+    private(set) var restoreRequestCount = 0
+    private(set) var offeringRequestCount = 0
+
+    func configureIfNeeded(publicIOSAPIKey: String) {
+        configuredPublicIOSAPIKeys.append(publicIOSAPIKey)
+    }
+
+    func customerInfoSnapshot(
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatCustomerInfoSnapshot {
+        customerInfoRequestCount += 1
+        if let customerInfoError {
+            throw customerInfoError
+        }
+        return customerInfoSnapshot ?? RevenueCatCustomerInfoSnapshot(fetchedAt: timestamp)
+    }
+
+    func restorePurchasesSnapshot(
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatCustomerInfoSnapshot {
+        restoreRequestCount += 1
+        if let restoreError {
+            throw restoreError
+        }
+        return restoreSnapshot ?? RevenueCatCustomerInfoSnapshot(fetchedAt: timestamp)
+    }
+
+    func currentOfferingSnapshot() async throws -> RevenueCatOfferingSnapshot? {
+        offeringRequestCount += 1
+        if let offeringError {
+            throw offeringError
+        }
+        return currentOffering
     }
 }
