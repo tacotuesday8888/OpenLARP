@@ -29,7 +29,8 @@ export const privacySchema = z.object({
   memoryMode: z.enum(["localOnly", "cloudReady", "off"]),
   allowsLongTermMemoryWrite: z.boolean(),
   requiresUserApprovalForExternalActions: z.boolean(),
-  shareWins: z.boolean()
+  shareWins: z.boolean(),
+  allowsPrivateEvidenceCloudSync: z.boolean()
 });
 
 export const runMetadataSchema = z.object({

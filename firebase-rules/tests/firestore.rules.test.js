@@ -112,10 +112,17 @@ describe("Firestore rules", () => {
       backgroundSummary: "",
       minutesPerDay: 25,
       networkingComfort: 3,
-      privacy: { memoryMode: "cloudReady", shareWins: true, requireApprovalForExternalActions: true },
+      privacy: {
+        memoryMode: "cloudReady",
+        shareWins: true,
+        allowsPrivateEvidenceCloudSync: true,
+        requireApprovalForExternalActions: true
+      },
       collectionPath: "users/alice/profiles",
       documentPath: "users/alice/profiles/profile1"
     }));
+
+    await seedPrivateEvidenceConsent("alice", timestamp);
 
     await assertSucceeds(setDoc(doc(alice, "users/alice/goals/current"), {
       schemaVersion: 1,
@@ -197,10 +204,247 @@ describe("Firestore rules", () => {
     await assertFails(getDoc(doc(bob, "users/alice/proofRecords/proof1")));
   });
 
+  it("does not treat shareWins as private evidence sync consent", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/profiles/profile1"), {
+      metadata: safeMetadata("alice", "profile1", timestamp),
+      displayName: "Early-career candidate",
+      segment: "newGrad",
+      backgroundSummary: "",
+      minutesPerDay: 25,
+      networkingComfort: 3,
+      privacy: {
+        memoryMode: "cloudReady",
+        shareWins: true,
+        allowsPrivateEvidenceCloudSync: false,
+        requireApprovalForExternalActions: true
+      },
+      collectionPath: "users/alice/profiles",
+      documentPath: "users/alice/profiles/profile1"
+    }));
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/goals/public-goal"), {
+      schemaVersion: 1,
+      ownerUserID: "alice",
+      localID: "public-goal",
+      currentStatus: "newGrad",
+      targetRole: "AI product engineer",
+      timeline: "30 days",
+      collectionPath: "users/alice/goals",
+      documentPath: "users/alice/goals/public-goal"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/goals/private-goal-no-consent"), {
+      schemaVersion: 1,
+      ownerUserID: "alice",
+      localID: "private-goal-no-consent",
+      currentStatus: "newGrad",
+      targetRole: "AI product engineer",
+      timeline: "30 days",
+      privateContext: {
+        background: "Private background should not sync without consent.",
+        existingProof: "Private proof inventory.",
+        confidence: 3,
+        biggestBlocker: "Private blocker."
+      },
+      collectionPath: "users/alice/goals",
+      documentPath: "users/alice/goals/private-goal-no-consent"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofRecords/proof-no-consent"), {
+      metadata: safeMetadata("alice", "proof-no-consent", timestamp),
+      questID: "quest1",
+      questTitle: "Map role requirements",
+      kind: "proof",
+      text: "This proof should not sync without private evidence consent.",
+      link: "https://example.com/proof",
+      submittedAt: timestamp,
+      collectionPath: "users/alice/proofRecords",
+      documentPath: "users/alice/proofRecords/proof-no-consent"
+    }));
+
+    await assertSucceeds(setDoc(doc(alice, "users/alice/outcomes/public-outcome"), {
+      metadata: safeMetadata("alice", "public-outcome", timestamp),
+      kind: "interview",
+      title: "Public outcome",
+      organizationName: "",
+      note: "",
+      occurredAt: timestamp,
+      targetRoleTitle: "AI product engineer",
+      isPrivate: false,
+      collectionPath: "users/alice/outcomes",
+      documentPath: "users/alice/outcomes/public-outcome"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/outcomes/private-outcome-no-consent"), {
+      metadata: safeMetadata("alice", "private-outcome-no-consent", timestamp),
+      kind: "interview",
+      title: "Private outcome",
+      organizationName: "Private organization",
+      note: "Private outcome note should not sync without consent.",
+      occurredAt: timestamp,
+      targetRoleTitle: "AI product engineer",
+      isPrivate: true,
+      collectionPath: "users/alice/outcomes",
+      documentPath: "users/alice/outcomes/private-outcome-no-consent"
+    }));
+
+    await seedPrivateEvidenceConsent("alice", timestamp, {
+      status: "revoked",
+      allowsPrivateEvidenceCloudSync: false,
+      revokedAt: timestamp
+    });
+    await assertFails(setDoc(doc(alice, "users/alice/proofRecords/proof-revoked-consent"), {
+      metadata: safeMetadata("alice", "proof-revoked-consent", timestamp),
+      questID: "quest1",
+      questTitle: "Map role requirements",
+      kind: "proof",
+      text: "This proof should not sync after revoked private evidence consent.",
+      link: "https://example.com/proof",
+      submittedAt: timestamp,
+      collectionPath: "users/alice/proofRecords",
+      documentPath: "users/alice/proofRecords/proof-revoked-consent"
+    }));
+    await assertFails(setDoc(doc(alice, "users/alice/goals/private-goal-revoked-consent"), {
+      schemaVersion: 1,
+      ownerUserID: "alice",
+      localID: "private-goal-revoked-consent",
+      currentStatus: "newGrad",
+      targetRole: "AI product engineer",
+      timeline: "30 days",
+      privateContext: {
+        background: "Private background should not sync after revoked consent.",
+        existingProof: "Private proof inventory.",
+        confidence: 3,
+        biggestBlocker: "Private blocker."
+      },
+      collectionPath: "users/alice/goals",
+      documentPath: "users/alice/goals/private-goal-revoked-consent"
+    }));
+    await assertFails(setDoc(doc(alice, "users/alice/outcomes/private-outcome-revoked-consent"), {
+      metadata: safeMetadata("alice", "private-outcome-revoked-consent", timestamp),
+      kind: "interview",
+      title: "Private outcome",
+      organizationName: "Private organization",
+      note: "Private outcome note should not sync after revoked consent.",
+      occurredAt: timestamp,
+      targetRoleTitle: "AI product engineer",
+      isPrivate: true,
+      collectionPath: "users/alice/outcomes",
+      documentPath: "users/alice/outcomes/private-outcome-revoked-consent"
+    }));
+
+    await seedPrivateEvidenceConsent("alice", timestamp, {
+      consentTextVersion: "private-evidence-cloud-sync-v0"
+    });
+    await assertFails(setDoc(doc(alice, "users/alice/proofRecords/proof-stale-consent-version"), {
+      metadata: safeMetadata("alice", "proof-stale-consent-version", timestamp),
+      questID: "quest1",
+      questTitle: "Map role requirements",
+      kind: "proof",
+      text: "This proof should not sync with stale consent text.",
+      link: "https://example.com/proof",
+      submittedAt: timestamp,
+      collectionPath: "users/alice/proofRecords",
+      documentPath: "users/alice/proofRecords/proof-stale-consent-version"
+    }));
+
+    await seedPrivateEvidenceConsent("alice", timestamp, {
+      ownerUserID: "bob"
+    });
+    await assertFails(setDoc(doc(alice, "users/alice/goals/private-goal-wrong-consent-owner"), {
+      schemaVersion: 1,
+      ownerUserID: "alice",
+      localID: "private-goal-wrong-consent-owner",
+      currentStatus: "newGrad",
+      targetRole: "AI product engineer",
+      timeline: "30 days",
+      privateContext: {
+        background: "Private background should not sync with wrong consent owner.",
+        existingProof: "Private proof inventory.",
+        confidence: 3,
+        biggestBlocker: "Private blocker."
+      },
+      collectionPath: "users/alice/goals",
+      documentPath: "users/alice/goals/private-goal-wrong-consent-owner"
+    }));
+
+    await seedPrivateEvidenceConsent("alice", timestamp, {
+      schemaVersion: 0
+    });
+    await assertFails(setDoc(doc(alice, "users/alice/outcomes/private-outcome-wrong-consent-schema"), {
+      metadata: safeMetadata("alice", "private-outcome-wrong-consent-schema", timestamp),
+      kind: "interview",
+      title: "Private outcome",
+      organizationName: "Private organization",
+      note: "Private outcome note should not sync with wrong consent schema.",
+      occurredAt: timestamp,
+      targetRoleTitle: "AI product engineer",
+      isPrivate: true,
+      collectionPath: "users/alice/outcomes",
+      documentPath: "users/alice/outcomes/private-outcome-wrong-consent-schema"
+    }));
+
+    await seedPrivateEvidenceConsent("alice", timestamp);
+    await assertSucceeds(setDoc(doc(alice, "users/alice/goals/private-goal-with-consent"), {
+      schemaVersion: 1,
+      ownerUserID: "alice",
+      localID: "private-goal-with-consent",
+      currentStatus: "newGrad",
+      targetRole: "AI product engineer",
+      timeline: "30 days",
+      privateContext: {
+        background: "Private background can sync only after consent.",
+        existingProof: "Private proof inventory.",
+        confidence: 3,
+        biggestBlocker: "Private blocker."
+      },
+      collectionPath: "users/alice/goals",
+      documentPath: "users/alice/goals/private-goal-with-consent"
+    }));
+    await assertSucceeds(setDoc(doc(alice, "users/alice/proofRecords/proof-with-consent"), {
+      metadata: safeMetadata("alice", "proof-with-consent", timestamp),
+      questID: "quest1",
+      questTitle: "Map role requirements",
+      kind: "proof",
+      text: "This proof can sync only after explicit private evidence consent.",
+      link: "https://example.com/proof",
+      submittedAt: timestamp,
+      collectionPath: "users/alice/proofRecords",
+      documentPath: "users/alice/proofRecords/proof-with-consent"
+    }));
+    await assertSucceeds(setDoc(doc(alice, "users/alice/outcomes/private-outcome-with-consent"), {
+      metadata: safeMetadata("alice", "private-outcome-with-consent", timestamp),
+      kind: "interview",
+      title: "Private outcome",
+      organizationName: "Private organization",
+      note: "Private outcome can sync only after consent.",
+      occurredAt: timestamp,
+      targetRoleTitle: "AI product engineer",
+      isPrivate: true,
+      collectionPath: "users/alice/outcomes",
+      documentPath: "users/alice/outcomes/private-outcome-with-consent"
+    }));
+  });
+
+  it("denies client-authored private evidence consent documents", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+
+    await assertFails(setDoc(
+      doc(alice, "users/alice/consents/privateEvidenceCloudSync"),
+      safePrivateEvidenceConsent("alice", timestamp)
+    ));
+  });
+
   it("rejects career graph update bypasses", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
     const timestamp = new Date("2026-06-18T00:00:00.000Z");
     const proofRef = doc(alice, "users/alice/proofRecords/proof1");
+
+    await seedPrivateEvidenceConsent("alice", timestamp);
 
     await assertSucceeds(setDoc(proofRef, {
       metadata: safeMetadata("alice", "proof1", timestamp),
@@ -223,6 +467,8 @@ describe("Firestore rules", () => {
   it("rejects proof records that embed attachment documents or local file paths", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
     const timestamp = new Date("2026-06-18T00:00:00.000Z");
+
+    await seedPrivateEvidenceConsent("alice", timestamp);
 
     await assertFails(setDoc(doc(alice, "users/alice/proofRecords/proof-with-nested-attachment"), {
       metadata: safeMetadata("alice", "proof-with-nested-attachment", timestamp),
@@ -255,6 +501,7 @@ describe("Firestore rules", () => {
   it("allows only pending client proof attachment metadata before server receipt promotion", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
     const timestamp = new Date("2026-06-18T00:00:00.000Z");
+    await seedPrivateEvidenceConsent("alice", timestamp);
     const pendingAttachment = {
       metadata: safeMetadata("alice", "attachment1", timestamp),
       proofID: "proof1",
@@ -300,6 +547,13 @@ describe("Firestore rules", () => {
       metadata: safeMetadata("alice", "attachment3", timestamp),
       storagePath: "users/bob/proofAttachments/attachment3",
       documentPath: "users/alice/proofAttachments/attachment3"
+    }));
+
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment4"), {
+      ...pendingAttachment,
+      metadata: safeMetadata("bob", "attachment4", timestamp),
+      storagePath: "users/alice/proofAttachments/attachment4",
+      documentPath: "users/alice/proofAttachments/attachment4"
     }));
 
     await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment5"), {
@@ -474,6 +728,35 @@ function safeUploadedReceipt(ownerUserID, proofID, attachmentID, contentType, by
     metadataGeneration: 2,
     md5Hash: "mock-md5",
     idempotencyKey: `${ownerUserID}-${attachmentID}`
+  };
+}
+
+async function seedPrivateEvidenceConsent(ownerUserID, timestamp, overrides = {}) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(
+      doc(context.firestore(), `users/${ownerUserID}/consents/privateEvidenceCloudSync`),
+      safePrivateEvidenceConsent(ownerUserID, timestamp, overrides)
+    );
+  });
+}
+
+function safePrivateEvidenceConsent(ownerUserID, timestamp, overrides = {}) {
+  const document = {
+    schemaVersion: 1,
+    ownerUserID,
+    status: "accepted",
+    allowsPrivateEvidenceCloudSync: true,
+    acceptedAt: timestamp,
+    consentTextVersion: "private-evidence-cloud-sync-v1",
+    collectionPath: `users/${ownerUserID}/consents`,
+    documentPath: `users/${ownerUserID}/consents/privateEvidenceCloudSync`
+  };
+  if (overrides.status === "revoked") {
+    delete document.acceptedAt;
+  }
+  return {
+    ...document,
+    ...overrides
   };
 }
 

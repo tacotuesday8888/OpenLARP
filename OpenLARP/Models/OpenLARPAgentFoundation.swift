@@ -80,13 +80,44 @@ enum CareerMemoryMode: String, Codable {
 struct CareerUserPrivacySettings: Codable, Equatable {
     var memoryMode: CareerMemoryMode
     var shareWins: Bool
+    var allowsPrivateEvidenceCloudSync: Bool
     var requireApprovalForExternalActions: Bool
 
     static let localDefault = CareerUserPrivacySettings(
         memoryMode: .localOnly,
         shareWins: false,
+        allowsPrivateEvidenceCloudSync: false,
         requireApprovalForExternalActions: true
     )
+
+    init(
+        memoryMode: CareerMemoryMode,
+        shareWins: Bool,
+        allowsPrivateEvidenceCloudSync: Bool = false,
+        requireApprovalForExternalActions: Bool
+    ) {
+        self.memoryMode = memoryMode
+        self.shareWins = shareWins
+        self.allowsPrivateEvidenceCloudSync = allowsPrivateEvidenceCloudSync
+        self.requireApprovalForExternalActions = requireApprovalForExternalActions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case memoryMode
+        case shareWins
+        case allowsPrivateEvidenceCloudSync
+        case requireApprovalForExternalActions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        memoryMode = try container.decodeIfPresent(CareerMemoryMode.self, forKey: .memoryMode) ?? .localOnly
+        shareWins = try container.decodeIfPresent(Bool.self, forKey: .shareWins) ?? false
+        allowsPrivateEvidenceCloudSync = try container
+            .decodeIfPresent(Bool.self, forKey: .allowsPrivateEvidenceCloudSync) ?? false
+        requireApprovalForExternalActions = try container
+            .decodeIfPresent(Bool.self, forKey: .requireApprovalForExternalActions) ?? true
+    }
 }
 
 struct CareerUserProfile: Codable, Equatable, Identifiable {

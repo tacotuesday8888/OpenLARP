@@ -9,6 +9,10 @@ import {
   handleProofUploadPromotionRequest
 } from "./proofUploadPromotion.js";
 import {
+  adminPrivateEvidenceCloudSyncConsentDependencies,
+  handlePrivateEvidenceCloudSyncConsentRequest
+} from "./privateEvidenceConsent.js";
+import {
   adminProofUploadReconciliationDependencies,
   handleProofUploadReconciliationRequest
 } from "./proofUploadReconciliation.js";
@@ -87,6 +91,26 @@ export const promoteProofUploadReceipt = onCall(
   }
 );
 
+export const setPrivateEvidenceCloudSyncConsent = onCall(
+  {
+    cors: true,
+    timeoutSeconds: 60,
+    memory: "256MiB"
+  },
+  async (request) => {
+    const response = await handlePrivateEvidenceCloudSyncConsentRequest({
+      auth: request.auth ? { uid: request.auth.uid } : null,
+      data: request.data
+    }, adminPrivateEvidenceCloudSyncConsentDependencies());
+
+    if (!response.ok) {
+      throw toHttpsError(response);
+    }
+
+    return response;
+  }
+);
+
 export const acknowledgeBackendEvents = onCall(
   {
     cors: true,
@@ -114,6 +138,7 @@ export {
   createFirestoreCallableQuotaGuard
 } from "./callableQuotaGuard.js";
 export { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
+export { handlePrivateEvidenceCloudSyncConsentRequest } from "./privateEvidenceConsent.js";
 export { handleProofUploadPromotionRequest } from "./proofUploadPromotion.js";
 export { handleProofUploadReconciliationRequest } from "./proofUploadReconciliation.js";
 export type {
@@ -123,6 +148,12 @@ export type {
   BackendEventSyncSuccess,
   OpenLARPBackendEventSyncRequest
 } from "./backendEventSync.js";
+export type {
+  OpenLARPPrivateEvidenceConsentRequest,
+  PrivateEvidenceCloudSyncConsentResponse,
+  PrivateEvidenceCloudSyncConsentStatus,
+  PrivateEvidenceCloudSyncConsentSuccess
+} from "./privateEvidenceConsent.js";
 export type {
   OpenLARPProofUploadPromotionRequest,
   ProofUploadPromotionIntent,

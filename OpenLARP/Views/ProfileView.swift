@@ -66,6 +66,19 @@ struct ProfileView: View {
         } message: {
             Text("This clears the local diagnostic and questline so you can set a new target.")
         }
+        .alert(
+            "OpenLARP",
+            isPresented: Binding(
+                get: { store.errorMessage != nil },
+                set: { if !$0 { store.errorMessage = nil } }
+            )
+        ) {
+            Button("OK") {
+                store.errorMessage = nil
+            }
+        } message: {
+            Text(store.errorMessage ?? "")
+        }
         .background(authenticationPresentationAnchorReader)
     }
 
@@ -278,7 +291,7 @@ struct ProfileView: View {
         )
         let syncAction = CareerGraphSyncActionContent(
             isAuthenticated: session.isAuthenticated,
-            shareWinsEnabled: store.state.userProfile?.privacy.shareWins ?? false,
+            privateEvidenceCloudSyncEnabled: store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync ?? false,
             proofFileCount: shareableProofFileCount
         )
 
@@ -579,6 +592,17 @@ struct ProfileView: View {
                         detail: "Allow proof wins to be shared later.",
                         isOn: shareWinsBinding
                     )
+                    PrivacyToggleRow(
+                        title: "Private evidence cloud sync",
+                        detail: "Allow future proof, files, links, and private notes in account backup.",
+                        isOn: privateEvidenceCloudSyncBinding
+                    )
+                    .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
+
+                    Text("Turning this off stops future private evidence sync. Proof already backed up may remain until deletion and retention controls are built.")
+                        .font(.caption)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Text(memoryEnabled ? "Local memory is on for this device. Real cloud memory is not built yet." : "Memory is off for future sensitive chats on this device.")
                         .font(.subheadline)
@@ -612,6 +636,17 @@ struct ProfileView: View {
             get: { store.state.userProfile?.privacy.shareWins ?? false },
             set: { isOn in
                 store.updateProfilePrivacy(shareWins: isOn)
+            }
+        )
+    }
+
+    private var privateEvidenceCloudSyncBinding: Binding<Bool> {
+        Binding(
+            get: { store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync ?? false },
+            set: { isOn in
+                Task {
+                    await store.setPrivateEvidenceCloudSyncEnabled(isOn)
+                }
             }
         )
     }

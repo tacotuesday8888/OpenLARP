@@ -1,6 +1,7 @@
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { doc, setDoc } from "firebase/firestore";
 import { deleteObject, getBytes, ref, uploadBytes, uploadString } from "firebase/storage";
 
 let testEnv;
@@ -8,6 +9,9 @@ let testEnv;
 beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
     projectId: "openlarp-rules-test",
+    firestore: {
+      rules: readFileSync(new URL("../../firestore.rules", import.meta.url), "utf8")
+    },
     storage: {
       rules: readFileSync(new URL("../../storage.rules", import.meta.url), "utf8")
     }
@@ -15,6 +19,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await testEnv.clearFirestore();
   await testEnv.clearStorage();
 });
 
@@ -26,6 +31,7 @@ describe("Storage rules", () => {
   it("allows owner proof attachment uploads and reads for approved content types", async () => {
     const alice = testEnv.authenticatedContext("alice").storage();
     const attachment = ref(alice, "users/alice/proofAttachments/proof1.png");
+    await seedPrivateEvidenceConsent("alice");
 
     await assertSucceeds(uploadString(
       attachment,
@@ -36,9 +42,53 @@ describe("Storage rules", () => {
     await assertSucceeds(getBytes(attachment));
   });
 
+  it("rejects proof attachment uploads without private evidence sync consent", async () => {
+    const alice = testEnv.authenticatedContext("alice").storage();
+
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/no-consent.txt"),
+      "proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "no-consent.txt", "text/plain")
+    ));
+
+    await seedPrivateEvidenceConsent("alice", {
+      status: "revoked",
+      allowsPrivateEvidenceCloudSync: false,
+      revokedAt: new Date("2026-06-18T00:01:00.000Z")
+    });
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/revoked-consent.txt"),
+      "proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "revoked-consent.txt", "text/plain")
+    ));
+
+    await seedPrivateEvidenceConsent("alice", {
+      consentTextVersion: "private-evidence-cloud-sync-v0"
+    });
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/stale-consent-version.txt"),
+      "proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "stale-consent-version.txt", "text/plain")
+    ));
+
+    await seedPrivateEvidenceConsent("alice", {
+      ownerUserID: "bob"
+    });
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/wrong-consent-owner.txt"),
+      "proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "wrong-consent-owner.txt", "text/plain")
+    ));
+  });
+
   it("blocks overwriting existing proof attachment bytes", async () => {
     const alice = testEnv.authenticatedContext("alice").storage();
     const attachment = ref(alice, "users/alice/proofAttachments/write-once.txt");
+    await seedPrivateEvidenceConsent("alice");
 
     await assertSucceeds(uploadString(
       attachment,
@@ -59,6 +109,7 @@ describe("Storage rules", () => {
     const alice = testEnv.authenticatedContext("alice").storage();
     const bob = testEnv.authenticatedContext("bob").storage();
     const aliceAttachment = ref(alice, "users/alice/proofAttachments/proof1.txt");
+    await seedPrivateEvidenceConsent("alice");
 
     await assertSucceeds(uploadString(
       aliceAttachment,
@@ -90,16 +141,12 @@ describe("Storage rules", () => {
 
   it("allows real proof attachment content types and enforces size", async () => {
     const alice = testEnv.authenticatedContext("alice").storage();
+    await seedPrivateEvidenceConsent("alice");
 
-    await assertSucceeds(uploadBytes(
-      ref(alice, "users/alice/proofAttachments/proof1.pdf"),
-      new Uint8Array(1024),
-      storageMetadata("alice", "proof1", "proof1.pdf", "application/pdf")
-    ));
-
-    await assertSucceeds(uploadBytes(
+    await assertSucceeds(uploadString(
       ref(alice, "users/alice/proofAttachments/proof1.jpg"),
-      new Uint8Array(1024),
+      "jpeg-proof-bytes",
+      "raw",
       storageMetadata("alice", "proof1", "proof1.jpg", "image/jpeg")
     ));
 
@@ -113,6 +160,8 @@ describe("Storage rules", () => {
   it("blocks unauthenticated and cross-owner proof attachment writes", async () => {
     const guest = testEnv.unauthenticatedContext().storage();
     const bob = testEnv.authenticatedContext("bob").storage();
+    await seedPrivateEvidenceConsent("alice");
+    await seedPrivateEvidenceConsent("bob");
 
     await assertFails(uploadString(
       ref(guest, "users/alice/proofAttachments/proof1.txt"),
@@ -138,6 +187,7 @@ describe("Storage rules", () => {
 
   it("requires proof attachment upload metadata to match the storage path", async () => {
     const alice = testEnv.authenticatedContext("alice").storage();
+    await seedPrivateEvidenceConsent("alice");
 
     await assertFails(uploadString(
       ref(alice, "users/alice/proofAttachments/proof1.txt"),
@@ -164,6 +214,7 @@ describe("Storage rules", () => {
 
   it("blocks extra or oversized proof attachment upload metadata", async () => {
     const alice = testEnv.authenticatedContext("alice").storage();
+    await seedPrivateEvidenceConsent("alice");
     const withExtraMetadata = storageMetadata("alice", "proof1", "extra-metadata.txt", "text/plain");
     withExtraMetadata.customMetadata.localRelativePath = "ProofAttachments/private-local-path.txt";
 
@@ -188,6 +239,32 @@ describe("Storage rules", () => {
     ));
   });
 });
+
+async function seedPrivateEvidenceConsent(ownerUserID, overrides = {}) {
+  const timestamp = new Date("2026-06-18T00:00:00.000Z");
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const documentData = {
+      schemaVersion: 1,
+      ownerUserID,
+      status: "accepted",
+      allowsPrivateEvidenceCloudSync: true,
+      acceptedAt: timestamp,
+      consentTextVersion: "private-evidence-cloud-sync-v1",
+      collectionPath: `users/${ownerUserID}/consents`,
+      documentPath: `users/${ownerUserID}/consents/privateEvidenceCloudSync`
+    };
+    if (overrides.status === "revoked") {
+      delete documentData.acceptedAt;
+    }
+    await setDoc(
+      doc(context.firestore(), `users/${ownerUserID}/consents/privateEvidenceCloudSync`),
+      {
+        ...documentData,
+        ...overrides
+      }
+    );
+  });
+}
 
 function storageMetadata(ownerUserID, proofID, attachmentID, contentType) {
   return {

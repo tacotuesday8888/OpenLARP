@@ -97,20 +97,32 @@ final class AuthenticationReadinessTests: XCTestCase {
     func testStoreGoogleSignInUpdatesAccountFieldsWithoutOverwritingCareerProfile() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let authenticatedSession = BackendUserSession.firebaseAuthenticated(
+        let previousSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_previous",
+            accountID: "firebase_uid_previous",
+            email: "previous@example.com"
+        )
+        let googleSession = BackendUserSession.firebaseAuthenticated(
             ownerUserID: "firebase_uid_google",
             accountID: "firebase_uid_google",
             email: "newgrad@example.com"
         )
-        let authService = MockOpenLARPAuthenticationService(googleSignInSession: authenticatedSession)
+        let authService = MockOpenLARPAuthenticationService(
+            restoredSession: previousSession,
+            googleSignInSession: googleSession
+        )
         let store = OpenLARPStore(
             persistence: OpenLARPPersistence(directory: directory),
             attachmentStore: OpenLARPAttachmentStore(directory: directory),
             authenticationService: authService,
+            privateEvidenceCloudSyncConsentService: LocalMockPrivateEvidenceCloudSyncConsentService(),
             now: { Date(timeIntervalSince1970: 30_500) }
         )
 
         await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        await store.setPrivateEvidenceCloudSyncEnabled(true)
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, true)
         let originalDisplayName = try XCTUnwrap(store.state.userProfile?.displayName)
         let originalGoal = store.state.goal
 
@@ -122,6 +134,7 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_google")
         XCTAssertEqual(store.state.userProfile?.email, "newgrad@example.com")
         XCTAssertEqual(store.state.userProfile?.displayName, originalDisplayName)
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
         XCTAssertEqual(store.state.goal, originalGoal)
         XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountSignInCompleted })
     }
@@ -139,11 +152,14 @@ final class AuthenticationReadinessTests: XCTestCase {
             persistence: OpenLARPPersistence(directory: directory),
             attachmentStore: OpenLARPAttachmentStore(directory: directory),
             authenticationService: authService,
+            privateEvidenceCloudSyncConsentService: LocalMockPrivateEvidenceCloudSyncConsentService(),
             now: { Date(timeIntervalSince1970: 31_000) }
         )
 
         await store.confirmGoal(goal)
         await store.restorePreviousAuthenticationSession()
+        await store.setPrivateEvidenceCloudSyncEnabled(true)
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, true)
         await store.signOutOfAccount()
 
         XCTAssertEqual(store.authenticationResult?.operation, .signOut)
@@ -152,7 +168,47 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(store.currentBackendSessionSnapshot().authProvider, .localMock)
         XCTAssertNil(store.state.userProfile?.accountID)
         XCTAssertNil(store.state.userProfile?.email)
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
         XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountSignedOut })
+    }
+
+    func testPrivateEvidenceConsentResultIsIgnoredWhenAccountChangesDuringRequest() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let previousSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_slow_previous",
+            accountID: "firebase_uid_slow_previous",
+            email: "previous@example.com"
+        )
+        let nextSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_slow_next",
+            accountID: "firebase_uid_slow_next",
+            email: "next@example.com"
+        )
+        let authService = MockOpenLARPAuthenticationService(
+            restoredSession: previousSession,
+            googleSignInSession: nextSession
+        )
+        let consentService = DelayedPrivateEvidenceCloudSyncConsentService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: authService,
+            privateEvidenceCloudSyncConsentService: consentService,
+            now: { Date(timeIntervalSince1970: 31_250) }
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        let consentTask = Task { await store.setPrivateEvidenceCloudSyncEnabled(true) }
+        await consentService.waitUntilRequestStarted()
+        await store.signInWithGoogle(presenting: nil)
+        consentService.completePendingRequest()
+        await consentTask.value
+
+        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_slow_next")
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
+        XCTAssertEqual(store.errorMessage, "Private evidence cloud sync could not be enabled.")
     }
 
     func testStoreForwardsAuthenticationOpenURLToInjectedService() async {
@@ -195,5 +251,40 @@ final class AuthenticationReadinessTests: XCTestCase {
 
         XCTAssertFalse(restoreResult.session.isAuthenticated)
         XCTAssertFalse(signInResult.session.isAuthenticated)
+    }
+}
+
+@MainActor
+private final class DelayedPrivateEvidenceCloudSyncConsentService: PrivateEvidenceCloudSyncConsentServicing {
+    private var pendingContinuation: CheckedContinuation<Void, Never>?
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var hasStarted = false
+
+    func setConsent(_ request: PrivateEvidenceCloudSyncConsentRequest) async throws -> PrivateEvidenceCloudSyncConsentResult {
+        hasStarted = true
+        startedContinuation?.resume()
+        startedContinuation = nil
+        await withCheckedContinuation { continuation in
+            pendingContinuation = continuation
+        }
+        return PrivateEvidenceCloudSyncConsentResult(
+            request: request,
+            completedAt: request.requestedAt.addingTimeInterval(1),
+            didContactNetwork: true,
+            status: request.enabled ? .accepted : .revoked,
+            firestoreDocumentPath: "users/\(request.session.ownerUserID)/consents/privateEvidenceCloudSync"
+        )
+    }
+
+    func waitUntilRequestStarted() async {
+        guard !hasStarted else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuation = continuation
+        }
+    }
+
+    func completePendingRequest() {
+        pendingContinuation?.resume()
+        pendingContinuation = nil
     }
 }

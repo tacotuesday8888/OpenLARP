@@ -6,7 +6,8 @@ const privacy = {
   memoryMode: "cloudReady",
   allowsLongTermMemoryWrite: true,
   requiresUserApprovalForExternalActions: true,
-  shareWins: false
+  shareWins: false,
+  allowsPrivateEvidenceCloudSync: false
 } as const;
 
 const safetyRules = {

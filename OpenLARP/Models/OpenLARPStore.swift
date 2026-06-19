@@ -11,6 +11,7 @@ final class OpenLARPStore {
     private let careerGraphSyncService: any CareerGraphSyncServicing
     private let authenticationService: any OpenLARPAuthenticationServicing
     private let backendEventSyncService: any BackendEventSyncServicing
+    private let privateEvidenceCloudSyncConsentService: any PrivateEvidenceCloudSyncConsentServicing
     private let backendSessionProvider: any BackendSessionProviding
     private let subscriptionService: any OpenLARPSubscriptionServicing
     private let now: () -> Date
@@ -30,6 +31,7 @@ final class OpenLARPStore {
     var isSigningInWithGoogle = false
     var isSigningOutOfAccount = false
     var isSyncingBackendEvents = false
+    var isUpdatingPrivateEvidenceCloudSyncConsent = false
     var isRefreshingSubscriptionStatus = false
     var isRestoringPurchases = false
     var authenticationResult: OpenLARPAuthenticationResult?
@@ -44,6 +46,7 @@ final class OpenLARPStore {
         careerGraphSyncService: any CareerGraphSyncServicing = LocalMockCareerGraphSyncService(),
         authenticationService: (any OpenLARPAuthenticationServicing)? = nil,
         backendEventSyncService: any BackendEventSyncServicing = LocalMockBackendEventSyncService(),
+        privateEvidenceCloudSyncConsentService: any PrivateEvidenceCloudSyncConsentServicing = LocalMockPrivateEvidenceCloudSyncConsentService(),
         backendSessionProvider: (any BackendSessionProviding)? = nil,
         subscriptionService: any OpenLARPSubscriptionServicing = MockOpenLARPSubscriptionService(),
         now: @escaping () -> Date = { Date() },
@@ -59,6 +62,7 @@ final class OpenLARPStore {
         let resolvedAuthenticationService = authenticationService ?? MockOpenLARPAuthenticationService()
         self.authenticationService = resolvedAuthenticationService
         self.backendEventSyncService = backendEventSyncService
+        self.privateEvidenceCloudSyncConsentService = privateEvidenceCloudSyncConsentService
         self.backendSessionProvider = backendSessionProvider ?? resolvedAuthenticationService
         self.subscriptionService = subscriptionService
         self.now = now
@@ -384,7 +388,10 @@ final class OpenLARPStore {
         errorMessage = nil
     }
 
-    func updateProfilePrivacy(memoryMode: CareerMemoryMode? = nil, shareWins: Bool? = nil) {
+    func updateProfilePrivacy(
+        memoryMode: CareerMemoryMode? = nil,
+        shareWins: Bool? = nil
+    ) {
         guard var profile = state.userProfile else { return }
         if let memoryMode {
             profile.privacy.memoryMode = memoryMode
@@ -393,15 +400,81 @@ final class OpenLARPStore {
             profile.privacy.shareWins = shareWins
         }
         profile.privacy.requireApprovalForExternalActions = true
-        profile.updatedAt = now()
-        state.userProfile = profile
+        applyUpdatedProfilePrivacy(profile)
+    }
+
+    func setPrivateEvidenceCloudSyncEnabled(_ isEnabled: Bool) async {
+        guard state.userProfile != nil else { return }
+        guard !isUpdatingPrivateEvidenceCloudSyncConsent else {
+            errorMessage = "Private evidence cloud sync is still updating."
+            return
+        }
+
+        let session = backendSessionProvider.currentSession(for: state)
+        guard session.isAuthenticated else {
+            if isEnabled {
+                errorMessage = "Sign in before enabling private evidence cloud sync."
+            } else {
+                applyPrivateEvidenceCloudSyncConsent(false)
+                errorMessage = nil
+            }
+            return
+        }
+
+        isUpdatingPrivateEvidenceCloudSyncConsent = true
+        defer { isUpdatingPrivateEvidenceCloudSyncConsent = false }
+
+        do {
+            let request = PrivateEvidenceCloudSyncConsentRequest(
+                session: session,
+                enabled: isEnabled,
+                requestedAt: now()
+            )
+            let result = try await privateEvidenceCloudSyncConsentService.setConsent(request)
+            guard result.status == (isEnabled ? .accepted : .revoked),
+                  result.allowsPrivateEvidenceCloudSync == isEnabled,
+                  result.externalActionTaken == false
+            else {
+                throw FirebaseBackendServiceError.contractMismatch(
+                    "Private evidence consent result did not match the requested setting."
+                )
+            }
+            let currentSession = backendSessionProvider.currentSession(for: state)
+            guard currentSession.isAuthenticated,
+                  currentSession.ownerUserID == session.ownerUserID
+            else {
+                throw FirebaseBackendServiceError.contractMismatch(
+                    "The signed-in account changed before private evidence consent finished."
+                )
+            }
+            applyPrivateEvidenceCloudSyncConsent(isEnabled)
+            errorMessage = nil
+        } catch {
+            errorMessage = isEnabled
+                ? "Private evidence cloud sync could not be enabled."
+                : "Private evidence cloud sync could not be turned off."
+        }
+    }
+
+    private func applyPrivateEvidenceCloudSyncConsent(_ isEnabled: Bool) {
+        guard var profile = state.userProfile else { return }
+        profile.privacy.allowsPrivateEvidenceCloudSync = isEnabled
+        profile.privacy.requireApprovalForExternalActions = true
+        applyUpdatedProfilePrivacy(profile)
+    }
+
+    private func applyUpdatedProfilePrivacy(_ profile: CareerUserProfile) {
+        var updatedProfile = profile
+        updatedProfile.updatedAt = now()
+        state.userProfile = updatedProfile
         clearCareerGraphSyncPreview()
         recordBackendEvent(
             .privacyUpdated,
             summary: BackendEventSummary(
                 targetRoleTitle: state.goal?.targetRole,
-                memoryMode: profile.privacy.memoryMode,
-                shareWins: profile.privacy.shareWins
+                memoryMode: updatedProfile.privacy.memoryMode,
+                shareWins: updatedProfile.privacy.shareWins,
+                allowsPrivateEvidenceCloudSync: updatedProfile.privacy.allowsPrivateEvidenceCloudSync
             )
         )
         state.updatedAt = now()
@@ -604,7 +677,8 @@ final class OpenLARPStore {
 
         let requestedAt = now()
         let session = currentBackendSession()
-        let includePrivateEvidence = explicitIncludePrivateEvidence ?? (state.userProfile?.privacy.shareWins ?? false)
+        let includePrivateEvidence = explicitIncludePrivateEvidence
+            ?? (state.userProfile?.privacy.allowsPrivateEvidenceCloudSync ?? false)
         let previewGeneration = careerGraphSyncPreviewGeneration
         let request = CareerGraphSyncPreparationRequest(
             state: state,
@@ -928,7 +1002,11 @@ final class OpenLARPStore {
 
     private func applyAuthenticatedAccount(_ session: BackendUserSession) {
         guard var profile = state.userProfile else { return }
-        profile.accountID = session.accountID ?? session.ownerUserID
+        let resolvedAccountID = session.accountID ?? session.ownerUserID
+        if profile.accountID != resolvedAccountID {
+            profile.privacy.allowsPrivateEvidenceCloudSync = false
+        }
+        profile.accountID = resolvedAccountID
         profile.email = session.email
         profile.updatedAt = now()
         state.userProfile = profile
@@ -939,6 +1017,7 @@ final class OpenLARPStore {
         guard var profile = state.userProfile else { return }
         profile.accountID = nil
         profile.email = nil
+        profile.privacy.allowsPrivateEvidenceCloudSync = false
         profile.updatedAt = now()
         state.userProfile = profile
         state.updatedAt = profile.updatedAt

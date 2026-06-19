@@ -31,7 +31,8 @@ const safeEnvelope = {
       memoryMode: "localOnly",
       allowsLongTermMemoryWrite: false,
       requiresUserApprovalForExternalActions: true,
-      shareWins: false
+      shareWins: false,
+      allowsPrivateEvidenceCloudSync: false
     }
   },
   safetyRules: {
@@ -101,7 +102,8 @@ const workflowContext = {
     memoryMode: "cloudReady",
     allowsLongTermMemoryWrite: true,
     requiresUserApprovalForExternalActions: true,
-    shareWins: false
+    shareWins: false,
+    allowsPrivateEvidenceCloudSync: false
   },
   allowsLongTermMemoryWrite: true
 };

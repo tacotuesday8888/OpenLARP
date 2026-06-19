@@ -38,13 +38,22 @@ service cloud.firestore {
       return !request.resource.data.keys().hasAny(['localRelativePath']);
     }
 
+    function noConsentBypassWrite() {
+      return !request.resource.data.keys().hasAny([
+        'allowsPrivateEvidenceCloudSync',
+        'consentTextVersion',
+        'acceptedAt'
+      ]);
+    }
+
     function isSafeUserDocument(userId) {
       return hasTopLevelOwner(userId)
         && hasMetadataOwner(userId)
         && noExternalActionWrite()
         && noUnsafeBackendSyncStatusWrite()
         && noBackendEventBypassWrite()
-        && noLocalFilePathWrite();
+        && noLocalFilePathWrite()
+        && noConsentBypassWrite();
     }
 
     function hasProofAttachmentPath(userId, attachmentId) {
@@ -61,6 +70,7 @@ service cloud.firestore {
 
     function isSafeProofAttachmentDocument(userId, attachmentId) {
       return isSafeUserDocument(userId)
+        && hasAcceptedPrivateEvidenceCloudSyncConsent(userId)
         && hasProofAttachmentPath(userId, attachmentId)
         && request.resource.data.contentType is string
         && request.resource.data.byteCount is int
@@ -69,7 +79,28 @@ service cloud.firestore {
 
     function isSafeProofRecordDocument(userId) {
       return isSafeUserDocument(userId)
+        && hasAcceptedPrivateEvidenceCloudSyncConsent(userId)
         && !request.resource.data.keys().hasAny(['attachments']);
+    }
+
+    function hasNoPrivateGoalContextOrAcceptedConsent(userId) {
+      return !request.resource.data.keys().hasAny(['privateContext'])
+        || hasAcceptedPrivateEvidenceCloudSyncConsent(userId);
+    }
+
+    function hasNoPrivateOutcomeOrAcceptedConsent(userId) {
+      return (request.resource.data.keys().hasAny(['isPrivate'])
+          && request.resource.data.isPrivate == false)
+        || hasAcceptedPrivateEvidenceCloudSyncConsent(userId);
+    }
+
+    function hasAcceptedPrivateEvidenceCloudSyncConsent(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)/consents/privateEvidenceCloudSync)
+        && get(/databases/$(database)/documents/users/$(userId)/consents/privateEvidenceCloudSync).data.schemaVersion == 1
+        && get(/databases/$(database)/documents/users/$(userId)/consents/privateEvidenceCloudSync).data.ownerUserID == userId
+        && get(/databases/$(database)/documents/users/$(userId)/consents/privateEvidenceCloudSync).data.status == 'accepted'
+        && get(/databases/$(database)/documents/users/$(userId)/consents/privateEvidenceCloudSync).data.allowsPrivateEvidenceCloudSync == true
+        && get(/databases/$(database)/documents/users/$(userId)/consents/privateEvidenceCloudSync).data.consentTextVersion == 'private-evidence-cloud-sync-v1';
     }
 
     function hasDocumentPath(collectionName, userId, documentId) {
@@ -93,6 +124,12 @@ service cloud.firestore {
         allow create, update: if false;
       }
 
+      match /consents/{consentId} {
+        allow read: if isUser(userId);
+        allow create, update: if false;
+        allow delete: if false;
+      }
+
       match /profiles/{profileId} {
         allow read: if isUser(userId);
         allow create, update: if isUser(userId)
@@ -103,7 +140,8 @@ service cloud.firestore {
       match /goals/{goalId} {
         allow read: if isUser(userId);
         allow create, update: if isUser(userId)
-          && isSafeCareerGraphDocument('goals', userId, goalId);
+          && isSafeCareerGraphDocument('goals', userId, goalId)
+          && hasNoPrivateGoalContextOrAcceptedConsent(userId);
         allow delete: if false;
       }
 
@@ -133,7 +171,8 @@ service cloud.firestore {
       match /outcomes/{outcomeId} {
         allow read: if isUser(userId);
         allow create, update: if isUser(userId)
-          && isSafeCareerGraphDocument('outcomes', userId, outcomeId);
+          && isSafeCareerGraphDocument('outcomes', userId, outcomeId)
+          && hasNoPrivateOutcomeOrAcceptedConsent(userId);
         allow delete: if false;
       }
 

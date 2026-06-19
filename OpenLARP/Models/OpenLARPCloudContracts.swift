@@ -49,7 +49,7 @@ struct CloudExportPolicy: Codable, Equatable {
     init(ownerUserID: String, privacy: CareerUserPrivacySettings) {
         self.init(
             ownerUserID: ownerUserID,
-            includePrivateEvidence: privacy.shareWins,
+            includePrivateEvidence: privacy.allowsPrivateEvidenceCloudSync,
             includeReadinessHistory: true,
             allowsLongTermMemoryWrite: privacy.memoryMode == .cloudReady,
             requiresApprovalForExternalActions: privacy.requireApprovalForExternalActions

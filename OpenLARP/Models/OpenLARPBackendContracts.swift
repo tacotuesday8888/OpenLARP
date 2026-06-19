@@ -108,6 +108,7 @@ struct BackendEventSummary: Codable, Equatable {
     var qualityScore: Int?
     var memoryMode: CareerMemoryMode?
     var shareWins: Bool?
+    var allowsPrivateEvidenceCloudSync: Bool?
     var documentCount: Int?
     var proofUploadCount: Int?
 
@@ -125,6 +126,7 @@ struct BackendEventSummary: Codable, Equatable {
         qualityScore: Int? = nil,
         memoryMode: CareerMemoryMode? = nil,
         shareWins: Bool? = nil,
+        allowsPrivateEvidenceCloudSync: Bool? = nil,
         documentCount: Int? = nil,
         proofUploadCount: Int? = nil
     ) {
@@ -141,6 +143,7 @@ struct BackendEventSummary: Codable, Equatable {
         self.qualityScore = qualityScore
         self.memoryMode = memoryMode
         self.shareWins = shareWins
+        self.allowsPrivateEvidenceCloudSync = allowsPrivateEvidenceCloudSync
         self.documentCount = documentCount
         self.proofUploadCount = proofUploadCount
     }
@@ -159,6 +162,7 @@ struct BackendEventSummary: Codable, Equatable {
         case qualityScore
         case memoryMode
         case shareWins
+        case allowsPrivateEvidenceCloudSync
         case documentCount
         case proofUploadCount
     }
@@ -179,6 +183,10 @@ struct BackendEventSummary: Codable, Equatable {
             qualityScore: try container.decodeIfPresent(Int.self, forKey: .qualityScore),
             memoryMode: try container.decodeIfPresent(CareerMemoryMode.self, forKey: .memoryMode),
             shareWins: try container.decodeIfPresent(Bool.self, forKey: .shareWins),
+            allowsPrivateEvidenceCloudSync: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .allowsPrivateEvidenceCloudSync
+            ),
             documentCount: try container.decodeIfPresent(Int.self, forKey: .documentCount),
             proofUploadCount: try container.decodeIfPresent(Int.self, forKey: .proofUploadCount)
         )
@@ -665,6 +673,85 @@ struct LocalMockBackendEventSyncService: BackendEventSyncServicing {
     }
 }
 
+enum PrivateEvidenceCloudSyncConsentStatus: String, Codable, Equatable {
+    case accepted
+    case revoked
+}
+
+struct PrivateEvidenceCloudSyncConsentRequest: Codable, Equatable {
+    static let consentTextVersion = "private-evidence-cloud-sync-v1"
+
+    var schemaVersion: Int
+    var requestedAt: Date
+    var session: BackendUserSession
+    var enabled: Bool
+    var consentTextVersion: String
+
+    init(
+        session: BackendUserSession,
+        enabled: Bool,
+        requestedAt: Date = Date(),
+        consentTextVersion: String = Self.consentTextVersion,
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.requestedAt = requestedAt
+        self.session = session.redactedForBackendEventSync()
+        self.enabled = enabled
+        self.consentTextVersion = consentTextVersion
+    }
+}
+
+struct PrivateEvidenceCloudSyncConsentResult: Codable, Equatable {
+    var schemaVersion: Int
+    var requestedAt: Date
+    var completedAt: Date
+    var didContactNetwork: Bool
+    var status: PrivateEvidenceCloudSyncConsentStatus
+    var allowsPrivateEvidenceCloudSync: Bool
+    var firestoreDocumentPath: String?
+    var consentTextVersion: String
+    var externalActionTaken: Bool
+
+    init(
+        request: PrivateEvidenceCloudSyncConsentRequest,
+        completedAt: Date? = nil,
+        didContactNetwork: Bool = false,
+        status: PrivateEvidenceCloudSyncConsentStatus,
+        firestoreDocumentPath: String? = nil,
+        externalActionTaken: Bool = false,
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        requestedAt = request.requestedAt
+        self.completedAt = completedAt ?? request.requestedAt
+        self.didContactNetwork = didContactNetwork
+        self.status = status
+        allowsPrivateEvidenceCloudSync = status == .accepted
+        self.firestoreDocumentPath = firestoreDocumentPath
+        consentTextVersion = request.consentTextVersion
+        self.externalActionTaken = externalActionTaken
+    }
+}
+
+@MainActor
+protocol PrivateEvidenceCloudSyncConsentServicing {
+    func setConsent(_ request: PrivateEvidenceCloudSyncConsentRequest) async throws -> PrivateEvidenceCloudSyncConsentResult
+}
+
+struct LocalMockPrivateEvidenceCloudSyncConsentService: PrivateEvidenceCloudSyncConsentServicing {
+    init() {}
+
+    func setConsent(_ request: PrivateEvidenceCloudSyncConsentRequest) async throws -> PrivateEvidenceCloudSyncConsentResult {
+        PrivateEvidenceCloudSyncConsentResult(
+            request: request,
+            didContactNetwork: false,
+            status: request.enabled ? .accepted : .revoked,
+            firestoreDocumentPath: nil
+        )
+    }
+}
+
 struct CareerGraphSyncPreparationRequest: Codable, Equatable {
     var schemaVersion: Int
     var requestedAt: Date
@@ -684,7 +771,7 @@ struct CareerGraphSyncPreparationRequest: Codable, Equatable {
         schemaVersion: Int = 1
     ) {
         let privacy = state.userProfile?.privacy ?? .localDefault
-        let resolvedIncludePrivateEvidence = includePrivateEvidence ?? privacy.shareWins
+        let resolvedIncludePrivateEvidence = includePrivateEvidence ?? privacy.allowsPrivateEvidenceCloudSync
         let policy = CloudExportPolicy(
             ownerUserID: session.ownerUserID,
             includePrivateEvidence: resolvedIncludePrivateEvidence,

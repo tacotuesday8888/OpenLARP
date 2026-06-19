@@ -75,10 +75,11 @@ struct CareerGraphSetupStatusContent: Equatable {
                 title: "File backup",
                 value: Self.proofUploadValue(for: session.storage.status),
                 detail: session.storage.status == .connected || session.storage.status == .configured
-                    ? "Proof file backup is available after sign-in"
+                    ? "Proof file backup also requires private evidence sync consent"
                     : "Files stay on this device",
                 systemImage: "folder.fill",
-                isComplete: session.storage.status == .connected || session.storage.status == .configured
+                isComplete: (session.storage.status == .connected || session.storage.status == .configured)
+                    && privacy.allowsPrivateEvidenceCloudSync
             ),
             CareerGraphSetupStatusRow(
                 title: "Outcomes",
@@ -97,9 +98,18 @@ struct CareerGraphSetupStatusContent: Equatable {
             CareerGraphSetupStatusRow(
                 title: "Sharing",
                 value: privacy.shareWins ? "Allowed later" : "Private by default",
-                detail: privacy.shareWins ? "Wins can be included in a future sync" : "Private evidence stays local by default",
+                detail: privacy.shareWins ? "Public share cards can mention wins" : "Public sharing stays off",
                 systemImage: "square.and.arrow.up",
                 isComplete: privacy.shareWins
+            ),
+            CareerGraphSetupStatusRow(
+                title: "Private sync",
+                value: privacy.allowsPrivateEvidenceCloudSync ? "Allowed" : "Local only",
+                detail: privacy.allowsPrivateEvidenceCloudSync
+                    ? "Private proof and outcomes may be included in account backup"
+                    : "Private proof, files, and notes stay off cloud sync",
+                systemImage: "lock.icloud.fill",
+                isComplete: privacy.allowsPrivateEvidenceCloudSync
             )
         ]
 
@@ -146,7 +156,9 @@ struct CareerGraphSyncPreviewContent: Equatable {
     init(preview: CareerGraphSyncPreview) {
         title = preview.status == .failed
             ? "Career graph preview needs retry"
-            : "Career graph preview ready"
+            : preview.didContactNetwork
+                ? "Career graph synced"
+                : "Career graph preview ready"
         subtitle = preview.didContactNetwork
             ? "OpenLARP synced metadata and uploaded available proof files through the backend-ready Firebase route."
             : "OpenLARP prepared your saved career graph locally. This preview did not upload or sync anything."
@@ -179,7 +191,9 @@ struct CareerGraphSyncPreviewContent: Equatable {
             ),
             CareerGraphSetupStatusRow(
                 title: "Privacy",
-                value: preview.includedPrivateEvidence ? "In local preview" : "Held back",
+                value: preview.includedPrivateEvidence
+                    ? (preview.didContactNetwork ? "Synced to account" : "Included in preview")
+                    : "Held back",
                 detail: preview.allowsLongTermMemoryWrite
                     ? "Memory writes are allowed after account setup"
                     : "No long-term memory write is allowed by this preview",
@@ -222,7 +236,7 @@ struct CareerGraphSyncActionContent: Equatable {
 
     init(
         isAuthenticated: Bool,
-        shareWinsEnabled: Bool,
+        privateEvidenceCloudSyncEnabled: Bool,
         proofFileCount: Int
     ) {
         if !isAuthenticated {
@@ -233,20 +247,26 @@ struct CareerGraphSyncActionContent: Equatable {
             return
         }
 
-        if shareWinsEnabled && proofFileCount > 0 {
+        if privateEvidenceCloudSyncEnabled && proofFileCount > 0 {
             title = "Sync Career Graph & Proof Files"
             progressLabel = "Syncing Proof Files"
             systemImage = "icloud.and.arrow.up.fill"
-            footnote = "This writes account-owned career graph metadata to Firestore and uploads \(Self.proofFileCountText(proofFileCount)) to Firebase Storage because Shareable wins is on."
+            footnote = "This writes account-owned career graph metadata and private proof text, links, outcomes, and notes to Firestore, then uploads \(Self.proofFileCountText(proofFileCount)) to Firebase Storage because private evidence cloud sync is on."
+            return
+        }
+
+        if privateEvidenceCloudSyncEnabled {
+            title = "Sync Career Graph & Private Proof"
+            progressLabel = "Syncing Private Proof"
+            systemImage = "icloud.and.arrow.up.fill"
+            footnote = "This writes account-owned career graph metadata plus private proof text, links, outcomes, and notes to Firestore. There are no proof files to upload yet."
             return
         }
 
         title = "Sync Career Graph Metadata"
         progressLabel = "Syncing Metadata"
         systemImage = "icloud.and.arrow.up"
-        footnote = shareWinsEnabled
-            ? "This writes account-owned career graph metadata to Firestore. Shareable wins is on, but there are no saved proof files to upload yet."
-            : "This writes account-owned career graph metadata to Firestore. Proof files are not uploaded while Shareable wins is off."
+        footnote = "This writes account-owned career graph metadata to Firestore. Private proof, files, and notes are not uploaded while private evidence sync is off."
     }
 
     private static func proofFileCountText(_ count: Int) -> String {
