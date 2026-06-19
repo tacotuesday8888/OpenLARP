@@ -16,6 +16,10 @@ import {
   adminProofUploadReconciliationDependencies,
   handleProofUploadReconciliationRequest
 } from "./proofUploadReconciliation.js";
+import {
+  adminPrivateEvidenceRetentionDependencies,
+  handlePrivateEvidenceRetentionRequest
+} from "./privateEvidenceRetention.js";
 import { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
 
 if (getApps().length === 0) {
@@ -91,6 +95,26 @@ export const promoteProofUploadReceipt = onCall(
   }
 );
 
+export const cleanupRevokedPrivateEvidenceUploads = onCall(
+  {
+    cors: true,
+    timeoutSeconds: 60,
+    memory: "512MiB"
+  },
+  async (request) => {
+    const response = await handlePrivateEvidenceRetentionRequest({
+      auth: request.auth ? { uid: request.auth.uid } : null,
+      data: request.data
+    }, adminPrivateEvidenceRetentionDependencies(callableQuotaGuard));
+
+    if (!response.ok) {
+      throw toHttpsError(response);
+    }
+
+    return response;
+  }
+);
+
 export const setPrivateEvidenceCloudSyncConsent = onCall(
   {
     cors: true,
@@ -139,6 +163,7 @@ export {
 } from "./callableQuotaGuard.js";
 export { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
 export { handlePrivateEvidenceCloudSyncConsentRequest } from "./privateEvidenceConsent.js";
+export { handlePrivateEvidenceRetentionRequest } from "./privateEvidenceRetention.js";
 export { handleProofUploadPromotionRequest } from "./proofUploadPromotion.js";
 export { handleProofUploadReconciliationRequest } from "./proofUploadReconciliation.js";
 export type {
@@ -154,6 +179,12 @@ export type {
   PrivateEvidenceCloudSyncConsentStatus,
   PrivateEvidenceCloudSyncConsentSuccess
 } from "./privateEvidenceConsent.js";
+export type {
+  OpenLARPPrivateEvidenceRetentionRequest,
+  PrivateEvidenceRetentionCandidate,
+  PrivateEvidenceRetentionResponse,
+  PrivateEvidenceRetentionSuccess
+} from "./privateEvidenceRetention.js";
 export type {
   OpenLARPProofUploadPromotionRequest,
   ProofUploadPromotionIntent,

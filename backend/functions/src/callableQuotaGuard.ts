@@ -6,12 +6,14 @@ export type OpenLARPCallableName =
   | "runOpenLARPWorkflow"
   | "promoteProofUploadReceipt"
   | "reconcileProofUploads"
+  | "cleanupRevokedPrivateEvidenceUploads"
   | "acknowledgeBackendEvents";
 
 export type CallableQuotaCategory =
   | "aiWorkflow"
   | "proofUpload"
   | "proofUploadRepair"
+  | "privateEvidenceRetention"
   | "backendEventSync";
 
 export type CallableQuotaMetadataValue = string | number | boolean;
@@ -65,6 +67,10 @@ export const CALLABLE_DAILY_QUOTA_LIMITS = {
   },
   reconcileProofUploads: {
     category: "proofUploadRepair",
+    limitUnits: 30
+  },
+  cleanupRevokedPrivateEvidenceUploads: {
+    category: "privateEvidenceRetention",
     limitUnits: 30
   },
   acknowledgeBackendEvents: {

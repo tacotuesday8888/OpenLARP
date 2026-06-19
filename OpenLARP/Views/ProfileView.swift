@@ -599,7 +599,7 @@ struct ProfileView: View {
                     )
                     .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
 
-                    Text("Turning this off stops future private evidence sync. Proof already backed up may remain until deletion and retention controls are built.")
+                    Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
                         .font(.caption)
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)

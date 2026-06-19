@@ -10,6 +10,7 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 - Callable export: `setPrivateEvidenceCloudSyncConsent`
 - Callable export: `reconcileProofUploads`
 - Callable export: `promoteProofUploadReceipt`
+- Callable export: `cleanupRevokedPrivateEvidenceUploads`
 - Callable export: `acknowledgeBackendEvents`
 - Callable quota: per-user daily Firestore-backed units for work-producing
   authenticated callables
@@ -24,9 +25,9 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 - Deploy lockfile: `backend/functions/package-lock.json` is committed so
   Firebase Cloud Build installs the same deploy-source dependency graph
 - Dev deploy: `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`,
-  `reconcileProofUploads`, `promoteProofUploadReceipt`, and
-  `acknowledgeBackendEvents` are expected active Gen 2 callables in
-  `openlarp-dev-langqi` / `us-central1`
+  `reconcileProofUploads`, `promoteProofUploadReceipt`,
+  `cleanupRevokedPrivateEvidenceUploads`, and `acknowledgeBackendEvents` are
+  expected active Gen 2 callables in `openlarp-dev-langqi` / `us-central1`
 - Live endpoint smoke: unsigned workflow requests return `UNAUTHENTICATED`
 - Artifact cleanup: `gcf-artifacts` keeps the most recent 5 versions and deletes
   artifacts older than 7 days
@@ -76,7 +77,35 @@ The callable:
 Firestore and Storage rules require `status: accepted` and
 `allowsPrivateEvidenceCloudSync: true` before private proof records, proof
 attachment metadata, or proof bytes can be written. Client create, update, and
-delete are denied for consent documents.
+delete are denied for consent documents. Revocation stops future private
+evidence sync; it does not automatically delete prior uploaded proof backups.
+
+## Revoked Proof Backup Cleanup
+
+`cleanupRevokedPrivateEvidenceUploads` is an authenticated Firebase callable for
+reporting on, and explicitly deleting, uploaded proof backup artifacts after a
+user has revoked private evidence cloud sync.
+
+The callable:
+
+- requires Firebase Auth
+- requires the current server-owned consent document to be `status: revoked`
+- defaults to `reportOnly`
+- requires `mode: "deleteSyncedEvidence"`, `confirmDeletion: true`, and explicit
+  `attachmentIDs` before deleting
+- validates the Firestore proof attachment document, upload receipt, Storage
+  path, owner/proof/attachment metadata, byte count, content type, idempotency
+  key, and Storage generation
+- revalidates and deletes the matching
+  `users/{uid}/proofAttachments/{attachmentId}` document in a Firestore
+  transaction before deleting the Storage object with the inspected generation
+  precondition
+- returns per-attachment statuses for eligible, deleted, skipped, and partial
+  failure states
+
+This is uploaded-proof-backup cleanup only. It does not delete proof records,
+outcomes, readiness history, goals, provider backups, legal/audit records, or
+the Firebase/Auth account.
 
 ## Callable Quota / Budget Guard
 
@@ -93,6 +122,7 @@ Current beta daily unit limits:
 - `runOpenLARPWorkflow`: 60 units
 - `promoteProofUploadReceipt`: 150 units
 - `reconcileProofUploads`: 30 units
+- `cleanupRevokedPrivateEvidenceUploads`: 30 units
 - `acknowledgeBackendEvents`: 500 units
 
 Quota exhaustion returns Firebase callable error code `resource-exhausted` with

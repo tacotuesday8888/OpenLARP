@@ -275,6 +275,53 @@ async function smokeProofPromotionAndReconciliation(idToken) {
   assert(reconciliation.scannedCount === 1, "proof reconciliation did not scan exactly one object");
   assert(reconciliation.candidates?.[0]?.status === "linked", "proof reconciliation did not report linked upload");
   pass("Signed-in proof reconciliation callable reported linked upload");
+
+  const revokedConsent = await callCallable("setPrivateEvidenceCloudSyncConsent", idToken, {
+    schemaVersion: 1,
+    enabled: false,
+    consentTextVersion: "private-evidence-cloud-sync-v1"
+  });
+  assert(revokedConsent.ok === true, "private evidence consent revoke did not return ok=true");
+  assert(revokedConsent.status === "revoked", "private evidence consent revoke did not return revoked status");
+  assert(revokedConsent.allowsPrivateEvidenceCloudSync === false, "private evidence consent revoke did not disable proof sync");
+  pass("Signed-in private evidence cloud sync consent callable revoked future proof sync");
+
+  const retentionReport = await callCallable("cleanupRevokedPrivateEvidenceUploads", idToken, {
+    mode: "reportOnly",
+    attachmentIDs: [attachmentID],
+    maxAttachments: 1
+  });
+  assert(retentionReport.ok === true, "private evidence backup cleanup report did not return ok=true");
+  assert(retentionReport.scannedCount === 1, "private evidence backup cleanup did not scan exactly one attachment");
+  assert(retentionReport.deletedCount === 0, "private evidence backup cleanup report should not delete");
+  assert(retentionReport.externalActionTaken === false, "private evidence backup cleanup report should not take external action");
+  assert(retentionReport.candidates?.[0]?.status === "eligible", "private evidence backup cleanup did not report eligible upload");
+  pass("Signed-in private evidence backup cleanup callable reported retained upload after revocation");
+
+  const retentionDelete = await callCallable("cleanupRevokedPrivateEvidenceUploads", idToken, {
+    mode: "deleteSyncedEvidence",
+    confirmDeletion: true,
+    attachmentIDs: [attachmentID],
+    maxAttachments: 1
+  });
+  assert(retentionDelete.ok === true, "private evidence backup cleanup delete did not return ok=true");
+  assert(retentionDelete.scannedCount === 1, "private evidence backup cleanup delete did not scan exactly one attachment");
+  assert(retentionDelete.deletedCount === 1, "private evidence backup cleanup delete did not delete the smoke attachment");
+  assert(retentionDelete.externalActionTaken === true, "private evidence backup cleanup delete did not report an external action");
+  assert(retentionDelete.candidates?.[0]?.status === "deleted", "private evidence backup cleanup did not report deleted upload");
+  await assertStorageObjectMissing(proofReference);
+  const deletedAttachmentSnapshot = await withTransientRetry(
+    "signed-in Firestore deleted attachment read",
+    () => clientGetDoc(clientDoc(clientFirestore, attachmentDocumentPath))
+  );
+  assert(!deletedAttachmentSnapshot.exists(), "private evidence backup cleanup left the attachment document readable");
+  const consentSnapshot = await withTransientRetry(
+    "signed-in Firestore retained consent read",
+    () => clientGetDoc(clientDoc(clientFirestore, `users/${uid}/consents/privateEvidenceCloudSync`))
+  );
+  assert(consentSnapshot.exists(), "private evidence backup cleanup removed the consent document");
+  assert(consentSnapshot.data()?.status === "revoked", "private evidence backup cleanup changed the revoked consent status");
+  pass("Signed-in private evidence backup cleanup callable deleted only the temporary proof backup");
 }
 
 async function smokeBackendEventAcknowledgement(idToken) {
@@ -486,6 +533,19 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+async function assertStorageObjectMissing(reference) {
+  try {
+    await withTransientRetry("signed-in deleted Storage metadata read", () => clientGetMetadata(reference));
+  } catch (error) {
+    const code = typeof error?.code === "string" ? error.code : "";
+    if (code.includes("object-not-found")) {
+      return;
+    }
+    throw error;
+  }
+  throw new Error("private evidence backup cleanup left the Storage proof object readable");
 }
 
 function requiredEnv(name) {
