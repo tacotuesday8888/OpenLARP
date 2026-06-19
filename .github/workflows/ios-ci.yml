@@ -32,6 +32,9 @@ jobs:
       - name: Check public repo safety
         run: npm run public:safety
 
+      - name: Check beta release gate
+        run: npm run beta:gate
+
       - name: Set up Java for Firebase emulators
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
