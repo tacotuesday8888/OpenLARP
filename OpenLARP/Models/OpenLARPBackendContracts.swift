@@ -752,6 +752,118 @@ struct LocalMockPrivateEvidenceCloudSyncConsentService: PrivateEvidenceCloudSync
     }
 }
 
+enum PrivateEvidenceBackupCleanupMode: String, Codable, Equatable, CaseIterable {
+    case reportOnly
+    case deleteSyncedEvidence
+}
+
+enum PrivateEvidenceBackupCleanupCandidateStatus: String, Codable, Equatable, CaseIterable {
+    case eligible
+    case deleted
+    case missingFirestoreAttachment
+    case firestoreReceiptMismatch
+    case storageObjectMissing
+    case storageMetadataMismatch
+    case storageDeleteFailed
+    case firestoreDeleteFailed
+}
+
+struct PrivateEvidenceBackupCleanupRequest: Codable, Equatable {
+    var schemaVersion: Int
+    var requestedAt: Date
+    var session: BackendUserSession
+    var mode: PrivateEvidenceBackupCleanupMode
+    var attachmentIDs: [String]?
+    var maxAttachments: Int
+    var confirmDeletion: Bool
+
+    init(
+        session: BackendUserSession,
+        mode: PrivateEvidenceBackupCleanupMode = .reportOnly,
+        attachmentIDs: [String]? = nil,
+        maxAttachments: Int = 25,
+        confirmDeletion: Bool = false,
+        requestedAt: Date = Date(),
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.requestedAt = requestedAt
+        self.session = session.redactedForCareerGraphSync()
+        self.mode = mode
+        self.attachmentIDs = attachmentIDs
+        self.maxAttachments = maxAttachments
+        self.confirmDeletion = confirmDeletion
+    }
+}
+
+struct PrivateEvidenceBackupCleanupCandidate: Codable, Equatable, Identifiable {
+    var id: String { attachmentID }
+
+    var attachmentID: String
+    var proofID: String?
+    var storagePath: String
+    var storageGeneration: String?
+    var status: PrivateEvidenceBackupCleanupCandidateStatus
+    var canDelete: Bool
+    var deleted: Bool
+    var reason: String
+}
+
+struct PrivateEvidenceBackupCleanupResult: Codable, Equatable {
+    var schemaVersion: Int
+    var requestedAt: Date
+    var completedAt: Date
+    var didContactNetwork: Bool
+    var mode: PrivateEvidenceBackupCleanupMode
+    var scannedCount: Int
+    var eligibleCount: Int
+    var deletedCount: Int
+    var partialFailureCount: Int
+    var candidates: [PrivateEvidenceBackupCleanupCandidate]
+    var externalActionTaken: Bool
+
+    init(
+        request: PrivateEvidenceBackupCleanupRequest,
+        completedAt: Date? = nil,
+        didContactNetwork: Bool = false,
+        scannedCount: Int = 0,
+        eligibleCount: Int = 0,
+        deletedCount: Int = 0,
+        partialFailureCount: Int = 0,
+        candidates: [PrivateEvidenceBackupCleanupCandidate] = [],
+        externalActionTaken: Bool = false,
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        requestedAt = request.requestedAt
+        self.completedAt = completedAt ?? request.requestedAt
+        self.didContactNetwork = didContactNetwork
+        mode = request.mode
+        self.scannedCount = scannedCount
+        self.eligibleCount = eligibleCount
+        self.deletedCount = deletedCount
+        self.partialFailureCount = partialFailureCount
+        self.candidates = candidates
+        self.externalActionTaken = externalActionTaken
+    }
+}
+
+@MainActor
+protocol PrivateEvidenceBackupCleanupServicing {
+    func cleanUpBackups(_ request: PrivateEvidenceBackupCleanupRequest) async throws -> PrivateEvidenceBackupCleanupResult
+}
+
+struct LocalMockPrivateEvidenceBackupCleanupService: PrivateEvidenceBackupCleanupServicing {
+    init() {}
+
+    func cleanUpBackups(_ request: PrivateEvidenceBackupCleanupRequest) async throws -> PrivateEvidenceBackupCleanupResult {
+        PrivateEvidenceBackupCleanupResult(
+            request: request,
+            didContactNetwork: false
+        )
+    }
+}
+
 struct CareerGraphSyncPreparationRequest: Codable, Equatable {
     var schemaVersion: Int
     var requestedAt: Date

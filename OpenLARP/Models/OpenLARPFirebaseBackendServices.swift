@@ -400,6 +400,7 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
     var backendEventSyncFunctionName: String
     var proofUploadPromotionFunctionName: String
     var privateEvidenceConsentFunctionName: String
+    var privateEvidenceBackupCleanupFunctionName: String
     var usesEmulator: Bool
     var emulatorHost: String
     var emulatorPort: Int
@@ -411,6 +412,7 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
         backendEventSyncFunctionName: String = "acknowledgeBackendEvents",
         proofUploadPromotionFunctionName: String = "promoteProofUploadReceipt",
         privateEvidenceConsentFunctionName: String = "setPrivateEvidenceCloudSyncConsent",
+        privateEvidenceBackupCleanupFunctionName: String = "cleanupRevokedPrivateEvidenceUploads",
         usesEmulator: Bool = false,
         emulatorHost: String = "localhost",
         emulatorPort: Int = 5001
@@ -418,6 +420,7 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
         self.backendEventSyncFunctionName = backendEventSyncFunctionName
         self.proofUploadPromotionFunctionName = proofUploadPromotionFunctionName
         self.privateEvidenceConsentFunctionName = privateEvidenceConsentFunctionName
+        self.privateEvidenceBackupCleanupFunctionName = privateEvidenceBackupCleanupFunctionName
         self.usesEmulator = usesEmulator
         self.emulatorHost = emulatorHost
         self.emulatorPort = emulatorPort
@@ -504,6 +507,170 @@ struct FirebaseCallablePrivateEvidenceCloudSyncConsentService: PrivateEvidenceCl
             decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
         )
         let response = try await callable.call(FirebasePrivateEvidenceCloudSyncConsentPayload(request: request))
+        return try response.validatedResult(for: request)
+        #else
+        throw FirebaseBackendServiceError.sdkUnavailable
+        #endif
+    }
+}
+
+private struct FirebasePrivateEvidenceBackupCleanupPayload: Encodable, Equatable, Sendable {
+    var schemaVersion: Int
+    var mode: PrivateEvidenceBackupCleanupMode
+    var attachmentIDs: [String]?
+    var maxAttachments: Int
+    var confirmDeletion: Bool
+
+    init(request: PrivateEvidenceBackupCleanupRequest) {
+        schemaVersion = request.schemaVersion
+        mode = request.mode
+        attachmentIDs = request.attachmentIDs
+        maxAttachments = request.maxAttachments
+        confirmDeletion = request.confirmDeletion
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(mode, forKey: .mode)
+        try container.encodeIfPresent(attachmentIDs, forKey: .attachmentIDs)
+        try container.encode(maxAttachments, forKey: .maxAttachments)
+        try container.encode(confirmDeletion, forKey: .confirmDeletion)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case mode
+        case attachmentIDs
+        case maxAttachments
+        case confirmDeletion
+    }
+}
+
+private struct FirebasePrivateEvidenceBackupCleanupResponse: Codable, Equatable, Sendable {
+    var ok: Bool
+    var schemaVersion: Int
+    var userID: String
+    var mode: PrivateEvidenceBackupCleanupMode
+    var evaluatedAt: Date
+    var scannedCount: Int
+    var eligibleCount: Int
+    var deletedCount: Int
+    var partialFailureCount: Int
+    var candidates: [PrivateEvidenceBackupCleanupCandidate]
+    var externalActionTaken: Bool
+
+    func validatedResult(for request: PrivateEvidenceBackupCleanupRequest) throws -> PrivateEvidenceBackupCleanupResult {
+        guard ok,
+              schemaVersion == 1,
+              userID == request.session.ownerUserID,
+              mode == request.mode,
+              scannedCount == candidates.count,
+              scannedCount >= 0,
+              eligibleCount >= 0,
+              deletedCount >= 0,
+              partialFailureCount >= 0,
+              eligibleCount == responseEligibleCount,
+              deletedCount == responseDeletedCount,
+              partialFailureCount == responsePartialFailureCount,
+              externalActionTaken == responseTookExternalAction,
+              candidates.allSatisfy({ isValidCandidate($0, for: request) })
+        else {
+            throw FirebaseBackendServiceError.contractMismatch("Private evidence backup cleanup response did not match the signed-in user or request.")
+        }
+
+        return PrivateEvidenceBackupCleanupResult(
+            request: request,
+            completedAt: evaluatedAt,
+            didContactNetwork: true,
+            scannedCount: scannedCount,
+            eligibleCount: eligibleCount,
+            deletedCount: deletedCount,
+            partialFailureCount: partialFailureCount,
+            candidates: candidates,
+            externalActionTaken: externalActionTaken
+        )
+    }
+
+    private func isValidCandidate(
+        _ candidate: PrivateEvidenceBackupCleanupCandidate,
+        for request: PrivateEvidenceBackupCleanupRequest
+    ) -> Bool {
+        guard !candidate.attachmentID.isEmpty,
+              !candidate.attachmentID.contains("/"),
+              candidate.storagePath == "users/\(request.session.ownerUserID)/proofAttachments/\(candidate.attachmentID)",
+              !candidate.reason.isEmpty
+        else {
+            return false
+        }
+
+        if request.mode == .deleteSyncedEvidence {
+            return request.attachmentIDs?.contains(candidate.attachmentID) == true
+        }
+
+        return true
+    }
+
+    private var responseTookExternalAction: Bool {
+        candidates.contains { candidate in
+            candidate.deleted ||
+                candidate.status == .storageDeleteFailed
+        }
+    }
+
+    private var responseEligibleCount: Int {
+        candidates.filter { candidate in
+            candidate.canDelete ||
+                candidate.deleted ||
+                candidate.status == .storageDeleteFailed ||
+                candidate.status == .firestoreDeleteFailed
+        }.count
+    }
+
+    private var responseDeletedCount: Int {
+        candidates.filter(\.deleted).count
+    }
+
+    private var responsePartialFailureCount: Int {
+        candidates.filter { candidate in
+            candidate.status == .storageDeleteFailed || candidate.status == .firestoreDeleteFailed
+        }.count
+    }
+}
+
+struct FirebaseCallablePrivateEvidenceBackupCleanupService: PrivateEvidenceBackupCleanupServicing {
+    private let configuration: OpenLARPFirebaseCallableBackendConfiguration
+
+    init(configuration: OpenLARPFirebaseCallableBackendConfiguration = .production) {
+        self.configuration = configuration
+    }
+
+    func cleanUpBackups(_ request: PrivateEvidenceBackupCleanupRequest) async throws -> PrivateEvidenceBackupCleanupResult {
+        guard request.session.isAuthenticated else {
+            throw FirebaseBackendServiceError.authenticationRequired
+        }
+
+        #if canImport(FirebaseFunctions) && canImport(FirebaseCore) && canImport(FirebaseSharedSwift)
+        guard FirebaseApp.app() != nil else {
+            throw FirebaseBackendServiceError.configurationMissing
+        }
+
+        let functions = Functions.functions()
+        if configuration.usesEmulator {
+            functions.useEmulator(withHost: configuration.emulatorHost, port: configuration.emulatorPort)
+        }
+
+        let callable: Callable<
+            FirebasePrivateEvidenceBackupCleanupPayload,
+            FirebasePrivateEvidenceBackupCleanupResponse
+        > = functions.httpsCallable(
+            configuration.privateEvidenceBackupCleanupFunctionName,
+            requestAs: FirebasePrivateEvidenceBackupCleanupPayload.self,
+            responseAs: FirebasePrivateEvidenceBackupCleanupResponse.self,
+            encoder: FirebaseCallableAIWorkflowJSON.firebaseDataEncoder(),
+            decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
+        )
+        let response = try await callable.call(FirebasePrivateEvidenceBackupCleanupPayload(request: request))
         return try response.validatedResult(for: request)
         #else
         throw FirebaseBackendServiceError.sdkUnavailable

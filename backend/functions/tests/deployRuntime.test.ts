@@ -30,6 +30,7 @@ describe("Firebase Functions deploy runtime", () => {
     expect(entrypoint).toContain("export const runOpenLARPWorkflow = onCall");
     expect(entrypoint).toContain("export const reconcileProofUploads = onCall");
     expect(entrypoint).toContain("export const promoteProofUploadReceipt = onCall");
+    expect(entrypoint).toContain("export const cleanupRevokedPrivateEvidenceUploads = onCall");
     expect(entrypoint).toContain("export const setPrivateEvidenceCloudSyncConsent = onCall");
     expect(entrypoint).toContain("export const acknowledgeBackendEvents = onCall");
   });
@@ -42,6 +43,7 @@ describe("Firebase Functions deploy runtime", () => {
     expect(entrypoint).toContain("quotaGuard: callableQuotaGuard");
     expect(entrypoint).toContain("adminProofUploadReconciliationDependencies(callableQuotaGuard)");
     expect(entrypoint).toContain("adminProofUploadPromotionDependencies(callableQuotaGuard)");
+    expect(entrypoint).toContain("adminPrivateEvidenceRetentionDependencies(callableQuotaGuard)");
     expect(entrypoint).toContain("adminBackendEventSyncDependencies(callableQuotaGuard)");
     expect(quotaGuard).toContain("CALLABLE_DAILY_QUOTA_LIMITS");
     expect(quotaGuard).toContain("resource-exhausted");

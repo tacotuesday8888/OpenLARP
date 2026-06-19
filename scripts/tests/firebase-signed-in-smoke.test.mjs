@@ -101,6 +101,10 @@ describe("firebase-signed-in-smoke guardrails", () => {
     expect(script).toContain("clientGetMetadata");
     expect(script).toContain("clientGetBytes");
     expect(script).toContain("clientGetDoc(clientDoc(clientFirestore");
+    expect(script).toContain('callCallable("cleanupRevokedPrivateEvidenceUploads"');
+    expect(script).toContain('mode: "deleteSyncedEvidence"');
+    expect(script).toContain("assertStorageObjectMissing");
+    expect(script).toContain("private evidence backup cleanup changed the revoked consent status");
     expect(script).not.toContain("exchangeCustomToken");
   });
 
@@ -108,11 +112,19 @@ describe("firebase-signed-in-smoke guardrails", () => {
     expect(script).toContain("allowsPrivateEvidenceCloudSync: false");
     expect(script).toContain('consentTextVersion: "private-evidence-cloud-sync-v1"');
     expect(script).toContain('assert(consent.status === "accepted"');
+    expect(script).toContain('assert(revokedConsent.status === "revoked"');
+    expect(script).toContain('assert(retentionReport.candidates?.[0]?.status === "eligible"');
+    expect(script).toContain('assert(retentionDelete.candidates?.[0]?.status === "deleted"');
   });
 
   it("checks Storage-to-Firestore IAM needed by private evidence Storage rules", () => {
     expect(liveReadinessScript).toContain("gcp-sa-firebasestorage.iam.gserviceaccount.com");
     expect(liveReadinessScript).toContain("roles/datastore.viewer");
     expect(liveReadinessScript).toContain("Cloud Storage for Firebase service agent can read Firestore consent documents");
+  });
+
+  it("checks live readiness for private evidence backup cleanup", () => {
+    expect(liveReadinessScript).toContain('["cleanupRevokedPrivateEvidenceUploads", "nodejs22"]');
+    expect(liveReadinessScript).toContain("Private evidence backup cleanup callable rejects unauthenticated requests");
   });
 });

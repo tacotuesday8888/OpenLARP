@@ -67,6 +67,7 @@ const required = new Map([
   ["runOpenLARPWorkflow", "nodejs22"],
   ["reconcileProofUploads", "nodejs22"],
   ["promoteProofUploadReceipt", "nodejs22"],
+  ["cleanupRevokedPrivateEvidenceUploads", "nodejs22"],
   ["setPrivateEvidenceCloudSyncConsent", "nodejs22"],
   ["acknowledgeBackendEvents", "nodejs22"]
 ]);
@@ -151,6 +152,26 @@ if (payload.error?.status !== "UNAUTHENTICATED") {
 }
 NODE
 pass "Private evidence consent callable rejects unauthenticated requests"
+
+retention_response="$tmp_dir/retention-response.txt"
+retention_http_status="$(
+  curl -sS -o "$retention_response" -w '%{http_code}' \
+    -X POST "https://${FUNCTION_REGION}-${PROJECT_ID}.cloudfunctions.net/cleanupRevokedPrivateEvidenceUploads" \
+    -H 'Content-Type: application/json' \
+    -d '{"data":{"schemaVersion":1,"mode":"reportOnly","attachmentIDs":["attachment_123"],"maxAttachments":1}}'
+)"
+if [[ "$retention_http_status" != "401" ]]; then
+  fail "Unauthenticated private evidence backup cleanup callable returned HTTP $retention_http_status instead of 401"
+fi
+node --input-type=module - "$retention_response" <<'NODE'
+import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (payload.error?.status !== "UNAUTHENTICATED") {
+  throw new Error(`Unexpected private evidence backup cleanup callable error: ${JSON.stringify(payload)}`);
+}
+NODE
+pass "Private evidence backup cleanup callable rejects unauthenticated requests"
 
 event_ack_response="$tmp_dir/event-ack-response.txt"
 event_ack_http_status="$(

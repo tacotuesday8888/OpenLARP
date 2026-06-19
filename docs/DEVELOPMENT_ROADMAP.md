@@ -142,7 +142,7 @@ Success criteria:
 
 Goal: make V0 usable across sessions/devices.
 
-Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, server-owned private evidence cloud sync consent gates, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned backend event acknowledgement, server-side per-user callable quotas, live readiness checks, signed-in CLI smoke tooling, and iOS App Check provider scaffolding exist. The remaining trust work is signed-in simulator/device Google Sign-In UX testing, uploaded-proof deletion/retention behavior after revoked consent, Firebase Console App Check registration and enforcement, provider-level token/cost accounting, derived readiness/history writes, and production-grade sync repair UX.
+Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, server-owned private evidence cloud sync consent gates, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned uploaded proof backup cleanup after revoked consent, server-owned backend event acknowledgement, server-side per-user callable quotas, live readiness checks, signed-in CLI smoke tooling, and iOS App Check provider scaffolding exist. The remaining trust work is signed-in simulator/device Google Sign-In UX testing, user-facing cleanup/deletion UX, full account/private-data deletion behavior, Firebase Console App Check registration and enforcement, provider-level token/cost accounting, derived readiness/history writes, and production-grade sync repair UX.
 
 Work:
 
@@ -153,7 +153,7 @@ Work:
 - Register App Check in Firebase Console, keep simulator debug tokens private, verify metrics from opt-in simulator/debug and App Attest device builds, then enable enforcement
 - Add provider-level token/cost accounting before live AI or broad beta traffic
 - Keep explicit server-owned private evidence cloud sync consent separate from public sharing language
-- Define uploaded-proof deletion/retention behavior for users who revoke private evidence sync after uploads
+- Keep uploaded proof backup cleanup separate from consent revocation, and add user-facing full account/private-data deletion before broad beta
 
 Success criteria:
 

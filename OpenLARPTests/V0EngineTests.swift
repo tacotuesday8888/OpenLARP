@@ -2290,6 +2290,105 @@ final class V0EngineTests: XCTestCase {
         XCTAssertTrue(cloudSyncRequest.snapshot.policy.includePrivateEvidence)
     }
 
+    func testPrivateEvidenceBackupCleanupRequestRedactsAccountFieldsAndKeepsDeletionExplicit() throws {
+        let requestedAt = Date(timeIntervalSince1970: 13_650)
+        let session = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_cleanup",
+            accountID: "firebase_uid_cleanup",
+            email: "student@example.com"
+        )
+
+        let request = PrivateEvidenceBackupCleanupRequest(
+            session: session,
+            mode: .deleteSyncedEvidence,
+            attachmentIDs: ["attachment_123"],
+            maxAttachments: 1,
+            confirmDeletion: true,
+            requestedAt: requestedAt
+        )
+
+        XCTAssertEqual(request.mode, .deleteSyncedEvidence)
+        XCTAssertEqual(request.attachmentIDs, ["attachment_123"])
+        XCTAssertEqual(request.maxAttachments, 1)
+        XCTAssertTrue(request.confirmDeletion)
+        XCTAssertTrue(request.session.isAuthenticated)
+        XCTAssertEqual(request.session.ownerUserID, "firebase_uid_cleanup")
+        XCTAssertNil(request.session.accountID)
+        XCTAssertNil(request.session.email)
+
+        let encodedRequest = String(
+            decoding: try JSONEncoder().encode(request),
+            as: UTF8.self
+        )
+        XCTAssertFalse(encodedRequest.contains("student@example.com"))
+    }
+
+    @MainActor
+    func testLocalPrivateEvidenceBackupCleanupServiceReportsLocalNoop() async throws {
+        let requestedAt = Date(timeIntervalSince1970: 13_700)
+        let state = OpenLARPEngine.confirmGoal(goal, now: requestedAt)
+        let request = PrivateEvidenceBackupCleanupRequest(
+            session: BackendUserSession.localOnly(for: state),
+            requestedAt: requestedAt
+        )
+        let service = LocalMockPrivateEvidenceBackupCleanupService()
+
+        let result = try await service.cleanUpBackups(request)
+
+        XCTAssertEqual(result.mode, .reportOnly)
+        XCTAssertEqual(result.requestedAt, requestedAt)
+        XCTAssertEqual(result.completedAt, requestedAt)
+        XCTAssertFalse(result.didContactNetwork)
+        XCTAssertEqual(result.scannedCount, 0)
+        XCTAssertEqual(result.deletedCount, 0)
+        XCTAssertFalse(result.externalActionTaken)
+        XCTAssertEqual(result.candidates, [])
+    }
+
+    func testPrivateEvidenceBackupCleanupResultCodablePreservesBackendCandidateStatuses() throws {
+        let requestedAt = Date(timeIntervalSince1970: 13_750)
+        let session = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_cleanup",
+            accountID: "firebase_uid_cleanup",
+            email: "student@example.com"
+        )
+        let request = PrivateEvidenceBackupCleanupRequest(
+            session: session,
+            mode: .deleteSyncedEvidence,
+            attachmentIDs: ["attachment_123"],
+            maxAttachments: 1,
+            confirmDeletion: true,
+            requestedAt: requestedAt
+        )
+        let candidate = PrivateEvidenceBackupCleanupCandidate(
+            attachmentID: "attachment_123",
+            proofID: "proof_123",
+            storagePath: "users/firebase_uid_cleanup/proofAttachments/attachment_123",
+            storageGeneration: "101",
+            status: .storageDeleteFailed,
+            canDelete: false,
+            deleted: false,
+            reason: "Storage proof file changed or could not be deleted with generation matching."
+        )
+        let result = PrivateEvidenceBackupCleanupResult(
+            request: request,
+            scannedCount: 1,
+            eligibleCount: 1,
+            deletedCount: 0,
+            partialFailureCount: 1,
+            candidates: [candidate]
+        )
+
+        let decoded = try JSONDecoder().decode(
+            PrivateEvidenceBackupCleanupResult.self,
+            from: try JSONEncoder().encode(result)
+        )
+
+        XCTAssertEqual(decoded.candidates.first?.status, .storageDeleteFailed)
+        XCTAssertEqual(decoded.partialFailureCount, 1)
+        XCTAssertEqual(decoded.candidates.first?.storageGeneration, "101")
+    }
+
     func testCareerGraphSetupStatusContentShowsMissingSetupActions() {
         let emptyContent = CareerGraphSetupStatusContent(
             state: .empty,
