@@ -161,7 +161,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
 - Google Sign-In is enabled in Firebase Auth for `openlarp-dev-langqi`.
 - A fresh Firebase iOS SDK config can be retrieved by CLI and now includes `CLIENT_ID` and `REVERSED_CLIENT_ID`. The ignored local `OpenLARP/GoogleService-Info.plist` has been refreshed on this workstation.
-- `npm run firebase:live-readiness` now checks Firestore, Functions, callable auth rejection for workflow/proof/event boundaries, iOS config, Google OAuth IDs, Storage bucket existence, and Artifact Registry cleanup policies.
+- `npm run firebase:live-readiness` now checks Firestore, Functions, callable auth rejection for workflow/proof/event boundaries, iOS config, Google OAuth IDs, Storage bucket existence, Firebase App Check App Attest registration plus Firestore/Storage/Google Identity enforcement status, and Artifact Registry cleanup policies.
 
 ## Live Readiness Check
 
@@ -180,10 +180,11 @@ The check verifies:
 - local deploy source includes the server-side callable quota guard
 - CLI retrieval of the iOS Firebase config without printing secret-bearing plist values
 - Storage default bucket existence when `gcloud` is available
+- Firebase App Check App Attest registration and Firestore, Storage, and Google Identity enforcement status when `gcloud` credentials can read the App Check API
 - Cloud Storage for Firebase service-agent IAM can read Firestore consent documents for Storage rules
 - Functions Artifact Registry cleanup policies when `gcloud` is available
 
-A clean run should finish without missing Google OAuth ID or missing Storage bucket warnings. This script confirms the live project shape and local deploy source shape, but it does not replace the signed-in smoke check or a simulator/device smoke test for Google Sign-In UX, Firestore writes, Storage upload/read rules, quota exhaustion, or callable AI fallback behavior.
+A clean run should finish without missing Google OAuth ID or missing Storage bucket warnings. App Check warnings mean the Firebase Console enforcement step is still incomplete, even if the iOS App Attest config exists. This script confirms the live project shape and local deploy source shape, but it does not replace the signed-in smoke check or a simulator/device smoke test for Google Sign-In UX, Firestore writes, Storage upload/read rules, quota exhaustion, or callable AI fallback behavior.
 
 ## Signed-In Smoke Check
 
