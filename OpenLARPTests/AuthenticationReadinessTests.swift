@@ -132,6 +132,83 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(try persistence.load().subscriptionState, subscriptionState)
     }
 
+    func testStoreSignedOutAuthenticationRestoreLeavesFreshLocalSubscriptionStateUntouched() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let subscriptionService = RecordingSubscriptionIdentityService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(),
+            subscriptionService: subscriptionService,
+            now: { Date(timeIntervalSince1970: 32_050) }
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+
+        XCTAssertEqual(subscriptionService.resetIdentityRequestCount, 0)
+        XCTAssertNil(store.state.subscriptionState.customerInfo)
+        XCTAssertEqual(store.state.subscriptionState.connectionStatus, .notConfigured)
+    }
+
+    func testStoreSignedOutAuthenticationRestoreResetsStaleSubscriptionIdentity() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let now = Date(timeIntervalSince1970: 32_100)
+        let activeState = OpenLARPSubscriptionState(
+            freeSprint: OpenLARPFreeSprintEntitlement(startedAt: now.addingTimeInterval(-86_400)),
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: now,
+                activeEntitlementIDs: [OpenLARPSubscriptionConfiguration.placeholder.revenueCatEntitlementID],
+                activeProductIDs: [OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID],
+                entitlementExpirationDate: now.addingTimeInterval(86_400 * 30)
+            ),
+            connectionStatus: .online,
+            lastUpdatedAt: now
+        )
+        let resetState = OpenLARPSubscriptionState(
+            freeSprint: activeState.freeSprint,
+            customerInfo: nil,
+            connectionStatus: .notConfigured,
+            lastUpdatedAt: now
+        )
+        let subscriptionService = RecordingSubscriptionIdentityService(resetState: resetState)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(),
+            subscriptionService: subscriptionService,
+            now: { now }
+        )
+
+        await store.confirmGoal(goal)
+        store.state.subscriptionState = activeState
+        store.currentSubscriptionOffering = RevenueCatOfferingSnapshot(
+            identifier: "beta",
+            packages: [
+                RevenueCatPackageSnapshot(
+                    identifier: "monthly",
+                    product: RevenueCatProductSnapshot(
+                        productID: OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID,
+                        displayName: "OpenLARP Monthly",
+                        displayPrice: "$9.99",
+                        subscriptionPeriod: "1 month"
+                    )
+                )
+            ]
+        )
+
+        await store.restorePreviousAuthenticationSession()
+
+        XCTAssertEqual(subscriptionService.resetIdentityRequestCount, 1)
+        XCTAssertNil(store.currentSubscriptionOffering)
+        XCTAssertEqual(store.state.subscriptionState, resetState)
+        XCTAssertEqual(try persistence.load().subscriptionState, resetState)
+        XCTAssertEqual(store.subscriptionAccess().status, .freeSprint)
+    }
+
     func testStoreGoogleSignInUpdatesAccountFieldsWithoutOverwritingCareerProfile() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
