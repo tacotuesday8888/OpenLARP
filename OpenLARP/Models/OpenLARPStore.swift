@@ -12,6 +12,8 @@ final class OpenLARPStore {
     private let authenticationService: any OpenLARPAuthenticationServicing
     private let backendEventSyncService: any BackendEventSyncServicing
     private let privateEvidenceCloudSyncConsentService: any PrivateEvidenceCloudSyncConsentServicing
+    private let privateEvidenceBackupCleanupService: any PrivateEvidenceBackupCleanupServicing
+    private let accountDeletionService: any AccountDeletionServicing
     private let backendSessionProvider: any BackendSessionProviding
     private let subscriptionService: any OpenLARPSubscriptionServicing
     private let now: () -> Date
@@ -32,11 +34,28 @@ final class OpenLARPStore {
     var isSigningOutOfAccount = false
     var isSyncingBackendEvents = false
     var isUpdatingPrivateEvidenceCloudSyncConsent = false
+    var isCheckingPrivateEvidenceBackups = false
+    var isDeletingPrivateEvidenceBackups = false
+    var isDeletingAccount = false
     var isRefreshingSubscriptionStatus = false
     var isRestoringPurchases = false
     var authenticationResult: OpenLARPAuthenticationResult?
     var careerGraphSyncPreview: CareerGraphSyncPreview?
     private var careerGraphSyncPreviewGeneration = 0
+    private var activePrivateEvidenceBackupCleanupResult: PrivateEvidenceBackupCleanupResult?
+    private var activeAccountDeletionResult: AccountDeletionResult?
+
+    var isAccountDataOperationInFlight: Bool {
+        isCheckingPrivateEvidenceBackups || isDeletingPrivateEvidenceBackups || isDeletingAccount
+    }
+
+    var privateEvidenceBackupCleanupResult: PrivateEvidenceBackupCleanupResult? {
+        activePrivateEvidenceBackupCleanupResult ?? state.privateEvidenceBackupCleanupResult
+    }
+
+    var accountDeletionResult: AccountDeletionResult? {
+        activeAccountDeletionResult ?? state.accountDeletionResult
+    }
 
     init(
         persistence: OpenLARPPersistence = .live,
@@ -47,6 +66,8 @@ final class OpenLARPStore {
         authenticationService: (any OpenLARPAuthenticationServicing)? = nil,
         backendEventSyncService: any BackendEventSyncServicing = LocalMockBackendEventSyncService(),
         privateEvidenceCloudSyncConsentService: any PrivateEvidenceCloudSyncConsentServicing = LocalMockPrivateEvidenceCloudSyncConsentService(),
+        privateEvidenceBackupCleanupService: any PrivateEvidenceBackupCleanupServicing = LocalMockPrivateEvidenceBackupCleanupService(),
+        accountDeletionService: any AccountDeletionServicing = LocalMockAccountDeletionService(),
         backendSessionProvider: (any BackendSessionProviding)? = nil,
         subscriptionService: any OpenLARPSubscriptionServicing = MockOpenLARPSubscriptionService(),
         now: @escaping () -> Date = { Date() },
@@ -63,6 +84,8 @@ final class OpenLARPStore {
         self.authenticationService = resolvedAuthenticationService
         self.backendEventSyncService = backendEventSyncService
         self.privateEvidenceCloudSyncConsentService = privateEvidenceCloudSyncConsentService
+        self.privateEvidenceBackupCleanupService = privateEvidenceBackupCleanupService
+        self.accountDeletionService = accountDeletionService
         self.backendSessionProvider = backendSessionProvider ?? resolvedAuthenticationService
         self.subscriptionService = subscriptionService
         self.now = now
@@ -105,6 +128,8 @@ final class OpenLARPStore {
         let previousAIWorkflowRuns = state.aiWorkflowRuns
         let previousBackendEvents = state.backendEvents
         let previousSubscriptionState = state.subscriptionState
+        let previousPrivateEvidenceBackupCleanupResult = state.privateEvidenceBackupCleanupResult
+        let previousAccountDeletionResult = state.accountDeletionResult
         var completedAIWorkflowRuns: [V0AIWorkflowRun] = []
         let requestedAt = now()
         isGoalSetupRunning = true
@@ -155,6 +180,8 @@ final class OpenLARPStore {
         if previousSubscriptionState.hasStartedAccessLifecycle {
             state.subscriptionState = previousSubscriptionState
         }
+        state.privateEvidenceBackupCleanupResult = previousPrivateEvidenceBackupCleanupResult
+        state.accountDeletionResult = previousAccountDeletionResult
         let currentSession = currentBackendSession()
         if currentSession.isAuthenticated {
             applyAuthenticatedAccount(currentSession)
@@ -193,6 +220,8 @@ final class OpenLARPStore {
         let existingAIWorkflowRuns = state.aiWorkflowRuns
         let existingBackendEvents = state.backendEvents
         let existingSubscriptionState = state.subscriptionState
+        let existingPrivateEvidenceBackupCleanupResult = state.privateEvidenceBackupCleanupResult
+        let existingAccountDeletionResult = state.accountDeletionResult
         deletePendingProofAttachments()
         state = OpenLARPEngine.resetGoal(now: now())
         state.userProfile = existingProfile
@@ -201,6 +230,8 @@ final class OpenLARPStore {
         state.aiWorkflowRuns = existingAIWorkflowRuns
         state.backendEvents = existingBackendEvents
         state.subscriptionState = existingSubscriptionState
+        state.privateEvidenceBackupCleanupResult = existingPrivateEvidenceBackupCleanupResult
+        state.accountDeletionResult = existingAccountDeletionResult
         pendingProof = nil
         pendingQualityResult = nil
         clearCareerGraphSyncPreview()
@@ -481,8 +512,163 @@ final class OpenLARPStore {
         save()
     }
 
+    func checkPrivateEvidenceBackupCleanupCandidates() async {
+        guard !isCheckingPrivateEvidenceBackups else { return }
+        let session = currentBackendSession()
+        guard session.isAuthenticated else {
+            errorMessage = "Sign in before checking synced private proof backups."
+            return
+        }
+
+        let requestedAt = now()
+        let request = PrivateEvidenceBackupCleanupRequest(
+            session: session,
+            mode: .reportOnly,
+            requestedAt: requestedAt
+        )
+
+        isCheckingPrivateEvidenceBackups = true
+        defer { isCheckingPrivateEvidenceBackups = false }
+
+        do {
+            let result = try await privateEvidenceBackupCleanupService.cleanUpBackups(request)
+            guard currentBackendSession().ownerUserID == session.ownerUserID else {
+                throw FirebaseBackendServiceError.contractMismatch(
+                    "The signed-in account changed before backup cleanup reporting finished."
+                )
+            }
+            activePrivateEvidenceBackupCleanupResult = result
+            state.privateEvidenceBackupCleanupResult = sanitizedPrivateEvidenceBackupCleanupResult(result)
+            recordBetaEvent(.privateEvidenceBackupCleanupReported, occurredAt: requestedAt)
+            errorMessage = nil
+            save()
+        } catch {
+            errorMessage = "Synced private proof backups could not be checked."
+        }
+    }
+
+    func deletePrivateEvidenceBackups(attachmentIDs: [String]) async {
+        guard !isDeletingPrivateEvidenceBackups else { return }
+        let session = currentBackendSession()
+        guard session.isAuthenticated else {
+            errorMessage = "Sign in before deleting synced private proof backups."
+            return
+        }
+
+        let normalizedAttachmentIDs = Array(
+            Set(
+                attachmentIDs
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty && !$0.contains("/") }
+            )
+        )
+        .sorted()
+        let eligibleAttachmentIDs = Set(
+            activePrivateEvidenceBackupCleanupResult?.candidates
+                .filter(\.canDelete)
+                .map(\.attachmentID) ?? []
+        )
+        let deletionAttachmentIDs = normalizedAttachmentIDs.filter { eligibleAttachmentIDs.contains($0) }
+        guard !deletionAttachmentIDs.isEmpty else {
+            errorMessage = "Check synced proof backups first, then choose eligible attachments to delete."
+            return
+        }
+
+        let requestedAt = now()
+        let request = PrivateEvidenceBackupCleanupRequest(
+            session: session,
+            mode: .deleteSyncedEvidence,
+            attachmentIDs: deletionAttachmentIDs,
+            maxAttachments: max(25, deletionAttachmentIDs.count),
+            confirmDeletion: true,
+            requestedAt: requestedAt
+        )
+
+        isDeletingPrivateEvidenceBackups = true
+        defer { isDeletingPrivateEvidenceBackups = false }
+
+        do {
+            let result = try await privateEvidenceBackupCleanupService.cleanUpBackups(request)
+            guard currentBackendSession().ownerUserID == session.ownerUserID else {
+                throw FirebaseBackendServiceError.contractMismatch(
+                    "The signed-in account changed before backup cleanup deletion finished."
+                )
+            }
+            activePrivateEvidenceBackupCleanupResult = result
+            state.privateEvidenceBackupCleanupResult = sanitizedPrivateEvidenceBackupCleanupResult(result)
+            recordBetaEvent(.privateEvidenceBackupCleanupDeleted, occurredAt: requestedAt)
+            errorMessage = result.partialFailureCount > 0
+                ? "Some synced proof backups could not be deleted. The remaining items are listed in account data controls."
+                : nil
+            save()
+        } catch {
+            errorMessage = "Synced private proof backups could not be deleted."
+        }
+    }
+
+    func deleteCloudAccount(confirmationText: String) async {
+        guard !isDeletingAccount else { return }
+        let session = currentBackendSession()
+        guard session.isAuthenticated else {
+            errorMessage = "Sign in before deleting the cloud account."
+            return
+        }
+        guard confirmationText == AccountDeletionRequest.confirmationText else {
+            errorMessage = "Type \(AccountDeletionRequest.confirmationText) exactly before deleting the cloud account."
+            return
+        }
+
+        let requestedAt = now()
+        let request = AccountDeletionRequest(
+            session: session,
+            confirmDeletion: true,
+            confirmationText: confirmationText,
+            requestedAt: requestedAt
+        )
+        recordBetaEvent(.accountDeletionRequested, occurredAt: requestedAt)
+        save()
+
+        isDeletingAccount = true
+        defer { isDeletingAccount = false }
+
+        do {
+            let result = try await accountDeletionService.deleteAccount(request)
+            guard currentBackendSession().ownerUserID == session.ownerUserID else {
+                throw FirebaseBackendServiceError.contractMismatch(
+                    "The signed-in account changed before cloud account deletion finished."
+                )
+            }
+            activeAccountDeletionResult = result
+            state.accountDeletionResult = sanitizedAccountDeletionResult(result)
+            recordBetaEvent(
+                result.status == .deleted ? .accountDeletionCompleted : .accountDeletionPartial,
+                occurredAt: result.completedAt
+            )
+
+            if result.status == .deleted || result.firebaseAuthUser.status == .deleted || result.firebaseAuthUser.status == .alreadyMissing {
+                let signOutResult = await authenticationService.signOut(for: state)
+                if signOutResult.status == .signedOut {
+                    applyAuthenticationResult(signOutResult, shouldSurfaceMessage: false)
+                } else {
+                    clearAuthenticatedAccount()
+                    clearCareerGraphSyncPreview()
+                }
+                activeAccountDeletionResult = result
+                state.accountDeletionResult = sanitizedAccountDeletionResult(result)
+            }
+
+            errorMessage = result.status == .deleted
+                ? nil
+                : "Cloud account deletion is partial. Keep this result for support and retry after reauthenticating."
+            save()
+        } catch {
+            errorMessage = "Cloud account deletion could not be completed. Reauthenticate, then try again."
+        }
+    }
+
     func restorePreviousAuthenticationSession() async {
         guard !isRestoringAuthenticationSession else { return }
+        guard !isAccountDataOperationInFlight else { return }
         isRestoringAuthenticationSession = true
         defer { isRestoringAuthenticationSession = false }
 
@@ -492,6 +678,10 @@ final class OpenLARPStore {
 
     func signInWithGoogle(presenting anchor: OpenLARPAuthenticationPresentationAnchor?) async {
         guard !isSigningInWithGoogle else { return }
+        guard !isAccountDataOperationInFlight else {
+            errorMessage = "Wait for account data controls to finish before changing accounts."
+            return
+        }
         isSigningInWithGoogle = true
         defer { isSigningInWithGoogle = false }
 
@@ -504,6 +694,10 @@ final class OpenLARPStore {
 
     func signOutOfAccount() async {
         guard !isSigningOutOfAccount else { return }
+        guard !isAccountDataOperationInFlight else {
+            errorMessage = "Wait for account data controls to finish before signing out."
+            return
+        }
         isSigningOutOfAccount = true
         defer { isSigningOutOfAccount = false }
 
@@ -1005,6 +1199,7 @@ final class OpenLARPStore {
         let resolvedAccountID = session.accountID ?? session.ownerUserID
         if profile.accountID != resolvedAccountID {
             profile.privacy.allowsPrivateEvidenceCloudSync = false
+            clearAccountDataControlResults()
         }
         profile.accountID = resolvedAccountID
         profile.email = session.email
@@ -1021,6 +1216,67 @@ final class OpenLARPStore {
         profile.updatedAt = now()
         state.userProfile = profile
         state.updatedAt = profile.updatedAt
+        clearAccountDataControlResults()
+    }
+
+    private func clearAccountDataControlResults() {
+        activePrivateEvidenceBackupCleanupResult = nil
+        activeAccountDeletionResult = nil
+        state.privateEvidenceBackupCleanupResult = nil
+        state.accountDeletionResult = nil
+    }
+
+    private func sanitizedPrivateEvidenceBackupCleanupResult(
+        _ result: PrivateEvidenceBackupCleanupResult
+    ) -> PrivateEvidenceBackupCleanupResult {
+        var sanitized = result
+        sanitized.candidates = result.candidates.enumerated().map { index, candidate in
+            PrivateEvidenceBackupCleanupCandidate(
+                attachmentID: "backup-\(index + 1)",
+                proofID: nil,
+                storagePath: "private proof backup",
+                storageGeneration: nil,
+                status: candidate.status,
+                canDelete: false,
+                deleted: candidate.deleted,
+                reason: sanitizedBackupCleanupReason(for: candidate)
+            )
+        }
+        return sanitized
+    }
+
+    private func sanitizedBackupCleanupReason(for candidate: PrivateEvidenceBackupCleanupCandidate) -> String {
+        switch candidate.status {
+        case .eligible:
+            return "This synced private proof backup was eligible when checked. Run a fresh check before deleting."
+        case .deleted:
+            return "This synced private proof backup was deleted."
+        case .storageDeleteFailed, .firestoreDeleteFailed:
+            return "This synced private proof backup needs retry or support."
+        case .missingFirestoreAttachment, .firestoreReceiptMismatch, .storageObjectMissing, .storageMetadataMismatch:
+            return "This synced private proof backup was not eligible for deletion."
+        }
+    }
+
+    private func sanitizedAccountDeletionResult(_ result: AccountDeletionResult) -> AccountDeletionResult {
+        var sanitized = result
+        sanitized.firestoreUserTree = sanitizedAccountDeletionScope(result.firestoreUserTree)
+        sanitized.storageUserPrefix = sanitizedAccountDeletionScope(result.storageUserPrefix)
+        sanitized.quotaUsageTree = sanitizedAccountDeletionScope(result.quotaUsageTree)
+        sanitized.firebaseAuthUser.errorMessage = nil
+        sanitized.deletionRequestMarker.errorMessage = nil
+        return sanitized
+    }
+
+    private func sanitizedAccountDeletionScope(_ result: AccountDeletionScopeResult) -> AccountDeletionScopeResult {
+        AccountDeletionScopeResult(
+            status: result.status,
+            deletedCount: result.deletedCount,
+            attemptedCount: result.attemptedCount,
+            failedCount: result.failedCount,
+            failedPathSamples: nil,
+            errorMessage: nil
+        )
     }
 
     private func recordAIWorkflowRun(_ run: V0AIWorkflowRun) {
