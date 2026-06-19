@@ -62,6 +62,8 @@ npm install
 npm run typecheck:backend
 npm run test:backend
 npm run build:backend
+npm run public:safety
+npm run test:scripts
 npm run test:rules:emulators
 npm run firebase:live-readiness
 npm run firebase:signed-in-smoke
@@ -79,5 +81,7 @@ Do not commit:
 - Xcode user state
 - build output
 - private founder/application notes
+
+`npm run public:safety` fails if local Firebase or RevenueCat plists, `.env` files, Apple signing assets, macOS metadata, or common real-looking key patterns become tracked. This keeps the public-readable repository clean while still allowing ignored local config on a developer machine.
 
 The app is intentionally structured so the iOS client does not call LLM providers directly. AI providers should be routed through backend services such as Cloud Run, Cloud Functions, or Genkit.
