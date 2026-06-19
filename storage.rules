@@ -48,10 +48,24 @@ service firebase.storage {
       ];
     }
 
+    function privateEvidenceCloudSyncConsentPath(userId) {
+      return /databases/(default)/documents/users/$(userId)/consents/privateEvidenceCloudSync;
+    }
+
+    function hasAcceptedPrivateEvidenceCloudSyncConsent(userId) {
+      return firestore.exists(privateEvidenceCloudSyncConsentPath(userId))
+        && firestore.get(privateEvidenceCloudSyncConsentPath(userId)).data.schemaVersion == 1
+        && firestore.get(privateEvidenceCloudSyncConsentPath(userId)).data.ownerUserID == userId
+        && firestore.get(privateEvidenceCloudSyncConsentPath(userId)).data.status == 'accepted'
+        && firestore.get(privateEvidenceCloudSyncConsentPath(userId)).data.allowsPrivateEvidenceCloudSync == true
+        && firestore.get(privateEvidenceCloudSyncConsentPath(userId)).data.consentTextVersion == 'private-evidence-cloud-sync-v1';
+    }
+
     match /users/{userId}/proofAttachments/{attachmentId} {
       allow read: if isUser(userId);
       allow create: if resource == null
         && isUser(userId)
+        && hasAcceptedPrivateEvidenceCloudSyncConsent(userId)
         && request.resource.size < 10 * 1024 * 1024
         && isAllowedProofContentType()
         && hasOpenLARPProofMetadata()

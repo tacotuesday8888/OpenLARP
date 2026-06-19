@@ -68,6 +68,7 @@ export type ProofUploadPromotionResponse =
   | OpenLARPFunctionError;
 
 export type ProofUploadPromotionDependencies = {
+  readPrivateEvidenceCloudSyncConsent: (userID: string) => Promise<boolean>;
   readStorageObject: (storagePath: string) => Promise<ProofUploadPromotionStorageObject | null>;
   writeProofAttachmentDocument: (
     userID: string,
@@ -87,6 +88,7 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "text/plain"
 ]);
 const MAX_PROOF_UPLOAD_BYTES = 10 * 1024 * 1024;
+const PRIVATE_EVIDENCE_CONSENT_TEXT_VERSION = "private-evidence-cloud-sync-v1";
 const FIREBASE_MANAGED_STORAGE_METADATA_KEYS = new Set([
   "firebaseStorageDownloadTokens"
 ]);
@@ -106,6 +108,14 @@ export async function handleProofUploadPromotionRequest(
   }
 
   const promotedAtDate = dependencies.now?.() ?? new Date();
+  const hasPrivateEvidenceConsent = await dependencies.readPrivateEvidenceCloudSyncConsent(userID);
+  if (!hasPrivateEvidenceConsent) {
+    return functionError(
+      "permission-denied",
+      "Private evidence cloud sync consent is required before proof upload receipts can be promoted."
+    );
+  }
+
   const quotaDecision = await dependencies.quotaGuard?.checkAndRecord({
     userID,
     callable: "promoteProofUploadReceipt",
@@ -395,6 +405,7 @@ export function adminProofUploadPromotionDependencies(
   quotaGuard?: CallableQuotaGuard
 ): ProofUploadPromotionDependencies {
   return {
+    readPrivateEvidenceCloudSyncConsent,
     readStorageObject,
     async writeProofAttachmentDocument(userID, attachmentID, document) {
       await getFirestore()
@@ -403,6 +414,28 @@ export function adminProofUploadPromotionDependencies(
     },
     ...(quotaGuard ? { quotaGuard } : {})
   };
+}
+
+async function readPrivateEvidenceCloudSyncConsent(userID: string): Promise<boolean> {
+  const snapshot = await getFirestore()
+    .doc(`users/${userID}/consents/privateEvidenceCloudSync`)
+    .get();
+  if (!snapshot.exists) {
+    return false;
+  }
+
+  return isAcceptedPrivateEvidenceCloudSyncConsentDocument(userID, snapshot.data());
+}
+
+export function isAcceptedPrivateEvidenceCloudSyncConsentDocument(
+  userID: string,
+  data: Record<string, unknown> | undefined
+): boolean {
+  return data?.schemaVersion === 1
+    && data?.ownerUserID === userID
+    && data?.status === "accepted"
+    && data?.allowsPrivateEvidenceCloudSync === true
+    && data?.consentTextVersion === PRIVATE_EVIDENCE_CONSENT_TEXT_VERSION;
 }
 
 async function readStorageObject(storagePath: string): Promise<ProofUploadPromotionStorageObject | null> {

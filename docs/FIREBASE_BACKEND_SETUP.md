@@ -25,6 +25,8 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `ProfileView` exposes account status, Google sign-in, restore, and sign-out controls while preserving local/mock mode.
 - `FirebaseReadyCareerGraphSyncService` routes signed-in users to a Firestore-backed career graph metadata sync and keeps signed-out users in local preview mode.
 - `FirebaseFirestoreCareerGraphSyncService` uploads available proof attachment bytes to Firebase Storage before writing account-owned Firestore metadata for profiles, goals, target roles, proof records, outcomes, and readiness snapshots.
+- Private goal context, private outcomes, proof records, proof attachment metadata, and proof attachment files are included only when the user has enabled explicit private evidence cloud sync. Public "share wins" permission is separate and does not allow private evidence backup.
+- When private evidence sync is enabled, iOS calls `setPrivateEvidenceCloudSyncConsent`; the backend writes `users/{uid}/consents/privateEvidenceCloudSync` before proof uploads so Firestore and Storage rules can enforce the consent gate.
 - `FirebaseStorageProofAttachmentUploader` writes proof bytes to deterministic `users/{uid}/proofAttachments/{attachmentId}` paths with owner, proof, attachment, and idempotency custom metadata.
 - `FirebaseCallableProofAttachmentReceiptPromoter` calls `promoteProofUploadReceipt` after Storage upload so the backend verifies the Storage object with the Admin SDK and writes uploaded proof attachment receipts server-side.
 - `CareerGraphSyncUploadIntent.localRelativePath` is runtime-only and is intentionally omitted from encoded sync manifests and Firestore documents.
@@ -73,7 +75,17 @@ App Check enforcement is intentionally not enabled yet for Firestore, Storage, o
 
 Firestore rules currently allow signed-in users to read only their own `users/{uid}` tree. Client writes are limited to the account root, named career graph collections, proof records, and pending proof attachment metadata; arbitrary user subcollections are denied.
 
-Firestore rules enforce owner/path consistency, block client-written external action claims and sync status fields, block embedded proof attachment arrays, and restrict client proof attachment metadata to `pendingUpload`. Proof upload receipt promotion is server-owned through `promoteProofUploadReceipt`, and backend event acknowledgement is server-owned through `acknowledgeBackendEvents`. The callable backend now also records per-user daily quota units before AI workflow dispatch, proof receipt promotion, proof upload reconciliation, or backend event acknowledgement. This is still a beta client-sync model, not a fully server-trusted career graph; production trust still requires derived readiness/history writes, App Check enforcement after provider rollout, provider token/cost accounting, and signed-in simulator/device smoke tests.
+Firestore rules enforce owner/path consistency, block client-written external action claims and sync status fields, block embedded proof attachment arrays, and restrict client proof attachment metadata to `pendingUpload`. Private goal context, private outcomes, proof records, and proof attachment metadata now require an accepted `users/{uid}/consents/privateEvidenceCloudSync` document; `shareWins` alone does not satisfy this gate. Client create/update/delete is denied for consent documents. Consent recording and revocation are server-owned through `setPrivateEvidenceCloudSyncConsent`, proof upload receipt promotion is server-owned through `promoteProofUploadReceipt`, and backend event acknowledgement is server-owned through `acknowledgeBackendEvents`. The callable backend now also records per-user daily quota units before AI workflow dispatch, proof receipt promotion, proof upload reconciliation, or backend event acknowledgement. This is still a beta client-sync model, not a fully server-trusted career graph; production trust still requires private evidence deletion/retention behavior, derived readiness/history writes, App Check enforcement after provider rollout, provider token/cost accounting, and signed-in simulator/device smoke tests.
+
+Live Storage rules use Firebase's cross-service `firestore.exists(...)` and `firestore.get(...)` support to read private evidence consent documents. The Cloud Storage for Firebase service agent must have a Firestore read role for this to work outside the emulator. For `openlarp-dev-langqi`, the required member is `service-795318771575@gcp-sa-firebasestorage.iam.gserviceaccount.com`, and it has `roles/datastore.viewer`.
+
+The private evidence sync consent document is:
+
+```text
+users/{uid}/consents/privateEvidenceCloudSync
+```
+
+It is written only by the backend callable and includes `ownerUserID`, `status`, `allowsPrivateEvidenceCloudSync`, `updatedAt`, `consentTextVersion`, `collectionPath`, `documentPath`, and either `acceptedAt` or `revokedAt`. Firestore and Storage gates require `status: "accepted"` and `allowsPrivateEvidenceCloudSync: true`. Revoked consent blocks new private proof sync, but broad beta still needs product-defined deletion/retention behavior for proof already uploaded before revocation.
 
 Storage rules currently reserve this path:
 
@@ -82,6 +94,8 @@ users/{uid}/proofAttachments/{attachmentId}
 ```
 
 Only the signed-in owner can read proof attachments and create new proof attachment objects. Client-side proof attachment uploads are write-once: an existing object cannot be overwritten or deleted by the client. Repeated syncs stay safe because the iOS Firebase Storage adapter accepts an existing object only when its path, content type, byte count, owner ID, proof ID, attachment ID, and idempotency key exactly match the intended upload. The server callable then verifies the same Storage metadata before writing the Firestore upload receipt. Uploads are limited to PNG, JPEG, HEIC, HEIF, PDF, and plain text under 10 MB. Uploads must include only OpenLARP custom metadata: owner ID, proof ID, attachment ID, and idempotency key. Storage rules enforce the owner, attachment ID, and idempotency key against the signed-in user and path; the proof ID is carried forward into the Firestore upload receipt contract.
+
+Storage upload create rules also require the Firestore consent document to exist before proof bytes can be written. Storage rules use the supported Firebase Rules `firestore.exists(...)` lookup against the default Firestore database; detailed consent document shape remains enforced in Firestore rules and backend code.
 
 Client-written top-level proof attachment Firestore documents now require:
 
@@ -100,7 +114,7 @@ which verifies:
 
 Proof record Firestore documents cannot embed attachment arrays. Attachment metadata must be written through the dedicated proof-attachment collection. The iOS sync adapter replaces proof-record documents instead of merge-writing them so older local beta records with embedded attachments are cleaned up on the next sync.
 
-Current beta limitation: proof upload receipts, backend event acknowledgement, and per-user callable quotas are server-owned, but a fully authoritative career graph still needs derived readiness/history writes, App Check enforcement, provider token/cost accounting, and signed-in simulator/device smoke tests.
+Current beta limitation: proof upload receipts, backend event acknowledgement, and private evidence sync consent are server-owned, and work-producing callables have per-user quota guards. A fully authoritative career graph still needs uploaded-proof deletion/retention behavior after revoked consent, derived readiness/history writes, App Check enforcement, provider token/cost accounting, and signed-in simulator/device smoke tests.
 
 Firestore rules now prevent backend event documents from bypassing the dedicated `backendEvents` rule through a broad user-tree rule. The broad recursive user write path has been removed; only named beta sync collections accept client writes. Backend event documents are owner-readable, but client create, update, and delete are denied. The server callable validates exact event shape, matching owner, known event kind, idempotency key, timestamp fields, and known typed summary fields before writing acknowledged history through the Admin SDK.
 
@@ -111,16 +125,17 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Storage rules are deployed to `openlarp-dev-langqi`.
 - The Firebase CLI environment has been authenticated locally, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
 - Security rules validate through Firebase MCP.
-- Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
-- Firebase Functions config points to `backend/functions` with Node.js 22. `runOpenLARPWorkflow` is the callable AI workflow boundary, `promoteProofUploadReceipt` is the server-trusted proof receipt boundary, `reconcileProofUploads` is the conservative orphan repair/report boundary, and `acknowledgeBackendEvents` is the server-owned backend event acknowledgement boundary.
+- Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, private evidence sync consent gates, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
+- Firebase Functions config points to `backend/functions` with Node.js 22. `runOpenLARPWorkflow` is the callable AI workflow boundary, `setPrivateEvidenceCloudSyncConsent` is the server-owned private evidence consent boundary, `promoteProofUploadReceipt` is the server-trusted proof receipt boundary, `reconcileProofUploads` is the conservative orphan repair/report boundary, and `acknowledgeBackendEvents` is the server-owned backend event acknowledgement boundary.
 - The deployable Functions package is intentionally Genkit-free while live model calls are disabled; Genkit/Gemini orchestration remains isolated in `backend/ai`.
 - `backend/functions/package-lock.json` is committed because Firebase deploys from that source directory, and the package pins Firebase Admin to the latest 13.x version compatible with `firebase-functions@7.2.5`.
 - The iOS app is wired to try `runOpenLARPWorkflow` through Firebase Functions first and preserve local V0 behavior through fallback when live Firebase is unavailable.
-- `promoteProofUploadReceipt` exists as an authenticated callable that verifies uploaded proof Storage objects with the Admin SDK and writes Firestore upload receipts server-side.
+- `setPrivateEvidenceCloudSyncConsent` exists as an authenticated callable that records accepted/revoked private evidence sync consent server-side.
+- `promoteProofUploadReceipt` exists as an authenticated callable that checks accepted private evidence sync consent, verifies uploaded proof Storage objects with the Admin SDK, and writes Firestore upload receipts server-side.
 - `reconcileProofUploads` exists as an authenticated callable repair/report boundary for rare orphaned proof uploads. It defaults to report-only and deletes only older owner-scoped Storage objects whose custom metadata matches the signed-in user and whose Firestore proof attachment document is missing.
 - `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are protected by server-side per-user daily callable quota units. Exhausted calls return `resource-exhausted` before workflow dispatch, Storage scans, Storage reads, Firestore receipt writes, or backend event acknowledgement writes.
 - iOS App Check provider scaffolding is linked and configured, but Firebase product enforcement is still off until console registration, debug token handling, metrics, and signed-in simulator/device checks are complete.
-- `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are expected deployed active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
+- `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents` are expected deployed active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
 - The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
 - `npm run firebase:signed-in-smoke` creates a temporary Firebase Auth smoke user through a local Admin custom token, calls the live workflow/proof/event callables as that signed-in user, validates Storage and Firestore side effects, and deletes its temporary Auth, Storage, Firestore, and quota data.
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
@@ -140,11 +155,12 @@ The check verifies:
 
 - Firebase CLI version
 - default Firestore database shape
-- active deployed callable Functions, including proof upload receipt promotion and backend event acknowledgement
-- unauthenticated callable rejection from the live workflow, proof promotion, and backend event acknowledgement endpoints
+- active deployed callable Functions, including private evidence consent, proof upload receipt promotion, and backend event acknowledgement
+- unauthenticated callable rejection from the live workflow, private evidence consent, proof promotion, and backend event acknowledgement endpoints
 - local deploy source includes the server-side callable quota guard
 - CLI retrieval of the iOS Firebase config without printing secret-bearing plist values
 - Storage default bucket existence when `gcloud` is available
+- Cloud Storage for Firebase service-agent IAM can read Firestore consent documents for Storage rules
 - Functions Artifact Registry cleanup policies when `gcloud` is available
 
 A clean run should finish without missing Google OAuth ID or missing Storage bucket warnings. This script confirms the live project shape and local deploy source shape, but it does not replace the signed-in smoke check or a simulator/device smoke test for Google Sign-In UX, Firestore writes, Storage upload/read rules, quota exhaustion, or callable AI fallback behavior.
@@ -162,6 +178,7 @@ The check uses a temporary Firebase Auth user and does not print ID tokens, API 
 - local Admin credentials can mint a Firebase custom token for a temporary smoke UID
 - the temporary ID token is accepted by `runOpenLARPWorkflow`
 - the live proof Storage bucket accepts a temporary proof object written through a signed-in Firebase client session
+- `setPrivateEvidenceCloudSyncConsent` records accepted consent before private proof bytes or metadata sync
 - `promoteProofUploadReceipt` verifies that object and writes the server receipt
 - `reconcileProofUploads` reports the uploaded proof attachment as linked
 - `acknowledgeBackendEvents` writes server-owned backend event history
@@ -193,10 +210,11 @@ This CLI smoke test complements but does not replace a real simulator/device Goo
 1. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
 2. Keep `npm run firebase:live-readiness` and `npm run firebase:signed-in-smoke` passing after backend deploys.
 3. Test Firestore career graph sync, Storage proof attachment upload, server proof receipt promotion, and authenticated Firebase callable AI fallback behavior on a simulator or device.
-4. Register App Check in Firebase Console, verify simulator/debug and device App Attest metrics, update smoke tooling for App Check tokens, then enable App Check enforcement.
-5. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
-6. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
-7. Keep provider model IDs and API keys only on the backend.
+4. Define deletion/retention behavior for users who turn off private evidence cloud sync after uploading proof.
+5. Register App Check in Firebase Console, verify simulator/debug and device App Attest metrics, update smoke tooling for App Check tokens, then enable App Check enforcement.
+6. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
+7. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
+8. Keep provider model IDs and API keys only on the backend.
 
 ## Local Commands
 

@@ -452,6 +452,7 @@ final class AIBackendContractTests: XCTestCase {
             "kind" : "cookedDiagnostic",
             "privacy" : {
               "allowsLongTermMemoryWrite" : false,
+              "allowsPrivateEvidenceCloudSync" : false,
               "memoryMode" : "localOnly",
               "requiresUserApprovalForExternalActions" : true,
               "shareWins" : false

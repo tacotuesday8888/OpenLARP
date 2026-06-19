@@ -83,6 +83,7 @@ struct V0AIBackendPrivacyMetadata: Codable, Equatable {
     var allowsLongTermMemoryWrite: Bool
     var requiresUserApprovalForExternalActions: Bool
     var shareWins: Bool
+    var allowsPrivateEvidenceCloudSync: Bool
 
     init(
         privacy: CareerUserPrivacySettings,
@@ -93,6 +94,7 @@ struct V0AIBackendPrivacyMetadata: Codable, Equatable {
             .allowsLongTermMemoryWrite(for: privacy)
         self.requiresUserApprovalForExternalActions = privacy.requireApprovalForExternalActions
         self.shareWins = privacy.shareWins
+        self.allowsPrivateEvidenceCloudSync = privacy.allowsPrivateEvidenceCloudSync
     }
 }
 

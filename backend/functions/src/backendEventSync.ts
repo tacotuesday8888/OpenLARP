@@ -39,6 +39,7 @@ type BackendEventSummary = {
   qualityScore?: number;
   memoryMode?: string;
   shareWins?: boolean;
+  allowsPrivateEvidenceCloudSync?: boolean;
   documentCount?: number;
   proofUploadCount?: number;
 };
@@ -137,6 +138,7 @@ const SUMMARY_KEYS = new Set([
   "qualityScore",
   "memoryMode",
   "shareWins",
+  "allowsPrivateEvidenceCloudSync",
   "documentCount",
   "proofUploadCount"
 ]);
@@ -478,7 +480,7 @@ function parseSummary(
     }
   }
 
-  const boolFields = ["qualityAccepted", "shareWins"] as const;
+  const boolFields = ["qualityAccepted", "shareWins", "allowsPrivateEvidenceCloudSync"] as const;
   for (const field of boolFields) {
     if (value[field] !== undefined) {
       if (typeof value[field] !== "boolean") {

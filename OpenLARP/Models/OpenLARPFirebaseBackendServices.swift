@@ -399,6 +399,7 @@ struct LocalProofAttachmentReceiptPromoter: CareerGraphProofAttachmentReceiptPro
 struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
     var backendEventSyncFunctionName: String
     var proofUploadPromotionFunctionName: String
+    var privateEvidenceConsentFunctionName: String
     var usesEmulator: Bool
     var emulatorHost: String
     var emulatorPort: Int
@@ -409,15 +410,104 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
     init(
         backendEventSyncFunctionName: String = "acknowledgeBackendEvents",
         proofUploadPromotionFunctionName: String = "promoteProofUploadReceipt",
+        privateEvidenceConsentFunctionName: String = "setPrivateEvidenceCloudSyncConsent",
         usesEmulator: Bool = false,
         emulatorHost: String = "localhost",
         emulatorPort: Int = 5001
     ) {
         self.backendEventSyncFunctionName = backendEventSyncFunctionName
         self.proofUploadPromotionFunctionName = proofUploadPromotionFunctionName
+        self.privateEvidenceConsentFunctionName = privateEvidenceConsentFunctionName
         self.usesEmulator = usesEmulator
         self.emulatorHost = emulatorHost
         self.emulatorPort = emulatorPort
+    }
+}
+
+private struct FirebasePrivateEvidenceCloudSyncConsentPayload: Codable, Equatable, Sendable {
+    var schemaVersion: Int
+    var enabled: Bool
+    var consentTextVersion: String
+
+    init(request: PrivateEvidenceCloudSyncConsentRequest) {
+        schemaVersion = request.schemaVersion
+        enabled = request.enabled
+        consentTextVersion = request.consentTextVersion
+    }
+}
+
+private struct FirebasePrivateEvidenceCloudSyncConsentResponse: Codable, Equatable, Sendable {
+    var ok: Bool
+    var schemaVersion: Int
+    var userID: String
+    var status: PrivateEvidenceCloudSyncConsentStatus
+    var allowsPrivateEvidenceCloudSync: Bool
+    var consentTextVersion: String
+    var firestoreDocumentPath: String
+    var updatedAt: Date
+    var externalActionTaken: Bool
+
+    func validatedResult(for request: PrivateEvidenceCloudSyncConsentRequest) throws -> PrivateEvidenceCloudSyncConsentResult {
+        guard ok,
+              schemaVersion == 1,
+              userID == request.session.ownerUserID,
+              status == (request.enabled ? .accepted : .revoked),
+              allowsPrivateEvidenceCloudSync == request.enabled,
+              consentTextVersion == request.consentTextVersion,
+              firestoreDocumentPath == "users/\(request.session.ownerUserID)/consents/privateEvidenceCloudSync",
+              externalActionTaken == false
+        else {
+            throw FirebaseBackendServiceError.contractMismatch("Private evidence consent response did not match the signed-in user or requested consent state.")
+        }
+
+        return PrivateEvidenceCloudSyncConsentResult(
+            request: request,
+            completedAt: updatedAt,
+            didContactNetwork: true,
+            status: status,
+            firestoreDocumentPath: firestoreDocumentPath,
+            externalActionTaken: externalActionTaken
+        )
+    }
+}
+
+struct FirebaseCallablePrivateEvidenceCloudSyncConsentService: PrivateEvidenceCloudSyncConsentServicing {
+    private let configuration: OpenLARPFirebaseCallableBackendConfiguration
+
+    init(configuration: OpenLARPFirebaseCallableBackendConfiguration = .production) {
+        self.configuration = configuration
+    }
+
+    func setConsent(_ request: PrivateEvidenceCloudSyncConsentRequest) async throws -> PrivateEvidenceCloudSyncConsentResult {
+        guard request.session.isAuthenticated else {
+            throw FirebaseBackendServiceError.authenticationRequired
+        }
+
+        #if canImport(FirebaseFunctions) && canImport(FirebaseCore) && canImport(FirebaseSharedSwift)
+        guard FirebaseApp.app() != nil else {
+            throw FirebaseBackendServiceError.configurationMissing
+        }
+
+        let functions = Functions.functions()
+        if configuration.usesEmulator {
+            functions.useEmulator(withHost: configuration.emulatorHost, port: configuration.emulatorPort)
+        }
+
+        let callable: Callable<
+            FirebasePrivateEvidenceCloudSyncConsentPayload,
+            FirebasePrivateEvidenceCloudSyncConsentResponse
+        > = functions.httpsCallable(
+            configuration.privateEvidenceConsentFunctionName,
+            requestAs: FirebasePrivateEvidenceCloudSyncConsentPayload.self,
+            responseAs: FirebasePrivateEvidenceCloudSyncConsentResponse.self,
+            encoder: FirebaseCallableAIWorkflowJSON.firebaseDataEncoder(),
+            decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
+        )
+        let response = try await callable.call(FirebasePrivateEvidenceCloudSyncConsentPayload(request: request))
+        return try response.validatedResult(for: request)
+        #else
+        throw FirebaseBackendServiceError.sdkUnavailable
+        #endif
     }
 }
 

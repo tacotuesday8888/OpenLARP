@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Timestamp } from "firebase-admin/firestore";
 import {
   handleProofUploadPromotionRequest,
+  isAcceptedPrivateEvidenceCloudSyncConsentDocument,
   type ProofUploadPromotionDependencies,
   type ProofUploadPromotionIntent,
   type ProofUploadPromotionResponse,
@@ -53,7 +54,9 @@ function storageObject(
 
 function makeDependencies(
   object: ProofUploadPromotionStorageObject | null,
-  options: Pick<ProofUploadPromotionDependencies, "quotaGuard"> = {}
+  options: Pick<ProofUploadPromotionDependencies, "quotaGuard"> & {
+    hasPrivateEvidenceCloudSyncConsent?: boolean;
+  } = {}
 ) {
   const writes: Array<{
     userID: string;
@@ -61,7 +64,12 @@ function makeDependencies(
     document: Record<string, unknown>;
   }> = [];
   const readPaths: string[] = [];
+  const consentReads: string[] = [];
   const dependencies: ProofUploadPromotionDependencies = {
+    async readPrivateEvidenceCloudSyncConsent(userID) {
+      consentReads.push(userID);
+      return options.hasPrivateEvidenceCloudSyncConsent ?? true;
+    },
     async readStorageObject(storagePath) {
       readPaths.push(storagePath);
       return object;
@@ -73,7 +81,7 @@ function makeDependencies(
     now: () => now
   };
 
-  return { dependencies, writes, readPaths };
+  return { dependencies, writes, readPaths, consentReads };
 }
 
 function authed(
@@ -87,6 +95,34 @@ function authed(
 }
 
 describe("handleProofUploadPromotionRequest", () => {
+  it("requires the full current private evidence consent document shape", () => {
+    const validConsent = {
+      schemaVersion: 1,
+      ownerUserID: "user_123",
+      status: "accepted",
+      allowsPrivateEvidenceCloudSync: true,
+      consentTextVersion: "private-evidence-cloud-sync-v1"
+    };
+
+    expect(isAcceptedPrivateEvidenceCloudSyncConsentDocument("user_123", validConsent)).toBe(true);
+    expect(isAcceptedPrivateEvidenceCloudSyncConsentDocument("user_123", {
+      ...validConsent,
+      schemaVersion: 0
+    })).toBe(false);
+    expect(isAcceptedPrivateEvidenceCloudSyncConsentDocument("user_123", {
+      ...validConsent,
+      ownerUserID: "other_user"
+    })).toBe(false);
+    expect(isAcceptedPrivateEvidenceCloudSyncConsentDocument("user_123", {
+      ...validConsent,
+      status: "revoked"
+    })).toBe(false);
+    expect(isAcceptedPrivateEvidenceCloudSyncConsentDocument("user_123", {
+      ...validConsent,
+      consentTextVersion: "private-evidence-cloud-sync-v0"
+    })).toBe(false);
+  });
+
   it("requires Firebase Auth before promoting uploaded proof receipts", async () => {
     const { dependencies } = makeDependencies(storageObject());
 
@@ -102,10 +138,11 @@ describe("handleProofUploadPromotionRequest", () => {
   });
 
   it("promotes a matching Storage object into a server-written proof attachment document", async () => {
-    const { dependencies, writes, readPaths } = makeDependencies(storageObject());
+    const { dependencies, writes, readPaths, consentReads } = makeDependencies(storageObject());
 
     const response = await authed(promotionIntent(), dependencies);
 
+    expect(consentReads).toEqual(["user_123"]);
     expect(readPaths).toEqual(["users/user_123/proofAttachments/attachment_123"]);
     expect(response).toMatchObject({
       ok: true,
@@ -158,6 +195,25 @@ describe("handleProofUploadPromotionRequest", () => {
     expect(((document?.uploadReceipt as Record<string, unknown>).uploadedAt)).toBeInstanceOf(Timestamp);
     expect(writes[0]?.document).not.toHaveProperty("localRelativePath");
     expect(writes[0]?.document).toHaveProperty("uploadReceipt");
+  });
+
+  it("requires accepted private evidence cloud sync consent before quota, Storage reads, or receipt writes", async () => {
+    const { guard, charges } = makeQuotaGuard({ limitUnits: 150 });
+    const { dependencies, consentReads, readPaths, writes } = makeDependencies(storageObject(), {
+      quotaGuard: guard,
+      hasPrivateEvidenceCloudSyncConsent: false
+    });
+
+    const response = await authed(promotionIntent(), dependencies);
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "permission-denied"
+    });
+    expect(consentReads).toEqual(["user_123"]);
+    expect(charges).toEqual([]);
+    expect(readPaths).toEqual([]);
+    expect(writes).toEqual([]);
   });
 
   it("records quota before reading Storage or writing promoted receipts", async () => {

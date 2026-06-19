@@ -2259,10 +2259,11 @@ final class V0EngineTests: XCTestCase {
         assertNoPrivateCloudExportLeaks(encodedRequest)
     }
 
-    func testCareerGraphSyncPreparationRequestDerivesPrivateEvidenceFromSharingPreference() {
+    func testCareerGraphSyncPreparationRequestRequiresPrivateEvidenceCloudSyncConsent() {
         let now = Date(timeIntervalSince1970: 13_550)
         var privateState = OpenLARPEngine.confirmGoal(goal, now: now)
-        privateState.userProfile?.privacy.shareWins = false
+        privateState.userProfile?.privacy.shareWins = true
+        privateState.userProfile?.privacy.allowsPrivateEvidenceCloudSync = false
         let privateSession = BackendUserSession.localOnly(for: privateState)
 
         let privateRequest = CareerGraphSyncPreparationRequest(
@@ -2274,18 +2275,19 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(privateRequest.includePrivateEvidence)
         XCTAssertFalse(privateRequest.snapshot.policy.includePrivateEvidence)
 
-        var shareableState = OpenLARPEngine.confirmGoal(goal, now: now)
-        shareableState.userProfile?.privacy.shareWins = true
-        let shareableSession = BackendUserSession.localOnly(for: shareableState)
+        var cloudSyncState = OpenLARPEngine.confirmGoal(goal, now: now)
+        cloudSyncState.userProfile?.privacy.shareWins = false
+        cloudSyncState.userProfile?.privacy.allowsPrivateEvidenceCloudSync = true
+        let cloudSyncSession = BackendUserSession.localOnly(for: cloudSyncState)
 
-        let shareableRequest = CareerGraphSyncPreparationRequest(
-            state: shareableState,
-            session: shareableSession,
+        let cloudSyncRequest = CareerGraphSyncPreparationRequest(
+            state: cloudSyncState,
+            session: cloudSyncSession,
             requestedAt: now
         )
 
-        XCTAssertTrue(shareableRequest.includePrivateEvidence)
-        XCTAssertTrue(shareableRequest.snapshot.policy.includePrivateEvidence)
+        XCTAssertTrue(cloudSyncRequest.includePrivateEvidence)
+        XCTAssertTrue(cloudSyncRequest.snapshot.policy.includePrivateEvidence)
     }
 
     func testCareerGraphSetupStatusContentShowsMissingSetupActions() {
@@ -2399,6 +2401,7 @@ final class V0EngineTests: XCTestCase {
         store.state.progress.proofCount = 1
         store.state.userProfile?.privacy.memoryMode = .cloudReady
         store.state.userProfile?.privacy.shareWins = true
+        store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync = true
 
         await store.prepareCareerGraphSyncPreview()
 
@@ -2460,7 +2463,8 @@ final class V0EngineTests: XCTestCase {
         store.state = OpenLARPEngine.confirmGoal(goal, now: now)
         store.state.progress.recentProof = [proof]
         store.state.progress.proofCount = 1
-        store.state.userProfile?.privacy.shareWins = false
+        store.state.userProfile?.privacy.shareWins = true
+        store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync = false
 
         await store.prepareCareerGraphSyncPreview()
 
@@ -2641,7 +2645,7 @@ final class V0EngineTests: XCTestCase {
     func testCareerGraphSyncActionContentDisclosesWhenProofFilesWillUpload() {
         let local = CareerGraphSyncActionContent(
             isAuthenticated: false,
-            shareWinsEnabled: true,
+            privateEvidenceCloudSyncEnabled: true,
             proofFileCount: 2
         )
         XCTAssertEqual(local.title, "Preview Saved Career Graph")
@@ -2650,16 +2654,16 @@ final class V0EngineTests: XCTestCase {
 
         let metadataOnly = CareerGraphSyncActionContent(
             isAuthenticated: true,
-            shareWinsEnabled: false,
+            privateEvidenceCloudSyncEnabled: false,
             proofFileCount: 2
         )
         XCTAssertEqual(metadataOnly.title, "Sync Career Graph Metadata")
         XCTAssertEqual(metadataOnly.progressLabel, "Syncing Metadata")
-        XCTAssertTrue(metadataOnly.footnote.contains("Proof files are not uploaded"))
+        XCTAssertTrue(metadataOnly.footnote.contains("Private proof, files, and notes are not uploaded"))
 
         let proofUpload = CareerGraphSyncActionContent(
             isAuthenticated: true,
-            shareWinsEnabled: true,
+            privateEvidenceCloudSyncEnabled: true,
             proofFileCount: 2
         )
         XCTAssertEqual(proofUpload.title, "Sync Career Graph & Proof Files")
@@ -3118,6 +3122,7 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(Set(privacyEvents.map(\.idempotencyKey)).count, 2)
         XCTAssertEqual(privacyEvents.map(\.summary.memoryMode), [.cloudReady, .localOnly])
         XCTAssertEqual(privacyEvents.map(\.summary.shareWins), [false, true])
+        XCTAssertEqual(privacyEvents.map(\.summary.allowsPrivateEvidenceCloudSync), [false, false])
 
         let reloaded = try persistence.load()
         XCTAssertEqual(reloaded.backendEvents, store.state.backendEvents)
@@ -3727,11 +3732,13 @@ final class V0EngineTests: XCTestCase {
 
         XCTAssertEqual(store.state.userProfile?.privacy.memoryMode, .off)
         XCTAssertEqual(store.state.userProfile?.privacy.shareWins, false)
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
         XCTAssertEqual(store.state.userProfile?.privacy.requireApprovalForExternalActions, true)
 
         let reloaded = try persistence.load()
         XCTAssertEqual(reloaded.userProfile?.privacy.memoryMode, .off)
         XCTAssertEqual(reloaded.userProfile?.privacy.shareWins, false)
+        XCTAssertEqual(reloaded.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
     }
 
     @MainActor
@@ -3750,6 +3757,7 @@ final class V0EngineTests: XCTestCase {
         XCTAssertTrue(store.state.needsGoalSetup)
         XCTAssertEqual(store.state.userProfile?.privacy.memoryMode, .off)
         XCTAssertEqual(store.state.userProfile?.privacy.shareWins, false)
+        XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
     }
 
     @MainActor
@@ -3866,6 +3874,7 @@ final class V0EngineTests: XCTestCase {
         state.userProfile?.accountID = "acct_private_123"
         state.userProfile?.email = "langqi@example.com"
         state.userProfile?.backgroundSummary = "Private background with visa concern and campus office details."
+        state.userProfile?.privacy.allowsPrivateEvidenceCloudSync = true
         state.progress.recentProof = [proof]
         state.progress.proofCount = 1
         return state

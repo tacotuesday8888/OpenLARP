@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 const scriptURL = new URL("../firebase-signed-in-smoke.sh", import.meta.url);
 const scriptPath = scriptURL.pathname;
 const script = readFileSync(scriptURL, "utf8");
+const liveReadinessScript = readFileSync(
+  new URL("../firebase-live-readiness.sh", import.meta.url),
+  "utf8"
+);
 
 function runPreflight(env = {}) {
   return spawnSync("bash", [scriptPath], {
@@ -89,10 +93,26 @@ describe("firebase-signed-in-smoke guardrails", () => {
 
   it("uses signed-in Firebase client SDK checks for user-facing Storage and Firestore access", () => {
     expect(script).toContain("signInWithCustomToken");
+    expect(script).toContain('callCallable("setPrivateEvidenceCloudSyncConsent"');
+    expect(script.indexOf('callCallable("setPrivateEvidenceCloudSyncConsent"')).toBeLessThan(
+      script.indexOf("clientUploadBytes(")
+    );
     expect(script).toContain("clientUploadBytes");
     expect(script).toContain("clientGetMetadata");
     expect(script).toContain("clientGetBytes");
     expect(script).toContain("clientGetDoc(clientDoc(clientFirestore");
     expect(script).not.toContain("exchangeCustomToken");
+  });
+
+  it("keeps signed-in smoke payloads current with private evidence consent contracts", () => {
+    expect(script).toContain("allowsPrivateEvidenceCloudSync: false");
+    expect(script).toContain('consentTextVersion: "private-evidence-cloud-sync-v1"');
+    expect(script).toContain('assert(consent.status === "accepted"');
+  });
+
+  it("checks Storage-to-Firestore IAM needed by private evidence Storage rules", () => {
+    expect(liveReadinessScript).toContain("gcp-sa-firebasestorage.iam.gserviceaccount.com");
+    expect(liveReadinessScript).toContain("roles/datastore.viewer");
+    expect(liveReadinessScript).toContain("Cloud Storage for Firebase service agent can read Firestore consent documents");
   });
 });

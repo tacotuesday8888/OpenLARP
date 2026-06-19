@@ -120,7 +120,6 @@ jobs:
             -scheme OpenLARP \
             -destination "id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath /tmp/OpenLARPDerivedDataTests \
-            CODE_SIGNING_ALLOWED=NO \
             test
 
       - name: Report skipped simulator tests

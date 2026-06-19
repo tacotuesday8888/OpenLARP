@@ -129,6 +129,35 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
         XCTAssertTrue(result.uploadReceipts.isEmpty)
     }
 
+    func testFirebaseCareerGraphSyncDoesNotTreatShareWinsAsPrivateProofConsent() async throws {
+        let now = Date(timeIntervalSince1970: 41_250)
+        var state = careerGraphStateWithProof(now: now)
+        state.userProfile?.privacy.shareWins = true
+        state.userProfile?.privacy.allowsPrivateEvidenceCloudSync = false
+        let session = BackendUserSession.firebaseAuthenticated(ownerUserID: "firebase_uid_no_private_consent")
+        let request = CareerGraphSyncPreparationRequest(
+            state: state,
+            session: session,
+            requestedAt: now
+        )
+        let writer = CapturingCareerGraphDocumentWriter()
+        let uploader = CapturingProofAttachmentUploader()
+        let service = FirebaseFirestoreCareerGraphSyncService(
+            writer: writer,
+            attachmentDataProvider: StaticProofAttachmentDataProvider(),
+            proofAttachmentUploader: uploader
+        )
+
+        let result = try await service.prepareSync(request)
+
+        XCTAssertEqual(result.status, .synced)
+        XCTAssertFalse(request.includePrivateEvidence)
+        XCTAssertFalse(result.syncManifest.documentWrites.map(\.documentType).contains(.proofRecord))
+        XCTAssertFalse(result.syncManifest.documentWrites.map(\.documentType).contains(.proofAttachment))
+        XCTAssertTrue(result.uploadIntents.isEmpty)
+        XCTAssertTrue(uploader.requests.isEmpty)
+    }
+
     func testDirectFirebaseCareerGraphSyncRequiresAuthentication() async {
         let now = Date(timeIntervalSince1970: 41_500)
         let state = careerGraphStateWithProof(now: now)
@@ -505,6 +534,7 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
         state.progress.recentProof = [proof]
         state.progress.proofCount = 1
         state.userProfile?.privacy.shareWins = true
+        state.userProfile?.privacy.allowsPrivateEvidenceCloudSync = true
         state.userProfile?.privacy.memoryMode = .cloudReady
         return state
     }

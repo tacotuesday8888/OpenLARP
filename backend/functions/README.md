@@ -7,11 +7,12 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 ## Current Status
 
 - Callable export: `runOpenLARPWorkflow`
+- Callable export: `setPrivateEvidenceCloudSyncConsent`
 - Callable export: `reconcileProofUploads`
 - Callable export: `promoteProofUploadReceipt`
 - Callable export: `acknowledgeBackendEvents`
-- Callable quota: per-user daily Firestore-backed units for all authenticated
-  callables
+- Callable quota: per-user daily Firestore-backed units for work-producing
+  authenticated callables
 - Runtime: Node.js 22
 - Firebase Admin: pinned to `13.10.0` to satisfy
   `firebase-functions@7.2.5` peer dependencies
@@ -22,9 +23,9 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
   are disabled
 - Deploy lockfile: `backend/functions/package-lock.json` is committed so
   Firebase Cloud Build installs the same deploy-source dependency graph
-- Dev deploy: `runOpenLARPWorkflow`, `reconcileProofUploads`,
-  `promoteProofUploadReceipt`, and `acknowledgeBackendEvents` are expected
-  active Gen 2 callables in
+- Dev deploy: `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`,
+  `reconcileProofUploads`, `promoteProofUploadReceipt`, and
+  `acknowledgeBackendEvents` are expected active Gen 2 callables in
   `openlarp-dev-langqi` / `us-central1`
 - Live endpoint smoke: unsigned workflow requests return `UNAUTHENTICATED`
 - Artifact cleanup: `gcf-artifacts` keeps the most recent 5 versions and deletes
@@ -43,6 +44,7 @@ iOS Storage upload into a server-trusted Firestore proof attachment receipt.
 The callable:
 
 - requires Firebase Auth
+- requires accepted server-owned private evidence cloud sync consent
 - accepts only deterministic `users/{uid}/proofAttachments/{attachmentId}` paths
 - validates proof ID, attachment ID, owner metadata, content type, byte count,
   idempotency key, and Storage object existence with the Admin SDK
@@ -55,14 +57,36 @@ The callable:
 Firestore rules now allow clients to create only `pendingUpload` proof
 attachment metadata. Uploaded receipts are server-owned.
 
+## Private Evidence Cloud Sync Consent
+
+`setPrivateEvidenceCloudSyncConsent` is an authenticated Firebase callable that
+records whether the signed-in user accepts or revokes private evidence cloud
+sync.
+
+The callable:
+
+- requires Firebase Auth
+- accepts only schema version 1 requests with a boolean `enabled` flag
+- writes `users/{uid}/consents/privateEvidenceCloudSync` with Admin SDK
+- records `status: accepted` plus `acceptedAt` when enabled
+- records `status: revoked` plus `revokedAt` when disabled
+- returns the server-owned document path and consent text version without
+  exposing tokens, proof text, provider metadata, prompts, or local file paths
+
+Firestore and Storage rules require `status: accepted` and
+`allowsPrivateEvidenceCloudSync: true` before private proof records, proof
+attachment metadata, or proof bytes can be written. Client create, update, and
+delete are denied for consent documents.
+
 ## Callable Quota / Budget Guard
 
-All authenticated callables use `callableQuotaGuard.ts` before expensive or
-server-writing side effects. The guard records one Admin Firestore transaction
-per request under `_serverUsage/{hashedUid}/days/{yyyy-MM-dd}` and writes a
-charge receipt under that day document. Every callable invocation consumes quota
-units; request IDs and idempotency keys are audit hints only, not free replay
-tokens.
+Work-producing authenticated callables use `callableQuotaGuard.ts` before
+expensive or server-writing side effects. The guard records one Admin Firestore
+transaction per request under `_serverUsage/{hashedUid}/days/{yyyy-MM-dd}` and
+writes a charge receipt under that day document. Guarded callable invocations
+consume quota units; request IDs and idempotency keys are audit hints only, not
+free replay tokens. Consent toggles are intentionally outside the daily quota
+guard so users can always revoke private evidence cloud sync.
 
 Current beta daily unit limits:
 

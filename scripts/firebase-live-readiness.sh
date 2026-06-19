@@ -67,6 +67,7 @@ const required = new Map([
   ["runOpenLARPWorkflow", "nodejs22"],
   ["reconcileProofUploads", "nodejs22"],
   ["promoteProofUploadReceipt", "nodejs22"],
+  ["setPrivateEvidenceCloudSyncConsent", "nodejs22"],
   ["acknowledgeBackendEvents", "nodejs22"]
 ]);
 for (const [id, runtime] of required) {
@@ -96,7 +97,7 @@ http_status="$(
   curl -sS -o "$callable_response" -w '%{http_code}' \
     -X POST "https://${FUNCTION_REGION}-${PROJECT_ID}.cloudfunctions.net/runOpenLARPWorkflow" \
     -H 'Content-Type: application/json' \
-    -d '{"data":{"schemaVersion":1,"run":{"schemaVersion":1,"kind":"cookedDiagnostic","providerRoute":"firebaseCallableGenkit","requestedAt":"2026-06-18T10:00:00.000Z","requestID":"11111111-1111-4111-8111-111111111111","privacy":{"memoryMode":"cloudReady","allowsLongTermMemoryWrite":true,"requiresUserApprovalForExternalActions":true,"shareWins":false}},"safetyRules":{"hardBannedClaims":["Do not invent fake employers, fake schools, fake certificates, fake titles, fake dates, fake projects, or fake ownership."],"requiredBehaviors":["Keep career recommendations tied to evidence and user-approved actions."],"privacyRequirements":["external actions require user approval before the system can act."]},"payload":{"goal":{"currentStatus":"New graduate","targetRole":"AI product engineer","timeline":"12 weeks","background":"CS student with one shipped class project.","existingProof":"GitHub project and internship notes.","confidence":3,"biggestBlocker":"Not enough role-specific proof."},"requestedAt":"2026-06-18T10:00:00.000Z"}}}'
+    -d '{"data":{"schemaVersion":1,"run":{"schemaVersion":1,"kind":"cookedDiagnostic","providerRoute":"firebaseCallableGenkit","requestedAt":"2026-06-18T10:00:00.000Z","requestID":"11111111-1111-4111-8111-111111111111","privacy":{"memoryMode":"cloudReady","allowsLongTermMemoryWrite":true,"requiresUserApprovalForExternalActions":true,"shareWins":false,"allowsPrivateEvidenceCloudSync":false}},"safetyRules":{"hardBannedClaims":["Do not invent fake employers, fake schools, fake certificates, fake titles, fake dates, fake projects, or fake ownership."],"requiredBehaviors":["Keep career recommendations tied to evidence and user-approved actions."],"privacyRequirements":["external actions require user approval before the system can act."]},"payload":{"goal":{"currentStatus":"New graduate","targetRole":"AI product engineer","timeline":"12 weeks","background":"CS student with one shipped class project.","existingProof":"GitHub project and internship notes.","confidence":3,"biggestBlocker":"Not enough role-specific proof."},"requestedAt":"2026-06-18T10:00:00.000Z"}}}'
 )"
 if [[ "$http_status" != "401" ]]; then
   fail "Unauthenticated callable returned HTTP $http_status instead of 401"
@@ -130,6 +131,26 @@ if (payload.error?.status !== "UNAUTHENTICATED") {
 }
 NODE
 pass "Proof upload promotion callable rejects unauthenticated requests"
+
+consent_response="$tmp_dir/consent-response.txt"
+consent_http_status="$(
+  curl -sS -o "$consent_response" -w '%{http_code}' \
+    -X POST "https://${FUNCTION_REGION}-${PROJECT_ID}.cloudfunctions.net/setPrivateEvidenceCloudSyncConsent" \
+    -H 'Content-Type: application/json' \
+    -d '{"data":{"schemaVersion":1,"enabled":true,"consentTextVersion":"private-evidence-cloud-sync-v1"}}'
+)"
+if [[ "$consent_http_status" != "401" ]]; then
+  fail "Unauthenticated private evidence consent callable returned HTTP $consent_http_status instead of 401"
+fi
+node --input-type=module - "$consent_response" <<'NODE'
+import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (payload.error?.status !== "UNAUTHENTICATED") {
+  throw new Error(`Unexpected private evidence consent callable error: ${JSON.stringify(payload)}`);
+}
+NODE
+pass "Private evidence consent callable rejects unauthenticated requests"
 
 event_ack_response="$tmp_dir/event-ack-response.txt"
 event_ack_http_status="$(
@@ -173,6 +194,34 @@ if command -v gcloud >/dev/null 2>&1; then
   else
     warn "Firebase Storage default bucket is not initialized; finish Storage setup in Firebase Console before rules deploy"
   fi
+
+  project_number="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+  storage_service_agent="service-${project_number}@gcp-sa-firebasestorage.iam.gserviceaccount.com"
+  iam_policy_json="$tmp_dir/iam-policy.json"
+  gcloud projects get-iam-policy "$PROJECT_ID" --format=json > "$iam_policy_json"
+  node --input-type=module - "$iam_policy_json" "$storage_service_agent" <<'NODE'
+import fs from "node:fs";
+
+const policy = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const storageServiceAgent = `serviceAccount:${process.argv[3]}`;
+const allowedRoles = new Set([
+  "roles/datastore.viewer",
+  "roles/datastore.user",
+  "roles/datastore.owner",
+  "roles/editor",
+  "roles/owner"
+]);
+const hasFirestoreReadRole = (policy.bindings ?? []).some((binding) => (
+  allowedRoles.has(binding.role) && (binding.members ?? []).includes(storageServiceAgent)
+));
+if (!hasFirestoreReadRole) {
+  throw new Error(
+    `Missing Firestore read IAM role for Cloud Storage for Firebase service agent ${storageServiceAgent}. ` +
+    "Grant roles/datastore.viewer so Storage rules can read private evidence consent documents."
+  );
+}
+NODE
+  pass "Cloud Storage for Firebase service agent can read Firestore consent documents"
 
   cleanup_json="$tmp_dir/cleanup-policies.json"
   gcloud artifacts repositories list-cleanup-policies "$FUNCTIONS_REPOSITORY" \

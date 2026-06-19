@@ -167,7 +167,8 @@ async function smokeWorkflow(idToken) {
         memoryMode: "cloudReady",
         allowsLongTermMemoryWrite: true,
         requiresUserApprovalForExternalActions: true,
-        shareWins: false
+        shareWins: false,
+        allowsPrivateEvidenceCloudSync: false
       }
     },
     safetyRules: {
@@ -205,6 +206,17 @@ async function smokeWorkflow(idToken) {
 
 async function smokeProofPromotionAndReconciliation(idToken) {
   const idempotencyKey = `${uid}-${attachmentID}`;
+  const consent = await callCallable("setPrivateEvidenceCloudSyncConsent", idToken, {
+    schemaVersion: 1,
+    enabled: true,
+    consentTextVersion: "private-evidence-cloud-sync-v1"
+  });
+  assert(consent.ok === true, "private evidence consent did not return ok=true");
+  assert(consent.userID === uid, "private evidence consent response userID did not match");
+  assert(consent.status === "accepted", "private evidence consent was not accepted");
+  assert(consent.allowsPrivateEvidenceCloudSync === true, "private evidence consent did not enable proof sync");
+  pass("Signed-in private evidence cloud sync consent callable accepted proof sync");
+
   const proofReference = clientStorageRef(clientStorage, storagePath);
   await withTransientRetry("signed-in Storage upload", () => (
     clientUploadBytes(
