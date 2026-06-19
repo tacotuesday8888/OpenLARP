@@ -755,6 +755,172 @@ final class SubscriptionReadinessTests: XCTestCase {
     }
 
     @MainActor
+    func testRevenueCatServiceMissingConfigurationClearsCustomerInfoDuringIdentitySync() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let previousCustomerInfo = RevenueCatCustomerInfoSnapshot(
+            fetchedAt: date(year: 2026, month: 6, day: 19),
+            activeEntitlementIDs: ["openlarp_pro"],
+            activeProductIDs: ["com.openlarp.monthly"],
+            entitlementExpirationDate: date(year: 2026, month: 7, day: 20)
+        )
+        let currentState = OpenLARPSubscriptionState(
+            configuration: revenueCatConfiguration().subscriptionConfiguration,
+            freeSprint: OpenLARPFreeSprintEntitlement(startedAt: date(year: 2026, month: 6, day: 1)),
+            customerInfo: previousCustomerInfo,
+            connectionStatus: .online,
+            lastUpdatedAt: date(year: 2026, month: 6, day: 19)
+        )
+        let client = FakeRevenueCatClient()
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: OpenLARPRevenueCatRuntimeConfiguration(),
+            client: client
+        )
+        let session = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_subscription_sync",
+            accountID: "firebase_uid_subscription_sync",
+            email: "student@example.com"
+        )
+
+        let synced = try await service.synchronizeSubscriberIdentity(
+            session: session,
+            currentState: currentState,
+            at: now
+        )
+
+        XCTAssertEqual(client.configuredPublicIOSAPIKeys, [])
+        XCTAssertEqual(client.loginRequestCount, 0)
+        XCTAssertNil(synced.customerInfo)
+        XCTAssertEqual(synced.freeSprint, currentState.freeSprint)
+        XCTAssertEqual(synced.connectionStatus, .notConfigured)
+        XCTAssertEqual(synced.lastUpdatedAt, now)
+    }
+
+    @MainActor
+    func testRevenueCatServiceLogsInFirebaseUserAndAppliesReturnedCustomerInfo() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let expiration = date(year: 2026, month: 7, day: 20)
+        let client = FakeRevenueCatClient()
+        client.loginSnapshot = RevenueCatCustomerInfoSnapshot(
+            fetchedAt: now,
+            activeEntitlementIDs: ["openlarp_pro"],
+            activeProductIDs: ["com.openlarp.monthly"],
+            entitlementExpirationDate: expiration
+        )
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+        let session = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_subscription_login",
+            accountID: "firebase_uid_subscription_login",
+            email: "student@example.com"
+        )
+
+        let synced = try await service.synchronizeSubscriberIdentity(
+            session: session,
+            currentState: .notStarted(),
+            at: now
+        )
+
+        XCTAssertEqual(client.configuredPublicIOSAPIKeys, ["appl_public_test_key"])
+        XCTAssertEqual(client.loggedInAppUserIDs, ["firebase_uid_subscription_login"])
+        XCTAssertEqual(client.loginRequestCount, 1)
+        XCTAssertEqual(synced.connectionStatus, .online)
+        XCTAssertEqual(synced.access(at: now, calendar: calendar).status, .active)
+        XCTAssertEqual(synced.access(at: now, calendar: calendar).expiresAt, expiration)
+    }
+
+    @MainActor
+    func testRevenueCatServiceLoginFailureDoesNotPreserveStaleCustomerInfo() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let previousState = OpenLARPSubscriptionState(
+            configuration: revenueCatConfiguration().subscriptionConfiguration,
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: date(year: 2026, month: 6, day: 19),
+                activeEntitlementIDs: ["openlarp_pro"],
+                activeProductIDs: ["com.openlarp.monthly"],
+                entitlementExpirationDate: date(year: 2026, month: 7, day: 20)
+            ),
+            connectionStatus: .online,
+            lastUpdatedAt: date(year: 2026, month: 6, day: 19)
+        )
+        let client = FakeRevenueCatClient()
+        client.loginError = RevenueCatAdapterTestError.offline
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+        let session = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_subscription_login_failure",
+            accountID: "firebase_uid_subscription_login_failure",
+            email: "student@example.com"
+        )
+
+        let synced = try await service.synchronizeSubscriberIdentity(
+            session: session,
+            currentState: previousState,
+            at: now
+        )
+
+        XCTAssertEqual(client.loginRequestCount, 1)
+        XCTAssertNil(synced.customerInfo)
+        XCTAssertEqual(synced.connectionStatus, .failed)
+        XCTAssertFalse(synced.access(at: now, calendar: calendar).isEntitled)
+    }
+
+    @MainActor
+    func testRevenueCatServiceResetWithoutConfigurationClearsCustomerInfoAndAvoidsSDK() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let currentState = OpenLARPSubscriptionState(
+            configuration: revenueCatConfiguration().subscriptionConfiguration,
+            freeSprint: OpenLARPFreeSprintEntitlement(startedAt: date(year: 2026, month: 6, day: 1)),
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: date(year: 2026, month: 6, day: 19),
+                activeEntitlementIDs: ["openlarp_pro"],
+                activeProductIDs: ["com.openlarp.monthly"],
+                entitlementExpirationDate: date(year: 2026, month: 7, day: 20)
+            ),
+            connectionStatus: .online,
+            lastUpdatedAt: date(year: 2026, month: 6, day: 19)
+        )
+        let client = FakeRevenueCatClient()
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: OpenLARPRevenueCatRuntimeConfiguration(),
+            client: client
+        )
+
+        let reset = try await service.resetSubscriberIdentity(currentState: currentState, at: now)
+
+        XCTAssertEqual(client.configuredPublicIOSAPIKeys, [])
+        XCTAssertEqual(client.logoutRequestCount, 0)
+        XCTAssertNil(reset.customerInfo)
+        XCTAssertEqual(reset.freeSprint, currentState.freeSprint)
+        XCTAssertEqual(reset.connectionStatus, .notConfigured)
+        XCTAssertEqual(reset.lastUpdatedAt, now)
+    }
+
+    @MainActor
+    func testRevenueCatServiceResetLogsOutConfiguredIdentifiedSubscriber() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let client = FakeRevenueCatClient()
+        client.logoutSnapshot = RevenueCatCustomerInfoSnapshot(fetchedAt: now)
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+
+        let reset = try await service.resetSubscriberIdentity(
+            currentState: OpenLARPSubscriptionState.localFreeSprint(startedAt: now),
+            at: now
+        )
+
+        XCTAssertEqual(client.configuredPublicIOSAPIKeys, ["appl_public_test_key"])
+        XCTAssertEqual(client.logoutRequestCount, 1)
+        XCTAssertEqual(reset.customerInfo, RevenueCatCustomerInfoSnapshot(fetchedAt: now))
+        XCTAssertEqual(reset.connectionStatus, .online)
+    }
+
+    @MainActor
     func testRevenueCatServiceMissingConfigurationDoesNotCallSDKForOfferingOrPurchase() async throws {
         let now = date(year: 2026, month: 6, day: 20)
         let client = FakeRevenueCatClient()
@@ -1251,25 +1417,34 @@ private struct FailingSubscriptionGateCareerGraphSyncService: CareerGraphSyncSer
 private final class CapturingSubscriptionService: OpenLARPSubscriptionServicing {
     var subscriptionConfiguration: OpenLARPSubscriptionConfiguration
     var offering: RevenueCatOfferingSnapshot?
+    var synchronizedState: OpenLARPSubscriptionState?
+    var resetState: OpenLARPSubscriptionState?
     var refreshedState: OpenLARPSubscriptionState?
     var restoredCustomerInfo: RevenueCatCustomerInfoSnapshot?
     var purchaseResult: OpenLARPSubscriptionPurchaseResult?
     private(set) var offeringRequestCount = 0
+    private(set) var syncIdentityRequestCount = 0
+    private(set) var resetIdentityRequestCount = 0
     private(set) var refreshRequestCount = 0
     private(set) var restoreRequestCount = 0
     private(set) var purchaseRequestCount = 0
+    private(set) var synchronizedOwnerUserIDs: [String] = []
     private(set) var purchasedPackageIdentifiers: [String] = []
     private(set) var purchasedExpectedProductIDs: [String] = []
 
     init(
         subscriptionConfiguration: OpenLARPSubscriptionConfiguration = .placeholder,
         offering: RevenueCatOfferingSnapshot? = nil,
+        synchronizedState: OpenLARPSubscriptionState? = nil,
+        resetState: OpenLARPSubscriptionState? = nil,
         refreshedState: OpenLARPSubscriptionState? = nil,
         restoredCustomerInfo: RevenueCatCustomerInfoSnapshot? = nil,
         purchaseResult: OpenLARPSubscriptionPurchaseResult? = nil
     ) {
         self.subscriptionConfiguration = subscriptionConfiguration
         self.offering = offering
+        self.synchronizedState = synchronizedState
+        self.resetState = resetState
         self.refreshedState = refreshedState
         self.restoredCustomerInfo = restoredCustomerInfo
         self.purchaseResult = purchaseResult
@@ -1278,6 +1453,24 @@ private final class CapturingSubscriptionService: OpenLARPSubscriptionServicing 
     func currentOffering() async throws -> RevenueCatOfferingSnapshot? {
         offeringRequestCount += 1
         return offering
+    }
+
+    func synchronizeSubscriberIdentity(
+        session: BackendUserSession,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        syncIdentityRequestCount += 1
+        synchronizedOwnerUserIDs.append(session.ownerUserID)
+        return synchronizedState ?? currentState
+    }
+
+    func resetSubscriberIdentity(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        resetIdentityRequestCount += 1
+        return resetState ?? currentState
     }
 
     func refreshSubscriptionState(
@@ -1323,17 +1516,24 @@ private enum RevenueCatAdapterTestError: Error {
 private final class FakeRevenueCatClient: OpenLARPRevenueCatClient {
     var customerInfoSnapshot: RevenueCatCustomerInfoSnapshot?
     var restoreSnapshot: RevenueCatCustomerInfoSnapshot?
+    var loginSnapshot: RevenueCatCustomerInfoSnapshot?
+    var logoutSnapshot: RevenueCatCustomerInfoSnapshot?
     var currentOffering: RevenueCatOfferingSnapshot?
     var purchaseResult: OpenLARPRevenueCatPurchaseClientResult?
     var customerInfoError: Error?
     var restoreError: Error?
+    var loginError: Error?
+    var logoutError: Error?
     var offeringError: Error?
     var purchaseError: Error?
     private(set) var configuredPublicIOSAPIKeys: [String] = []
     private(set) var customerInfoRequestCount = 0
     private(set) var restoreRequestCount = 0
+    private(set) var loginRequestCount = 0
+    private(set) var logoutRequestCount = 0
     private(set) var offeringRequestCount = 0
     private(set) var purchaseRequestCount = 0
+    private(set) var loggedInAppUserIDs: [String] = []
     private(set) var purchasedPackageIdentifiers: [String] = []
     private(set) var purchasedExpectedProductIDs: [String] = []
     private(set) var requestedOfferingIDs: [String] = []
@@ -1363,6 +1563,30 @@ private final class FakeRevenueCatClient: OpenLARPRevenueCatClient {
             throw restoreError
         }
         return restoreSnapshot ?? RevenueCatCustomerInfoSnapshot(fetchedAt: timestamp)
+    }
+
+    func logInSubscriberSnapshot(
+        appUserID: String,
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatCustomerInfoSnapshot {
+        loginRequestCount += 1
+        loggedInAppUserIDs.append(appUserID)
+        if let loginError {
+            throw loginError
+        }
+        return loginSnapshot ?? RevenueCatCustomerInfoSnapshot(fetchedAt: timestamp)
+    }
+
+    func logOutSubscriberSnapshot(
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatCustomerInfoSnapshot {
+        logoutRequestCount += 1
+        if let logoutError {
+            throw logoutError
+        }
+        return logoutSnapshot ?? RevenueCatCustomerInfoSnapshot(fetchedAt: timestamp)
     }
 
     func offeringSnapshot(

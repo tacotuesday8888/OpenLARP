@@ -104,6 +104,15 @@ protocol OpenLARPRevenueCatClient {
         at timestamp: Date,
         configuration: OpenLARPSubscriptionConfiguration
     ) async throws -> RevenueCatCustomerInfoSnapshot
+    func logInSubscriberSnapshot(
+        appUserID: String,
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatCustomerInfoSnapshot
+    func logOutSubscriberSnapshot(
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatCustomerInfoSnapshot
     func offeringSnapshot(
         configuration: OpenLARPSubscriptionConfiguration
     ) async throws -> RevenueCatOfferingSnapshot?
@@ -164,6 +173,73 @@ struct OpenLARPRevenueCatSubscriptionService: OpenLARPSubscriptionServicing {
         return try await client.offeringSnapshot(
             configuration: runtimeConfiguration.subscriptionConfiguration
         )
+    }
+
+    func synchronizeSubscriberIdentity(
+        session: BackendUserSession,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        var synced = currentState
+        synced.configuration = runtimeConfiguration.subscriptionConfiguration
+        synced.lastUpdatedAt = timestamp
+
+        guard session.isAuthenticated else { return synced }
+        let appUserID = session.ownerUserID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !appUserID.isEmpty else { return synced }
+        synced.customerInfo = nil
+        guard let publicIOSAPIKey = runtimeConfiguration.normalizedPublicIOSAPIKey else {
+            synced.connectionStatus = .notConfigured
+            return synced
+        }
+
+        client.configureIfNeeded(publicIOSAPIKey: publicIOSAPIKey)
+
+        do {
+            synced.customerInfo = try await client.logInSubscriberSnapshot(
+                appUserID: appUserID,
+                at: timestamp,
+                configuration: runtimeConfiguration.subscriptionConfiguration
+            )
+            synced.connectionStatus = .online
+            synced.lastUpdatedAt = timestamp
+            return synced
+        } catch {
+            synced.connectionStatus = .failed
+            synced.lastUpdatedAt = timestamp
+            return synced
+        }
+    }
+
+    func resetSubscriberIdentity(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        var reset = currentState
+        reset.configuration = runtimeConfiguration.subscriptionConfiguration
+        reset.customerInfo = nil
+        reset.connectionStatus = .notConfigured
+        reset.lastUpdatedAt = timestamp
+
+        guard let publicIOSAPIKey = runtimeConfiguration.normalizedPublicIOSAPIKey else {
+            return reset
+        }
+
+        client.configureIfNeeded(publicIOSAPIKey: publicIOSAPIKey)
+
+        do {
+            reset.customerInfo = try await client.logOutSubscriberSnapshot(
+                at: timestamp,
+                configuration: runtimeConfiguration.subscriptionConfiguration
+            )
+            reset.connectionStatus = .online
+            reset.lastUpdatedAt = timestamp
+            return reset
+        } catch {
+            reset.connectionStatus = .failed
+            reset.lastUpdatedAt = timestamp
+            return reset
+        }
     }
 
     func refreshSubscriptionState(
@@ -367,6 +443,45 @@ final class OpenLARPRevenueCatPurchasesClient: OpenLARPRevenueCatClient {
         }
 
         let customerInfo = try await Purchases.shared.restorePurchases()
+        return OpenLARPRevenueCatSnapshotMapper.snapshot(
+            from: customerInfo,
+            fallbackFetchedAt: timestamp,
+            configuration: configuration
+        )
+    }
+
+    func logInSubscriberSnapshot(
+        appUserID: String,
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatCustomerInfoSnapshot {
+        guard Purchases.isConfigured else {
+            throw OpenLARPRevenueCatAdapterError.notConfigured
+        }
+
+        let result = try await Purchases.shared.logIn(appUserID)
+        return OpenLARPRevenueCatSnapshotMapper.snapshot(
+            from: result.customerInfo,
+            fallbackFetchedAt: timestamp,
+            configuration: configuration
+        )
+    }
+
+    func logOutSubscriberSnapshot(
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatCustomerInfoSnapshot {
+        guard Purchases.isConfigured else {
+            throw OpenLARPRevenueCatAdapterError.notConfigured
+        }
+
+        let customerInfo: CustomerInfo
+        if Purchases.shared.isAnonymous {
+            customerInfo = try await Purchases.shared.customerInfo()
+        } else {
+            customerInfo = try await Purchases.shared.logOut()
+        }
+
         return OpenLARPRevenueCatSnapshotMapper.snapshot(
             from: customerInfo,
             fallbackFetchedAt: timestamp,

@@ -562,6 +562,17 @@ protocol OpenLARPSubscriptionServicing {
 
     func currentOffering() async throws -> RevenueCatOfferingSnapshot?
 
+    func synchronizeSubscriberIdentity(
+        session: BackendUserSession,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState
+
+    func resetSubscriberIdentity(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState
+
     func refreshSubscriptionState(
         currentState: OpenLARPSubscriptionState,
         at timestamp: Date
@@ -583,6 +594,8 @@ protocol OpenLARPSubscriptionServicing {
 struct MockOpenLARPSubscriptionService: OpenLARPSubscriptionServicing {
     var subscriptionConfiguration: OpenLARPSubscriptionConfiguration
     var offering: RevenueCatOfferingSnapshot?
+    var synchronizedState: OpenLARPSubscriptionState?
+    var resetState: OpenLARPSubscriptionState?
     var refreshedState: OpenLARPSubscriptionState?
     var restoredCustomerInfo: RevenueCatCustomerInfoSnapshot?
     var purchaseResult: OpenLARPSubscriptionPurchaseResult?
@@ -590,12 +603,16 @@ struct MockOpenLARPSubscriptionService: OpenLARPSubscriptionServicing {
     init(
         subscriptionConfiguration: OpenLARPSubscriptionConfiguration = .placeholder,
         offering: RevenueCatOfferingSnapshot? = nil,
+        synchronizedState: OpenLARPSubscriptionState? = nil,
+        resetState: OpenLARPSubscriptionState? = nil,
         refreshedState: OpenLARPSubscriptionState? = nil,
         restoredCustomerInfo: RevenueCatCustomerInfoSnapshot? = nil,
         purchaseResult: OpenLARPSubscriptionPurchaseResult? = nil
     ) {
         self.subscriptionConfiguration = subscriptionConfiguration
         self.offering = offering
+        self.synchronizedState = synchronizedState
+        self.resetState = resetState
         self.refreshedState = refreshedState
         self.restoredCustomerInfo = restoredCustomerInfo
         self.purchaseResult = purchaseResult
@@ -603,6 +620,25 @@ struct MockOpenLARPSubscriptionService: OpenLARPSubscriptionServicing {
 
     func currentOffering() async throws -> RevenueCatOfferingSnapshot? {
         offering
+    }
+
+    func synchronizeSubscriberIdentity(
+        session: BackendUserSession,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        var state = synchronizedState ?? currentState
+        state.lastUpdatedAt = timestamp
+        return state
+    }
+
+    func resetSubscriberIdentity(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        var state = resetState ?? currentState
+        state.lastUpdatedAt = timestamp
+        return state
     }
 
     func refreshSubscriptionState(

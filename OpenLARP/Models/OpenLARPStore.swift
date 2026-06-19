@@ -725,9 +725,11 @@ final class OpenLARPStore {
                 let signOutResult = await authenticationService.signOut(for: state)
                 if signOutResult.status == .signedOut {
                     applyAuthenticationResult(signOutResult, shouldSurfaceMessage: false)
+                    await resetSubscriptionIdentityAfterSignOut()
                 } else {
                     clearAuthenticatedAccount()
                     clearCareerGraphSyncPreview()
+                    await resetSubscriptionIdentityAfterSignOut()
                 }
                 activeAccountDeletionResult = result
                 state.accountDeletionResult = sanitizedAccountDeletionResult(result)
@@ -749,6 +751,9 @@ final class OpenLARPStore {
 
         let result = await authenticationService.restorePreviousSession(for: state)
         applyAuthenticationResult(result, shouldSurfaceMessage: false)
+        if result.status == .authenticated {
+            await synchronizeSubscriptionIdentity(for: result.session)
+        }
     }
 
     func signInWithGoogle(presenting anchor: OpenLARPAuthenticationPresentationAnchor?) async {
@@ -763,6 +768,7 @@ final class OpenLARPStore {
         let result = await authenticationService.signInWithGoogle(presenting: anchor, for: state)
         applyAuthenticationResult(result, shouldSurfaceMessage: true)
         if result.status == .authenticated {
+            await synchronizeSubscriptionIdentity(for: result.session)
             await syncBackendEvents()
         }
     }
@@ -779,6 +785,7 @@ final class OpenLARPStore {
         let result = await authenticationService.signInWithApple(presenting: anchor, for: state)
         applyAuthenticationResult(result, shouldSurfaceMessage: true)
         if result.status == .authenticated {
+            await synchronizeSubscriptionIdentity(for: result.session)
             await syncBackendEvents()
         }
     }
@@ -794,6 +801,9 @@ final class OpenLARPStore {
 
         let result = await authenticationService.signOut(for: state)
         applyAuthenticationResult(result, shouldSurfaceMessage: true)
+        if result.status == .signedOut {
+            await resetSubscriptionIdentityAfterSignOut()
+        }
     }
 
     @discardableResult
@@ -1372,6 +1382,35 @@ final class OpenLARPStore {
                 errorMessage = result.message ?? "Account sign-in could not finish."
             }
         }
+    }
+
+    private func synchronizeSubscriptionIdentity(for session: BackendUserSession) async {
+        guard session.isAuthenticated else { return }
+        let syncedState = try? await subscriptionService.synchronizeSubscriberIdentity(
+            session: session,
+            currentState: state.subscriptionState,
+            at: now()
+        )
+        guard let syncedState else { return }
+        state.subscriptionState = syncedState
+        save()
+    }
+
+    private func resetSubscriptionIdentityAfterSignOut() async {
+        currentSubscriptionOffering = nil
+        let resetState = try? await subscriptionService.resetSubscriberIdentity(
+            currentState: state.subscriptionState,
+            at: now()
+        )
+        guard let resetState else {
+            state.subscriptionState.customerInfo = nil
+            state.subscriptionState.connectionStatus = .notConfigured
+            state.subscriptionState.lastUpdatedAt = now()
+            save()
+            return
+        }
+        state.subscriptionState = resetState
+        save()
     }
 
     private func applyAuthenticatedAccount(_ session: BackendUserSession) {

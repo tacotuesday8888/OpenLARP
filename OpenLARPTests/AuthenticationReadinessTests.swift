@@ -94,6 +94,44 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountSessionRestored })
     }
 
+    func testStoreRestoredAuthenticationSessionSynchronizesSubscriptionIdentity() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let now = Date(timeIntervalSince1970: 32_000)
+        let authenticatedSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_subscription_restore",
+            accountID: "firebase_uid_subscription_restore",
+            email: "student@example.com"
+        )
+        let subscriptionState = OpenLARPSubscriptionState(
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: now,
+                activeEntitlementIDs: [OpenLARPSubscriptionConfiguration.placeholder.revenueCatEntitlementID],
+                activeProductIDs: [OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID],
+                entitlementExpirationDate: now.addingTimeInterval(86_400 * 30)
+            ),
+            connectionStatus: .online,
+            lastUpdatedAt: now
+        )
+        let subscriptionService = RecordingSubscriptionIdentityService(synchronizedState: subscriptionState)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(restoredSession: authenticatedSession),
+            subscriptionService: subscriptionService,
+            now: { now }
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+
+        XCTAssertEqual(subscriptionService.syncIdentityRequestCount, 1)
+        XCTAssertEqual(subscriptionService.synchronizedOwnerUserIDs, ["firebase_uid_subscription_restore"])
+        XCTAssertEqual(store.state.subscriptionState, subscriptionState)
+        XCTAssertEqual(try persistence.load().subscriptionState, subscriptionState)
+    }
+
     func testStoreGoogleSignInUpdatesAccountFieldsWithoutOverwritingCareerProfile() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -137,6 +175,45 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
         XCTAssertEqual(store.state.goal, originalGoal)
         XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountSignInCompleted })
+    }
+
+    func testStoreGoogleSignInSynchronizesSubscriptionIdentityBeforeBackendEvents() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = Date(timeIntervalSince1970: 32_250)
+        let googleSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_subscription_google",
+            accountID: "firebase_uid_subscription_google",
+            email: "newgrad@example.com"
+        )
+        let subscriptionState = OpenLARPSubscriptionState(
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: now,
+                activeEntitlementIDs: [OpenLARPSubscriptionConfiguration.placeholder.revenueCatEntitlementID],
+                activeProductIDs: [OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID],
+                entitlementExpirationDate: now.addingTimeInterval(86_400 * 30)
+            ),
+            connectionStatus: .online,
+            lastUpdatedAt: now
+        )
+        let subscriptionService = RecordingSubscriptionIdentityService(synchronizedState: subscriptionState)
+        let backendEventService = RecordingAuthenticationBackendEventSyncService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(googleSignInSession: googleSession),
+            backendEventSyncService: backendEventService,
+            subscriptionService: subscriptionService,
+            now: { now }
+        )
+
+        await store.confirmGoal(goal)
+        await store.signInWithGoogle(presenting: nil)
+
+        XCTAssertEqual(subscriptionService.syncIdentityRequestCount, 1)
+        XCTAssertEqual(subscriptionService.synchronizedOwnerUserIDs, ["firebase_uid_subscription_google"])
+        XCTAssertEqual(store.state.subscriptionState, subscriptionState)
+        XCTAssertEqual(backendEventService.requests.count, 1)
     }
 
     func testStoreAppleSignInUpdatesAccountFieldsWithoutOverwritingCareerProfile() async throws {
@@ -236,6 +313,69 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertNil(store.state.userProfile?.email)
         XCTAssertEqual(store.state.userProfile?.privacy.allowsPrivateEvidenceCloudSync, false)
         XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountSignedOut })
+    }
+
+    func testStoreSignOutResetsSubscriptionIdentityAndClearsCachedOffering() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let now = Date(timeIntervalSince1970: 32_500)
+        let authenticatedSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_subscription_signout",
+            accountID: "firebase_uid_subscription_signout",
+            email: "switcher@example.com"
+        )
+        let activeState = OpenLARPSubscriptionState(
+            freeSprint: OpenLARPFreeSprintEntitlement(startedAt: now.addingTimeInterval(-86_400)),
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: now,
+                activeEntitlementIDs: [OpenLARPSubscriptionConfiguration.placeholder.revenueCatEntitlementID],
+                activeProductIDs: [OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID],
+                entitlementExpirationDate: now.addingTimeInterval(86_400 * 30)
+            ),
+            connectionStatus: .online,
+            lastUpdatedAt: now
+        )
+        let resetState = OpenLARPSubscriptionState(
+            freeSprint: activeState.freeSprint,
+            customerInfo: nil,
+            connectionStatus: .notConfigured,
+            lastUpdatedAt: now
+        )
+        let subscriptionService = RecordingSubscriptionIdentityService(resetState: resetState)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(restoredSession: authenticatedSession),
+            subscriptionService: subscriptionService,
+            now: { now }
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        store.state.subscriptionState = activeState
+        store.currentSubscriptionOffering = RevenueCatOfferingSnapshot(
+            identifier: "beta",
+            packages: [
+                RevenueCatPackageSnapshot(
+                    identifier: "monthly",
+                    product: RevenueCatProductSnapshot(
+                        productID: OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID,
+                        displayName: "OpenLARP Monthly",
+                        displayPrice: "$9.99",
+                        subscriptionPeriod: "1 month"
+                    )
+                )
+            ]
+        )
+
+        await store.signOutOfAccount()
+
+        XCTAssertEqual(subscriptionService.resetIdentityRequestCount, 1)
+        XCTAssertNil(store.currentSubscriptionOffering)
+        XCTAssertEqual(store.state.subscriptionState, resetState)
+        XCTAssertEqual(try persistence.load().subscriptionState, resetState)
+        XCTAssertEqual(store.subscriptionAccess().status, .freeSprint)
     }
 
     func testAuthenticationAndAccountDataActionsWaitDuringPrivateEvidenceConsentUpdate() async throws {
@@ -1071,6 +1211,101 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertEqual(store.accountDeletionResult?.firebaseAuthUser.status, .unknown)
         XCTAssertNil(store.accountDeletionResult?.firestoreUserTree.failedPathSamples)
         XCTAssertNil(store.accountDeletionResult?.firestoreUserTree.errorMessage)
+    }
+}
+
+@MainActor
+private final class RecordingSubscriptionIdentityService: OpenLARPSubscriptionServicing {
+    var subscriptionConfiguration: OpenLARPSubscriptionConfiguration
+    var synchronizedState: OpenLARPSubscriptionState?
+    var resetState: OpenLARPSubscriptionState?
+    private(set) var syncIdentityRequestCount = 0
+    private(set) var resetIdentityRequestCount = 0
+    private(set) var synchronizedOwnerUserIDs: [String] = []
+
+    init(
+        subscriptionConfiguration: OpenLARPSubscriptionConfiguration = .placeholder,
+        synchronizedState: OpenLARPSubscriptionState? = nil,
+        resetState: OpenLARPSubscriptionState? = nil
+    ) {
+        self.subscriptionConfiguration = subscriptionConfiguration
+        self.synchronizedState = synchronizedState
+        self.resetState = resetState
+    }
+
+    func currentOffering() async throws -> RevenueCatOfferingSnapshot? {
+        nil
+    }
+
+    func synchronizeSubscriberIdentity(
+        session: BackendUserSession,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        syncIdentityRequestCount += 1
+        synchronizedOwnerUserIDs.append(session.ownerUserID)
+        var state = synchronizedState ?? currentState
+        state.lastUpdatedAt = timestamp
+        return state
+    }
+
+    func resetSubscriberIdentity(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        resetIdentityRequestCount += 1
+        var state = resetState ?? currentState
+        state.customerInfo = nil
+        state.connectionStatus = .notConfigured
+        state.lastUpdatedAt = timestamp
+        return state
+    }
+
+    func refreshSubscriptionState(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        currentState
+    }
+
+    func restorePurchases(
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionState {
+        currentState.restoreFailed(at: timestamp)
+    }
+
+    func purchasePackage(
+        identifier: String,
+        expectedProductID: String,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionPurchaseResult {
+        OpenLARPSubscriptionPurchaseResult(
+            outcome: .failed(.notConfigured),
+            subscriptionState: currentState
+        )
+    }
+}
+
+@MainActor
+private final class RecordingAuthenticationBackendEventSyncService: BackendEventSyncServicing {
+    private(set) var requests: [BackendEventSyncRequest] = []
+
+    func syncEvents(_ request: BackendEventSyncRequest) async throws -> BackendEventSyncResult {
+        requests.append(request)
+        return BackendEventSyncResult(
+            request: request,
+            didContactNetwork: false,
+            receipts: request.events.map {
+                BackendEventSyncReceipt(
+                    eventID: $0.id,
+                    idempotencyKey: $0.idempotencyKey,
+                    status: .acknowledged,
+                    acceptedAt: request.requestedAt
+                )
+            }
+        )
     }
 }
 
