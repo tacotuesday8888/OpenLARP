@@ -46,7 +46,10 @@ final class OpenLARPStore {
     private var activeAccountDeletionResult: AccountDeletionResult?
 
     var isAccountDataOperationInFlight: Bool {
-        isCheckingPrivateEvidenceBackups || isDeletingPrivateEvidenceBackups || isDeletingAccount
+        isUpdatingPrivateEvidenceCloudSyncConsent ||
+            isCheckingPrivateEvidenceBackups ||
+            isDeletingPrivateEvidenceBackups ||
+            isDeletingAccount
     }
 
     var privateEvidenceBackupCleanupResult: PrivateEvidenceBackupCleanupResult? {
@@ -440,6 +443,10 @@ final class OpenLARPStore {
             errorMessage = "Private evidence cloud sync is still updating."
             return
         }
+        guard !isAccountDataOperationInFlight else {
+            errorMessage = "Wait for account data controls to finish before changing private evidence sync."
+            return
+        }
 
         let session = backendSessionProvider.currentSession(for: state)
         guard session.isAuthenticated else {
@@ -514,6 +521,10 @@ final class OpenLARPStore {
 
     func checkPrivateEvidenceBackupCleanupCandidates() async {
         guard !isCheckingPrivateEvidenceBackups else { return }
+        guard !isAccountDataOperationInFlight else {
+            errorMessage = "Wait for account data controls to finish before checking synced private proof backups."
+            return
+        }
         let session = currentBackendSession()
         guard session.isAuthenticated else {
             errorMessage = "Sign in before checking synced private proof backups."
@@ -549,6 +560,10 @@ final class OpenLARPStore {
 
     func deletePrivateEvidenceBackups(attachmentIDs: [String]) async {
         guard !isDeletingPrivateEvidenceBackups else { return }
+        guard !isAccountDataOperationInFlight else {
+            errorMessage = "Wait for account data controls to finish before deleting synced private proof backups."
+            return
+        }
         let session = currentBackendSession()
         guard session.isAuthenticated else {
             errorMessage = "Sign in before deleting synced private proof backups."
@@ -594,10 +609,19 @@ final class OpenLARPStore {
                     "The signed-in account changed before backup cleanup deletion finished."
                 )
             }
+            let requestedAttachmentIDs = Set(deletionAttachmentIDs)
+            let returnedAttachmentIDs = Set(result.candidates.map(\.attachmentID))
+            guard returnedAttachmentIDs == requestedAttachmentIDs,
+                  result.candidates.count == requestedAttachmentIDs.count
+            else {
+                throw FirebaseBackendServiceError.contractMismatch(
+                    "Private evidence backup deletion response did not account for every requested attachment."
+                )
+            }
             activePrivateEvidenceBackupCleanupResult = result
             state.privateEvidenceBackupCleanupResult = sanitizedPrivateEvidenceBackupCleanupResult(result)
             recordBetaEvent(.privateEvidenceBackupCleanupDeleted, occurredAt: requestedAt)
-            errorMessage = result.partialFailureCount > 0
+            errorMessage = result.partialFailureCount > 0 || result.deletedCount < deletionAttachmentIDs.count
                 ? "Some synced proof backups could not be deleted. The remaining items are listed in account data controls."
                 : nil
             save()
@@ -608,6 +632,10 @@ final class OpenLARPStore {
 
     func deleteCloudAccount(confirmationText: String) async {
         guard !isDeletingAccount else { return }
+        guard !isAccountDataOperationInFlight else {
+            errorMessage = "Wait for account data controls to finish before deleting the cloud account."
+            return
+        }
         let session = currentBackendSession()
         guard session.isAuthenticated else {
             errorMessage = "Sign in before deleting the cloud account."
@@ -657,9 +685,7 @@ final class OpenLARPStore {
                 state.accountDeletionResult = sanitizedAccountDeletionResult(result)
             }
 
-            errorMessage = result.status == .deleted
-                ? nil
-                : "Cloud account deletion is partial. Keep this result for support and retry after reauthenticating."
+            errorMessage = result.status == .deleted ? nil : partialAccountDeletionMessage(for: result)
             save()
         } catch {
             errorMessage = "Cloud account deletion could not be completed. Reauthenticate, then try again."
@@ -1199,7 +1225,7 @@ final class OpenLARPStore {
         let resolvedAccountID = session.accountID ?? session.ownerUserID
         if profile.accountID != resolvedAccountID {
             profile.privacy.allowsPrivateEvidenceCloudSync = false
-            clearAccountDataControlResults()
+            clearAccountDataControlResults(preservingPartialAccountDeletionSupport: true)
         }
         profile.accountID = resolvedAccountID
         profile.email = session.email
@@ -1216,14 +1242,33 @@ final class OpenLARPStore {
         profile.updatedAt = now()
         state.userProfile = profile
         state.updatedAt = profile.updatedAt
-        clearAccountDataControlResults()
+        clearAccountDataControlResults(preservingPartialAccountDeletionSupport: true)
     }
 
-    private func clearAccountDataControlResults() {
+    private func clearAccountDataControlResults(preservingPartialAccountDeletionSupport: Bool = false) {
+        let preservedDeletionSupportResult: AccountDeletionResult?
+        if preservingPartialAccountDeletionSupport,
+           let result = state.accountDeletionResult,
+           result.status == .partial
+        {
+            preservedDeletionSupportResult = sanitizedAccountDeletionResult(result)
+        } else {
+            preservedDeletionSupportResult = nil
+        }
+
         activePrivateEvidenceBackupCleanupResult = nil
         activeAccountDeletionResult = nil
         state.privateEvidenceBackupCleanupResult = nil
-        state.accountDeletionResult = nil
+        state.accountDeletionResult = preservedDeletionSupportResult
+    }
+
+    private func partialAccountDeletionMessage(for result: AccountDeletionResult) -> String {
+        switch result.firebaseAuthUser.status {
+        case .deleted, .alreadyMissing:
+            "Cloud account deletion is partial after Firebase Auth was removed. Keep this result for support and contact support."
+        case .skipped, .failed:
+            "Cloud account deletion is partial. Keep this result for support and retry after reauthenticating."
+        }
     }
 
     private func sanitizedPrivateEvidenceBackupCleanupResult(

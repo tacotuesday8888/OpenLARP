@@ -588,7 +588,12 @@ struct ProfileView: View {
         case .deleted:
             return "Cloud account deletion completed. Firebase Auth and account-owned cloud data were removed."
         case .partial:
-            return "Cloud account deletion is partial. Retry after reauthenticating or keep this result for support."
+            switch result.firebaseAuthUser.status {
+            case .deleted, .alreadyMissing:
+                return "Cloud account deletion is partial after Firebase Auth was removed. Keep this result for support and contact support."
+            case .skipped, .failed:
+                return "Cloud account deletion is partial. Retry after reauthenticating or keep this result for support."
+            }
         }
     }
 

@@ -577,6 +577,7 @@ private struct FirebasePrivateEvidenceBackupCleanupResponse: Codable, Equatable,
               deletedCount == responseDeletedCount,
               partialFailureCount == responsePartialFailureCount,
               externalActionTaken == responseTookExternalAction,
+              candidateIDsMatchDeletionRequest(request),
               candidates.allSatisfy({ isValidCandidate($0, for: request) })
         else {
             throw FirebaseBackendServiceError.contractMismatch("Private evidence backup cleanup response did not match the signed-in user or request.")
@@ -612,6 +613,22 @@ private struct FirebasePrivateEvidenceBackupCleanupResponse: Codable, Equatable,
         }
 
         return true
+    }
+
+    private func candidateIDsMatchDeletionRequest(_ request: PrivateEvidenceBackupCleanupRequest) -> Bool {
+        guard request.mode == .deleteSyncedEvidence else {
+            return true
+        }
+
+        guard let attachmentIDs = request.attachmentIDs else {
+            return false
+        }
+
+        let requestedAttachmentIDs = Set(attachmentIDs)
+        let responseAttachmentIDs = Set(candidates.map(\.attachmentID))
+        return requestedAttachmentIDs.count == attachmentIDs.count &&
+            responseAttachmentIDs.count == candidates.count &&
+            responseAttachmentIDs == requestedAttachmentIDs
     }
 
     private var responseTookExternalAction: Bool {
