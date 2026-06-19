@@ -30,6 +30,8 @@ require_command node
 require_command curl
 require_command /usr/libexec/PlistBuddy
 
+curl_read_flags=(-sS --http1.1 --retry 3 --retry-delay 1 --retry-all-errors)
+
 printf 'OpenLARP signed-in Firebase smoke for %s\n' "$PROJECT_ID"
 
 if [[ "$PROJECT_ID" != "openlarp-dev-langqi" &&
@@ -61,6 +63,64 @@ fi
 if [[ -z "$api_key" ]]; then
   fail "Unable to resolve Firebase Web API key from environment or iOS SDK config."
 fi
+
+check_app_check_enforcement() {
+  if [[ "${OPENLARP_FIREBASE_SMOKE_SKIP_APP_CHECK_STATUS:-}" == "1" ]]; then
+    return
+  fi
+  if ! command -v gcloud >/dev/null 2>&1; then
+    printf 'WARN gcloud unavailable; skipped Firebase App Check enforcement preflight.\n'
+    return
+  fi
+
+  local project_number
+  project_number="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null || true)"
+  if [[ -z "$project_number" ]]; then
+    printf 'WARN Unable to resolve Firebase project number; skipped App Check enforcement preflight.\n'
+    return
+  fi
+
+  local app_check_access_token
+  app_check_access_token="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || true)"
+  if [[ -z "$app_check_access_token" ]]; then
+    printf 'WARN gcloud credentials unavailable; skipped App Check enforcement preflight.\n'
+    return
+  fi
+
+  local enforced_services=()
+  local service service_json service_status service_mode
+  for service in firestore.googleapis.com firebasestorage.googleapis.com; do
+    service_json="$tmp_dir/app-check-${service}.json"
+    service_status="$(
+      curl "${curl_read_flags[@]}" -o "$service_json" -w '%{http_code}' \
+        -H "Authorization: Bearer ${app_check_access_token}" \
+        -H "X-Goog-User-Project: ${PROJECT_ID}" \
+        "https://firebaseappcheck.googleapis.com/v1/projects/${project_number}/services/${service}"
+    )"
+    if [[ "$service_status" != "200" ]]; then
+      printf 'WARN Unable to read App Check status for %s before signed-in smoke: HTTP %s\n' "$service" "$service_status"
+      continue
+    fi
+
+    service_mode="$(node --input-type=module - "$service_json" <<'NODE'
+import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+console.log(payload.enforcementMode ?? "OFF");
+NODE
+)"
+    if [[ "$service_mode" == "ENFORCED" ]]; then
+      enforced_services+=("$service")
+    fi
+  done
+
+  if (( ${#enforced_services[@]} > 0 )); then
+    fail "Firebase App Check is enforced for ${enforced_services[*]}, but this CLI smoke does not yet mint or attach registered App Check debug/device tokens. Register private App Check tokens and update the smoke token path before running signed-in cloud smoke against enforced services."
+  fi
+  pass "Firebase App Check is not enforced for Firestore or Storage before signed-in smoke"
+}
+
+check_app_check_enforcement
 
 if [[ -z "$SIGNING_SERVICE_ACCOUNT" ]] && command -v gcloud >/dev/null 2>&1; then
   SIGNING_SERVICE_ACCOUNT="$(

@@ -167,4 +167,18 @@ describe("firebase-signed-in-smoke guardrails", () => {
     expect(liveReadinessScript).toContain("curl_read_flags=(-sS --http1.1 --retry 3 --retry-delay 1 --retry-all-errors)");
     expect(liveReadinessScript).not.toContain("curl -sS");
   });
+
+  it("fails signed-in smoke early when Firestore or Storage App Check enforcement is active", () => {
+    expect(script).toContain("check_app_check_enforcement");
+    expect(script).toContain("OPENLARP_FIREBASE_SMOKE_SKIP_APP_CHECK_STATUS");
+    expect(script).toContain("firestore.googleapis.com firebasestorage.googleapis.com");
+    expect(script).toContain("Firebase App Check is enforced for");
+    expect(script).toContain("does not yet mint or attach registered App Check debug/device tokens");
+    expect(script).toContain("Firebase App Check is not enforced for Firestore or Storage before signed-in smoke");
+  });
+
+  it("retries signed-in smoke App Check status probes with a stable transport mode", () => {
+    expect(script).toContain("curl_read_flags=(-sS --http1.1 --retry 3 --retry-delay 1 --retry-all-errors)");
+    expect(script).toContain('curl "${curl_read_flags[@]}"');
+  });
 });
