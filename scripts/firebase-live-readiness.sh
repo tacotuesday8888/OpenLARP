@@ -69,7 +69,8 @@ const required = new Map([
   ["promoteProofUploadReceipt", "nodejs22"],
   ["cleanupRevokedPrivateEvidenceUploads", "nodejs22"],
   ["setPrivateEvidenceCloudSyncConsent", "nodejs22"],
-  ["acknowledgeBackendEvents", "nodejs22"]
+  ["acknowledgeBackendEvents", "nodejs22"],
+  ["deleteOpenLARPAccount", "nodejs22"]
 ]);
 for (const [id, runtime] of required) {
   const entry = functions.find((item) => item.id === id);
@@ -192,6 +193,26 @@ if (payload.error?.status !== "UNAUTHENTICATED") {
 }
 NODE
 pass "Backend event acknowledgement callable rejects unauthenticated requests"
+
+account_deletion_response="$tmp_dir/account-deletion-response.txt"
+account_deletion_http_status="$(
+  curl -sS -o "$account_deletion_response" -w '%{http_code}' \
+    -X POST "https://${FUNCTION_REGION}-${PROJECT_ID}.cloudfunctions.net/deleteOpenLARPAccount" \
+    -H 'Content-Type: application/json' \
+    -d '{"data":{"schemaVersion":1,"confirmDeletion":true,"confirmationText":"DELETE MY OPENLARP ACCOUNT"}}'
+)"
+if [[ "$account_deletion_http_status" != "401" ]]; then
+  fail "Unauthenticated account deletion callable returned HTTP $account_deletion_http_status instead of 401"
+fi
+node --input-type=module - "$account_deletion_response" <<'NODE'
+import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (payload.error?.status !== "UNAUTHENTICATED") {
+  throw new Error(`Unexpected account deletion callable error: ${JSON.stringify(payload)}`);
+}
+NODE
+pass "Account deletion callable rejects unauthenticated requests"
 
 sdk_config="$tmp_dir/GoogleService-Info.plist"
 $FIREBASE apps:sdkconfig IOS "$IOS_APP_ID" --project "$PROJECT_ID" > "$sdk_config"

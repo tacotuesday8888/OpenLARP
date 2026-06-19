@@ -103,6 +103,10 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(userId)/consents/privateEvidenceCloudSync).data.consentTextVersion == 'private-evidence-cloud-sync-v1';
     }
 
+    function hasAccountDeletionRequest(userId) {
+      return exists(/databases/$(database)/documents/_accountDeletionRequests/$(userId));
+    }
+
     function hasDocumentPath(collectionName, userId, documentId) {
       return request.resource.data.collectionPath == "users/" + userId + "/" + collectionName
         && request.resource.data.documentPath == "users/" + userId + "/" + collectionName + "/" + documentId;
@@ -110,12 +114,15 @@ service cloud.firestore {
 
     function isSafeCareerGraphDocument(collectionName, userId, documentId) {
       return isSafeUserDocument(userId)
+        && !hasAccountDeletionRequest(userId)
         && hasDocumentPath(collectionName, userId, documentId);
     }
 
     match /users/{userId} {
       allow read: if isUser(userId);
-      allow create, update: if isUser(userId) && isSafeUserDocument(userId);
+      allow create, update: if isUser(userId)
+        && !hasAccountDeletionRequest(userId)
+        && isSafeUserDocument(userId);
       allow delete: if false;
 
       match /backendEvents/{eventId} {
@@ -155,6 +162,7 @@ service cloud.firestore {
       match /proofAttachments/{attachmentId} {
         allow read: if isUser(userId);
         allow create: if isUser(userId)
+          && !hasAccountDeletionRequest(userId)
           && isSafeProofAttachmentDocument(userId, attachmentId);
         allow update: if false;
         allow delete: if false;
@@ -163,6 +171,7 @@ service cloud.firestore {
       match /proofRecords/{proofId} {
         allow read: if isUser(userId);
         allow create, update: if isUser(userId)
+          && !hasAccountDeletionRequest(userId)
           && isSafeProofRecordDocument(userId)
           && hasDocumentPath('proofRecords', userId, proofId);
         allow delete: if false;
@@ -171,6 +180,7 @@ service cloud.firestore {
       match /outcomes/{outcomeId} {
         allow read: if isUser(userId);
         allow create, update: if isUser(userId)
+          && !hasAccountDeletionRequest(userId)
           && isSafeCareerGraphDocument('outcomes', userId, outcomeId)
           && hasNoPrivateOutcomeOrAcceptedConsent(userId);
         allow delete: if false;
@@ -179,6 +189,7 @@ service cloud.firestore {
       match /readinessSnapshots/{snapshotId} {
         allow read: if isUser(userId);
         allow create, update: if isUser(userId)
+          && !hasAccountDeletionRequest(userId)
           && isSafeCareerGraphDocument('readinessSnapshots', userId, snapshotId);
         allow delete: if false;
       }
@@ -188,6 +199,10 @@ service cloud.firestore {
         allow create, update: if false;
         allow delete: if false;
       }
+    }
+
+    match /_accountDeletionRequests/{userId} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

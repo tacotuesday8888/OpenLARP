@@ -864,6 +864,137 @@ struct LocalMockPrivateEvidenceBackupCleanupService: PrivateEvidenceBackupCleanu
     }
 }
 
+enum AccountDeletionStatus: String, Codable, CaseIterable {
+    case deleted
+    case partial
+}
+
+enum AccountDeletionScopeStatus: String, Codable, CaseIterable {
+    case completed
+    case failed
+}
+
+enum AccountDeletionFirebaseAuthStatus: String, Codable, CaseIterable {
+    case deleted
+    case alreadyMissing
+    case failed
+    case skipped
+}
+
+struct AccountDeletionScopeResult: Codable, Equatable {
+    var status: AccountDeletionScopeStatus
+    var deletedCount: Int
+    var attemptedCount: Int?
+    var failedCount: Int?
+    var failedPathSamples: [String]?
+    var errorMessage: String?
+}
+
+struct AccountDeletionAuthResult: Codable, Equatable {
+    var status: AccountDeletionFirebaseAuthStatus
+    var errorMessage: String?
+}
+
+struct AccountDeletionMarkerResult: Codable, Equatable {
+    var status: AccountDeletionScopeStatus
+    var errorMessage: String?
+}
+
+struct AccountDeletionRequest: Codable, Equatable {
+    static let confirmationText = "DELETE MY OPENLARP ACCOUNT"
+
+    var schemaVersion: Int
+    var requestedAt: Date
+    var session: BackendUserSession
+    var confirmDeletion: Bool
+    var confirmationText: String
+    var integrationRoutes: [BackendIntegrationRoute]
+
+    init(
+        session: BackendUserSession,
+        confirmDeletion: Bool,
+        confirmationText: String,
+        requestedAt: Date = Date(),
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        self.requestedAt = requestedAt
+        self.session = session.redactedForBackendEventSync()
+        self.confirmDeletion = confirmDeletion
+        self.confirmationText = confirmationText
+        integrationRoutes = self.session.integrationRoutes
+    }
+}
+
+struct AccountDeletionResult: Codable, Equatable {
+    var schemaVersion: Int
+    var requestedAt: Date
+    var completedAt: Date
+    var didContactNetwork: Bool
+    var status: AccountDeletionStatus
+    var firestoreUserTree: AccountDeletionScopeResult
+    var storageUserPrefix: AccountDeletionScopeResult
+    var quotaUsageTree: AccountDeletionScopeResult
+    var firebaseAuthUser: AccountDeletionAuthResult
+    var deletionRequestMarker: AccountDeletionMarkerResult
+    var externalActionTaken: Bool
+
+    init(
+        request: AccountDeletionRequest,
+        completedAt: Date? = nil,
+        didContactNetwork: Bool = false,
+        status: AccountDeletionStatus = .partial,
+        firestoreUserTree: AccountDeletionScopeResult = AccountDeletionScopeResult(
+            status: .completed,
+            deletedCount: 0
+        ),
+        storageUserPrefix: AccountDeletionScopeResult = AccountDeletionScopeResult(
+            status: .completed,
+            deletedCount: 0
+        ),
+        quotaUsageTree: AccountDeletionScopeResult = AccountDeletionScopeResult(
+            status: .completed,
+            deletedCount: 0
+        ),
+        firebaseAuthUser: AccountDeletionAuthResult = AccountDeletionAuthResult(
+            status: .skipped
+        ),
+        deletionRequestMarker: AccountDeletionMarkerResult = AccountDeletionMarkerResult(
+            status: .completed
+        ),
+        externalActionTaken: Bool = false,
+        schemaVersion: Int = 1
+    ) {
+        self.schemaVersion = schemaVersion
+        requestedAt = request.requestedAt
+        self.completedAt = completedAt ?? request.requestedAt
+        self.didContactNetwork = didContactNetwork
+        self.status = status
+        self.firestoreUserTree = firestoreUserTree
+        self.storageUserPrefix = storageUserPrefix
+        self.quotaUsageTree = quotaUsageTree
+        self.firebaseAuthUser = firebaseAuthUser
+        self.deletionRequestMarker = deletionRequestMarker
+        self.externalActionTaken = externalActionTaken
+    }
+}
+
+@MainActor
+protocol AccountDeletionServicing {
+    func deleteAccount(_ request: AccountDeletionRequest) async throws -> AccountDeletionResult
+}
+
+struct LocalMockAccountDeletionService: AccountDeletionServicing {
+    init() {}
+
+    func deleteAccount(_ request: AccountDeletionRequest) async throws -> AccountDeletionResult {
+        AccountDeletionResult(
+            request: request,
+            didContactNetwork: false
+        )
+    }
+}
+
 struct CareerGraphSyncPreparationRequest: Codable, Equatable {
     var schemaVersion: Int
     var requestedAt: Date

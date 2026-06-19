@@ -33,6 +33,7 @@ describe("Firebase Functions deploy runtime", () => {
     expect(entrypoint).toContain("export const cleanupRevokedPrivateEvidenceUploads = onCall");
     expect(entrypoint).toContain("export const setPrivateEvidenceCloudSyncConsent = onCall");
     expect(entrypoint).toContain("export const acknowledgeBackendEvents = onCall");
+    expect(entrypoint).toContain("export const deleteOpenLARPAccount = onCall");
   });
 
   it("wires deployed callable exports through the Admin callable quota guard", () => {
@@ -40,11 +41,14 @@ describe("Firebase Functions deploy runtime", () => {
     const quotaGuard = readText("src/callableQuotaGuard.ts");
 
     expect(entrypoint).toContain("const callableQuotaGuard = adminCallableQuotaGuard()");
+    expect(entrypoint).toContain("const accountDeletionStatusReader = adminAccountDeletionStatusReader()");
+    expect(entrypoint).toContain("rejectIfAccountDeletionRequested(userID, accountDeletionStatusReader)");
     expect(entrypoint).toContain("quotaGuard: callableQuotaGuard");
     expect(entrypoint).toContain("adminProofUploadReconciliationDependencies(callableQuotaGuard)");
     expect(entrypoint).toContain("adminProofUploadPromotionDependencies(callableQuotaGuard)");
     expect(entrypoint).toContain("adminPrivateEvidenceRetentionDependencies(callableQuotaGuard)");
     expect(entrypoint).toContain("adminBackendEventSyncDependencies(callableQuotaGuard)");
+    expect(entrypoint).not.toContain("adminAccountDeletionDependencies(callableQuotaGuard)");
     expect(quotaGuard).toContain("CALLABLE_DAILY_QUOTA_LIMITS");
     expect(quotaGuard).toContain("resource-exhausted");
   });

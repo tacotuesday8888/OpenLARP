@@ -86,9 +86,12 @@ describe("firebase-signed-in-smoke guardrails", () => {
     expect(script).toContain("Manual cleanup may be needed");
     expect(script).toContain("startedAt.toISOString().slice(0, 10)");
     expect(script).toContain("new Date().toISOString().slice(0, 10)");
+    expect(script).toContain("_accountDeletionRequests/${uid}");
     expect(script).toContain("deleteStoragePrefix");
     expect(script).toContain("deleteFirestoreUserTree");
     expect(script).toContain("assertFirestoreUserTreeEmpty");
+    expect(script).toContain("assertQuotaUsageTreeEmpty");
+    expect(script).toContain("deleteAccountDeletionMarker");
   });
 
   it("uses signed-in Firebase client SDK checks for user-facing Storage and Firestore access", () => {
@@ -117,6 +120,22 @@ describe("firebase-signed-in-smoke guardrails", () => {
     expect(script).toContain('assert(retentionDelete.candidates?.[0]?.status === "deleted"');
   });
 
+  it("exercises account deletion only against the temporary signed-in smoke user", () => {
+    expect(script).toContain('callCallable("deleteOpenLARPAccount"');
+    expect(script).toContain('confirmationText: "DELETE MY OPENLARP ACCOUNT"');
+    expect(script).toContain('assert(deletion.status === "deleted"');
+    expect(script).toContain("deletion.deletionRequestMarker?.status === \"completed\"");
+    expect(script).toContain("assertSmokeUserDeleted");
+    expect(script).toContain("assertStorageUserPrefixEmpty");
+    expect(script).toContain("assertFirestoreUserTreeEmpty");
+    expect(script).toContain("assertQuotaUsageTreeEmpty");
+    expect(script).toContain("assertAccountDeletionMarker");
+    expect(script).toContain("_accountDeletionRequests/${uid}");
+    expect(script.indexOf('callCallable("deleteOpenLARPAccount"')).toBeGreaterThan(
+      script.indexOf("smokeBackendEventAcknowledgement(idToken)")
+    );
+  });
+
   it("checks Storage-to-Firestore IAM needed by private evidence Storage rules", () => {
     expect(liveReadinessScript).toContain("gcp-sa-firebasestorage.iam.gserviceaccount.com");
     expect(liveReadinessScript).toContain("roles/datastore.viewer");
@@ -126,5 +145,10 @@ describe("firebase-signed-in-smoke guardrails", () => {
   it("checks live readiness for private evidence backup cleanup", () => {
     expect(liveReadinessScript).toContain('["cleanupRevokedPrivateEvidenceUploads", "nodejs22"]');
     expect(liveReadinessScript).toContain("Private evidence backup cleanup callable rejects unauthenticated requests");
+  });
+
+  it("checks live readiness for account deletion", () => {
+    expect(liveReadinessScript).toContain('["deleteOpenLARPAccount", "nodejs22"]');
+    expect(liveReadinessScript).toContain("Account deletion callable rejects unauthenticated requests");
   });
 });

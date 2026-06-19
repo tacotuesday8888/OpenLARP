@@ -2389,6 +2389,115 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(decoded.candidates.first?.storageGeneration, "101")
     }
 
+    func testAccountDeletionRequestRedactsAccountFieldsAndRequiresExactConfirmation() throws {
+        let requestedAt = Date(timeIntervalSince1970: 13_760)
+        let session = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_delete",
+            accountID: "firebase_uid_delete",
+            email: "student@example.com"
+        )
+
+        let request = AccountDeletionRequest(
+            session: session,
+            confirmDeletion: true,
+            confirmationText: AccountDeletionRequest.confirmationText,
+            requestedAt: requestedAt
+        )
+
+        XCTAssertEqual(request.schemaVersion, 1)
+        XCTAssertEqual(request.requestedAt, requestedAt)
+        XCTAssertTrue(request.confirmDeletion)
+        XCTAssertEqual(request.confirmationText, "DELETE MY OPENLARP ACCOUNT")
+        XCTAssertTrue(request.session.isAuthenticated)
+        XCTAssertEqual(request.session.ownerUserID, "firebase_uid_delete")
+        XCTAssertNil(request.session.accountID)
+        XCTAssertNil(request.session.email)
+
+        let encodedRequest = String(
+            decoding: try JSONEncoder().encode(request),
+            as: UTF8.self
+        )
+        XCTAssertFalse(encodedRequest.contains("student@example.com"))
+        XCTAssertFalse(encodedRequest.contains("firebase_uid_delete\",\"email"))
+    }
+
+    @MainActor
+    func testLocalAccountDeletionServiceReportsLocalNoop() async throws {
+        let requestedAt = Date(timeIntervalSince1970: 13_770)
+        let state = OpenLARPEngine.confirmGoal(goal, now: requestedAt)
+        let request = AccountDeletionRequest(
+            session: BackendUserSession.localOnly(for: state),
+            confirmDeletion: true,
+            confirmationText: AccountDeletionRequest.confirmationText,
+            requestedAt: requestedAt
+        )
+        let service = LocalMockAccountDeletionService()
+
+        let result = try await service.deleteAccount(request)
+
+        XCTAssertEqual(result.requestedAt, requestedAt)
+        XCTAssertEqual(result.completedAt, requestedAt)
+        XCTAssertFalse(result.didContactNetwork)
+        XCTAssertEqual(result.status, .partial)
+        XCTAssertEqual(result.storageUserPrefix.status, .completed)
+        XCTAssertEqual(result.firestoreUserTree.status, .completed)
+        XCTAssertEqual(result.quotaUsageTree.status, .completed)
+        XCTAssertEqual(result.firebaseAuthUser.status, .skipped)
+        XCTAssertFalse(result.externalActionTaken)
+    }
+
+    func testAccountDeletionResultCodablePreservesPartialScopeFailure() throws {
+        let requestedAt = Date(timeIntervalSince1970: 13_780)
+        let request = AccountDeletionRequest(
+            session: BackendUserSession.firebaseAuthenticated(
+                ownerUserID: "firebase_uid_delete",
+                accountID: "firebase_uid_delete",
+                email: "student@example.com"
+            ),
+            confirmDeletion: true,
+            confirmationText: AccountDeletionRequest.confirmationText,
+            requestedAt: requestedAt
+        )
+        let result = AccountDeletionResult(
+            request: request,
+            didContactNetwork: true,
+            status: .partial,
+            firestoreUserTree: AccountDeletionScopeResult(status: .completed, deletedCount: 7),
+            storageUserPrefix: AccountDeletionScopeResult(
+                status: .failed,
+                deletedCount: 0,
+                attemptedCount: 3,
+                failedCount: 1,
+                failedPathSamples: ["users/firebase_uid_delete/proofAttachments/private.txt"],
+                errorMessage: "Storage cleanup failed."
+            ),
+            quotaUsageTree: AccountDeletionScopeResult(status: .completed, deletedCount: 1),
+            firebaseAuthUser: AccountDeletionAuthResult(status: .skipped),
+            deletionRequestMarker: AccountDeletionMarkerResult(
+                status: .failed,
+                errorMessage: "Deletion marker update failed."
+            ),
+            externalActionTaken: true
+        )
+
+        let decoded = try JSONDecoder().decode(
+            AccountDeletionResult.self,
+            from: try JSONEncoder().encode(result)
+        )
+
+        XCTAssertEqual(decoded.status, .partial)
+        XCTAssertEqual(decoded.firestoreUserTree.deletedCount, 7)
+        XCTAssertEqual(decoded.storageUserPrefix.status, .failed)
+        XCTAssertEqual(decoded.storageUserPrefix.attemptedCount, 3)
+        XCTAssertEqual(decoded.storageUserPrefix.failedCount, 1)
+        XCTAssertEqual(decoded.storageUserPrefix.failedPathSamples, ["users/firebase_uid_delete/proofAttachments/private.txt"])
+        XCTAssertEqual(decoded.storageUserPrefix.errorMessage, "Storage cleanup failed.")
+        XCTAssertEqual(decoded.firebaseAuthUser.status, .skipped)
+        XCTAssertEqual(decoded.deletionRequestMarker.status, .failed)
+        XCTAssertEqual(decoded.deletionRequestMarker.errorMessage, "Deletion marker update failed.")
+        XCTAssertTrue(decoded.externalActionTaken)
+    }
+
     func testCareerGraphSetupStatusContentShowsMissingSetupActions() {
         let emptyContent = CareerGraphSetupStatusContent(
             state: .empty,

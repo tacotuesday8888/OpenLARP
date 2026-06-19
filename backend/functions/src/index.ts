@@ -2,6 +2,10 @@ import { getApps, initializeApp } from "firebase-admin/app";
 import { onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import { adminBackendEventSyncDependencies, handleBackendEventSyncRequest } from "./backendEventSync.js";
+import {
+  adminAccountDeletionStatusReader,
+  rejectIfAccountDeletionRequested
+} from "./accountDeletionGuard.js";
 import { adminCallableQuotaGuard } from "./callableQuotaGuard.js";
 import { toHttpsError } from "./errors.js";
 import {
@@ -20,6 +24,10 @@ import {
   adminPrivateEvidenceRetentionDependencies,
   handlePrivateEvidenceRetentionRequest
 } from "./privateEvidenceRetention.js";
+import {
+  adminAccountDeletionDependencies,
+  handleAccountDeletionRequest
+} from "./accountDeletion.js";
 import { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
 
 if (getApps().length === 0) {
@@ -32,6 +40,18 @@ setGlobalOptions({
 });
 
 const callableQuotaGuard = adminCallableQuotaGuard();
+const accountDeletionStatusReader = adminAccountDeletionStatusReader();
+
+async function throwIfAccountDeletionRequested(userID: string | undefined) {
+  if (!userID) {
+    return;
+  }
+
+  const error = await rejectIfAccountDeletionRequested(userID, accountDeletionStatusReader);
+  if (error) {
+    throw toHttpsError(error);
+  }
+}
 
 export const runOpenLARPWorkflow = onCall(
   {
@@ -40,6 +60,7 @@ export const runOpenLARPWorkflow = onCall(
     memory: "512MiB"
   },
   async (request) => {
+    await throwIfAccountDeletionRequested(request.auth?.uid);
     const response = await handleOpenLARPWorkflowRequest({
       auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : null,
       data: request.data
@@ -62,6 +83,7 @@ export const reconcileProofUploads = onCall(
     memory: "512MiB"
   },
   async (request) => {
+    await throwIfAccountDeletionRequested(request.auth?.uid);
     const response = await handleProofUploadReconciliationRequest({
       auth: request.auth ? { uid: request.auth.uid } : null,
       data: request.data
@@ -82,6 +104,7 @@ export const promoteProofUploadReceipt = onCall(
     memory: "512MiB"
   },
   async (request) => {
+    await throwIfAccountDeletionRequested(request.auth?.uid);
     const response = await handleProofUploadPromotionRequest({
       auth: request.auth ? { uid: request.auth.uid } : null,
       data: request.data
@@ -102,6 +125,7 @@ export const cleanupRevokedPrivateEvidenceUploads = onCall(
     memory: "512MiB"
   },
   async (request) => {
+    await throwIfAccountDeletionRequested(request.auth?.uid);
     const response = await handlePrivateEvidenceRetentionRequest({
       auth: request.auth ? { uid: request.auth.uid } : null,
       data: request.data
@@ -122,6 +146,7 @@ export const setPrivateEvidenceCloudSyncConsent = onCall(
     memory: "256MiB"
   },
   async (request) => {
+    await throwIfAccountDeletionRequested(request.auth?.uid);
     const response = await handlePrivateEvidenceCloudSyncConsentRequest({
       auth: request.auth ? { uid: request.auth.uid } : null,
       data: request.data
@@ -142,6 +167,7 @@ export const acknowledgeBackendEvents = onCall(
     memory: "512MiB"
   },
   async (request) => {
+    await throwIfAccountDeletionRequested(request.auth?.uid);
     const response = await handleBackendEventSyncRequest({
       auth: request.auth ? { uid: request.auth.uid } : null,
       data: request.data
@@ -155,6 +181,31 @@ export const acknowledgeBackendEvents = onCall(
   }
 );
 
+export const deleteOpenLARPAccount = onCall(
+  {
+    cors: true,
+    timeoutSeconds: 120,
+    memory: "512MiB"
+  },
+  async (request) => {
+    const response = await handleAccountDeletionRequest({
+      auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : null,
+      data: request.data
+    }, adminAccountDeletionDependencies());
+
+    if (!response.ok) {
+      throw toHttpsError(response);
+    }
+
+    return response;
+  }
+);
+
+export { handleAccountDeletionRequest } from "./accountDeletion.js";
+export {
+  accountDeletionRequestPath,
+  rejectIfAccountDeletionRequested
+} from "./accountDeletionGuard.js";
 export { handleBackendEventSyncRequest } from "./backendEventSync.js";
 export {
   adminCallableQuotaGuard,
@@ -166,6 +217,14 @@ export { handlePrivateEvidenceCloudSyncConsentRequest } from "./privateEvidenceC
 export { handlePrivateEvidenceRetentionRequest } from "./privateEvidenceRetention.js";
 export { handleProofUploadPromotionRequest } from "./proofUploadPromotion.js";
 export { handleProofUploadReconciliationRequest } from "./proofUploadReconciliation.js";
+export type {
+  AccountDeletionAuthResult,
+  AccountDeletionMarkerResult,
+  AccountDeletionResponse,
+  AccountDeletionScopeResult,
+  AccountDeletionSuccess,
+  OpenLARPAccountDeletionRequest
+} from "./accountDeletion.js";
 export type {
   BackendEventDocumentAcknowledgement,
   BackendEventSyncReceipt,

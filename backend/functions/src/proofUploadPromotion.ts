@@ -1,5 +1,10 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import {
+  accountDeletionBlockedError,
+  accountDeletionRequestPath,
+  isBlockingAccountDeletionRequest
+} from "./accountDeletionGuard.js";
 import { type CallableQuotaGuard } from "./callableQuotaGuard.js";
 import { functionError, type OpenLARPFunctionError } from "./errors.js";
 
@@ -74,7 +79,7 @@ export type ProofUploadPromotionDependencies = {
     userID: string,
     attachmentID: string,
     document: Record<string, unknown>
-  ) => Promise<void>;
+  ) => Promise<OpenLARPFunctionError | null | void>;
   quotaGuard?: CallableQuotaGuard;
   now?: () => Date;
 };
@@ -145,7 +150,10 @@ export async function handleProofUploadPromotionRequest(
   const promotedAt = promotedAtDate.toISOString();
   const uploadReceipt = receiptFromStorageObject(parsed.value, storageObject);
   const document = proofAttachmentDocument(userID, parsed.value, uploadReceipt, promotedAtDate);
-  await dependencies.writeProofAttachmentDocument(userID, parsed.value.attachmentID, document);
+  const writeError = await dependencies.writeProofAttachmentDocument(userID, parsed.value.attachmentID, document);
+  if (writeError) {
+    return writeError;
+  }
 
   return {
     ok: true,
@@ -408,9 +416,19 @@ export function adminProofUploadPromotionDependencies(
     readPrivateEvidenceCloudSyncConsent,
     readStorageObject,
     async writeProofAttachmentDocument(userID, attachmentID, document) {
-      await getFirestore()
-        .doc(`users/${userID}/proofAttachments/${attachmentID}`)
-        .set(document, { merge: false });
+      const firestore = getFirestore();
+      const deletionReference = firestore.doc(accountDeletionRequestPath(userID));
+      const attachmentReference = firestore.doc(`users/${userID}/proofAttachments/${attachmentID}`);
+      return firestore.runTransaction(async (transaction) => {
+        const deletionSnapshot = await transaction.get(deletionReference);
+        const deletionDocument = deletionSnapshot.exists ? deletionSnapshot.data() : null;
+        if (isBlockingAccountDeletionRequest(userID, deletionDocument)) {
+          return accountDeletionBlockedError(deletionDocument.status);
+        }
+
+        transaction.set(attachmentReference, document, { merge: false });
+        return null;
+      });
     },
     ...(quotaGuard ? { quotaGuard } : {})
   };

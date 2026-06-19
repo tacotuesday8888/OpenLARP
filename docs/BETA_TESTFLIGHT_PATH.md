@@ -16,7 +16,7 @@ This document tracks the practical path from the current local product foundatio
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
 - Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled, and its deploy package is kept free of Genkit runtime dependencies.
-- Deterministic Firebase Callable Functions are deployed to the `openlarp-dev-langqi` dev project in `us-central1` with Node.js 22: `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, and `acknowledgeBackendEvents`.
+- Deterministic Firebase Callable Functions are deployed to the `openlarp-dev-langqi` dev project in `us-central1` with Node.js 22: `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and `deleteOpenLARPAccount`.
 - The live callable endpoint is reachable and rejects unsigned workflow requests with `UNAUTHENTICATED`.
 - Functions Artifact Registry cleanup policies are installed for the dev project so old deployment images do not accumulate without a retention policy.
 - The iOS app now tries the Firebase callable Genkit route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.
@@ -32,6 +32,7 @@ This document tracks the practical path from the current local product foundatio
 - Signed-in Firebase CLI smoke tooling exists to verify workflow callable auth, proof Storage object verification, proof receipt promotion, proof upload reconciliation, backend event acknowledgement, and cleanup of temporary smoke data in the dev project.
 - Private proof records, proof attachment metadata, and proof attachment Storage uploads are gated behind explicit server-owned private evidence cloud sync consent. Public "share wins" permission no longer allows private proof backup by itself.
 - Uploaded proof backup cleanup after revoked consent has a server-owned callable foundation. It defaults to report-only, requires explicit attachment IDs plus deletion confirmation for deletes, and returns per-item skipped/deleted/partial-failure statuses. It is not a full account/private-data deletion feature.
+- Account deletion has a server-owned callable foundation. It requires recent Firebase Auth and exact destructive confirmation, writes a minimal retained deletion marker that blocks stale client and Admin callable writes, deletes the user Storage prefix, Firestore user tree, hashed quota tree, and then the Firebase Auth user, and reports partial failures including marker-finalization failures for retry/support handling.
 - iOS App Check provider scaffolding is linked, real-device builds have the production App Attest entitlement, and simulator debug App Check is explicit opt-in to avoid leaking debug tokens in logs. Firebase product enforcement is still off until console registration, debug tokens, and device metrics are verified.
 - Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
 
@@ -40,7 +41,7 @@ This document tracks the practical path from the current local product foundatio
 1. Verify live Google Sign-In in the simulator/device with the refreshed ignored local plist, then add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary account option.
 2. Run `npm run firebase:signed-in-smoke` before each backend-readiness pass, then test account-backed proof attachment uploads, Firestore career graph writes, and the signed-in deterministic callable AI fallback route on a simulator/device.
 3. Test the iOS callable route signed-out fallback behavior.
-4. Add user-facing uploaded proof backup cleanup UX/support flow and a separate full account/private-data deletion path with privacy disclosures.
+4. Add user-facing uploaded proof backup cleanup UX/support flow and account deletion initiation UX with privacy disclosures.
 5. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
 6. Register App Check in Firebase Console, register simulator debug tokens as private secrets, verify device App Attest metrics, update live smoke tooling for App Check tokens, then enable App Check enforcement before treating all cloud data as authoritative or enabling live AI.
 7. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way.

@@ -439,6 +439,51 @@ describe("Firestore rules", () => {
     ));
   });
 
+  it("blocks client user-tree writes after account deletion has been requested", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const timestamp = new Date("2026-06-18T00:00:00.000Z");
+    await seedPrivateEvidenceConsent("alice", timestamp);
+    await seedAccountDeletionRequest("alice", timestamp);
+
+    await assertFails(setDoc(doc(alice, "users/alice"), {
+      ownerUserID: "alice",
+      displayName: "Alice"
+    }));
+    await assertFails(setDoc(doc(alice, "users/alice/profiles/profile1"), {
+      metadata: safeMetadata("alice", "profile1", timestamp),
+      displayName: "Early-career candidate",
+      collectionPath: "users/alice/profiles",
+      documentPath: "users/alice/profiles/profile1"
+    }));
+    await assertFails(setDoc(doc(alice, "users/alice/proofRecords/proof1"), {
+      metadata: safeMetadata("alice", "proof1", timestamp),
+      questID: "quest1",
+      questTitle: "Map role requirements",
+      kind: "proof",
+      text: "This should not sync after deletion starts.",
+      submittedAt: timestamp,
+      collectionPath: "users/alice/proofRecords",
+      documentPath: "users/alice/proofRecords/proof1"
+    }));
+    await assertFails(setDoc(doc(alice, "users/alice/proofAttachments/attachment1"), {
+      metadata: safeMetadata("alice", "attachment1", timestamp),
+      proofID: "proof1",
+      fileName: "proof.png",
+      originalFileName: "proof.png",
+      contentType: "image/png",
+      byteCount: 32000,
+      createdAt: timestamp,
+      storagePath: "users/alice/proofAttachments/attachment1",
+      uploadStatus: "pendingUpload",
+      collectionPath: "users/alice/proofAttachments",
+      documentPath: "users/alice/proofAttachments/attachment1"
+    }));
+    await assertFails(setDoc(
+      doc(alice, "_accountDeletionRequests/alice"),
+      safeAccountDeletionRequest("alice", timestamp)
+    ));
+  });
+
   it("rejects career graph update bypasses", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
     const timestamp = new Date("2026-06-18T00:00:00.000Z");
@@ -738,6 +783,28 @@ async function seedPrivateEvidenceConsent(ownerUserID, timestamp, overrides = {}
       safePrivateEvidenceConsent(ownerUserID, timestamp, overrides)
     );
   });
+}
+
+async function seedAccountDeletionRequest(ownerUserID, timestamp, overrides = {}) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(
+      doc(context.firestore(), `_accountDeletionRequests/${ownerUserID}`),
+      safeAccountDeletionRequest(ownerUserID, timestamp, overrides)
+    );
+  });
+}
+
+function safeAccountDeletionRequest(ownerUserID, timestamp, overrides = {}) {
+  return {
+    schemaVersion: 1,
+    ownerUserID,
+    status: "deleting",
+    requestedAt: timestamp,
+    updatedAt: timestamp,
+    collectionPath: "_accountDeletionRequests",
+    documentPath: `_accountDeletionRequests/${ownerUserID}`,
+    ...overrides
+  };
 }
 
 function safePrivateEvidenceConsent(ownerUserID, timestamp, overrides = {}) {
