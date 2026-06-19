@@ -753,6 +753,8 @@ final class OpenLARPStore {
         applyAuthenticationResult(result, shouldSurfaceMessage: false)
         if result.status == .authenticated {
             await synchronizeSubscriptionIdentity(for: result.session)
+        } else if result.status == .signedOut && shouldResetSubscriptionIdentityAfterSignedOutRestore {
+            await resetSubscriptionIdentityAfterSignOut()
         }
     }
 
@@ -1411,6 +1413,10 @@ final class OpenLARPStore {
         }
         state.subscriptionState = resetState
         save()
+    }
+
+    private var shouldResetSubscriptionIdentityAfterSignedOutRestore: Bool {
+        currentSubscriptionOffering != nil || state.subscriptionState.customerInfo != nil
     }
 
     private func applyAuthenticatedAccount(_ session: BackendUserSession) {
