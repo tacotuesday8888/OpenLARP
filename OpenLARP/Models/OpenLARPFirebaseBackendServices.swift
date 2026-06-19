@@ -710,7 +710,7 @@ private struct FirebaseAccountDeletionPayload: Encodable, Equatable, Sendable {
     }
 }
 
-private struct FirebaseAccountDeletionResponse: Codable, Equatable, Sendable {
+struct FirebaseAccountDeletionResponse: Codable, Equatable, Sendable {
     var ok: Bool
     var schemaVersion: Int
     var userID: String
@@ -731,7 +731,8 @@ private struct FirebaseAccountDeletionResponse: Codable, Equatable, Sendable {
               requestedAt <= completedAt,
               allCountsAreNonNegative,
               statusMatchesScopeResults,
-              externalActionTaken == responseTookExternalAction
+              externalActionTaken == responseTookExternalAction,
+              !responseContainsUnknownStatuses
         else {
             throw FirebaseBackendServiceError.contractMismatch("Account deletion response did not match the signed-in user or deletion contract.")
         }
@@ -772,7 +773,16 @@ private struct FirebaseAccountDeletionResponse: Codable, Equatable, Sendable {
             return dataScopesCompleted && authDeleted && markerFinalized
         case .partial:
             return !(dataScopesCompleted && authDeleted && markerFinalized)
+        case .unknown:
+            return false
         }
+    }
+
+    private var responseContainsUnknownStatuses: Bool {
+        status == .unknown ||
+            [firestoreUserTree, storageUserPrefix, quotaUsageTree].contains { $0.status == .unknown } ||
+            firebaseAuthUser.status == .unknown ||
+            deletionRequestMarker.status == .unknown
     }
 
     private var responseTookExternalAction: Bool {

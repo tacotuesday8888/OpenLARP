@@ -344,7 +344,7 @@ struct FirebaseOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
         presenting anchor: OpenLARPAuthenticationPresentationAnchor?,
         for state: OpenLARPState
     ) async -> OpenLARPAuthenticationResult {
-        #if canImport(FirebaseCore) && canImport(FirebaseAuth) && canImport(AuthenticationServices) && canImport(UIKit) && canImport(CryptoKit)
+        #if canImport(FirebaseCore) && canImport(FirebaseAuth) && canImport(UIKit)
         guard FirebaseApp.app() != nil else {
             return setupResult(operation: .prepareAccountDeletion, status: .configurationMissing, state: state)
         }
@@ -358,60 +358,112 @@ struct FirebaseOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
             )
         }
 
-        guard user.providerData.contains(where: { $0.providerID == "apple.com" }) else {
-            return OpenLARPAuthenticationResult(
-                operation: .prepareAccountDeletion,
-                status: .authenticated,
-                session: currentSession(for: state)
-            )
-        }
+        let providerIDs = Set(user.providerData.map(\.providerID))
 
-        guard let presentationAnchor = applePresentationAnchor(from: anchor) else {
-            return OpenLARPAuthenticationResult(
-                operation: .prepareAccountDeletion,
-                status: .presentationRequired,
-                session: currentSession(for: state),
-                message: "Apple account deletion needs a fresh Sign in with Apple confirmation window."
-            )
-        }
-
-        do {
-            let appleCredential = try await requestAppleCredential(
-                presenting: presentationAnchor,
-                requestedScopes: []
-            )
-            let credential = try firebaseCredential(from: appleCredential)
-            guard let authorizationCode = appleCredential.authorizationCode else {
-                return setupResult(operation: .prepareAccountDeletion, status: .providerSetupRequired, state: state)
+        if providerIDs.contains("apple.com") {
+            #if canImport(AuthenticationServices) && canImport(CryptoKit)
+            guard let presentationAnchor = applePresentationAnchor(from: anchor) else {
+                return OpenLARPAuthenticationResult(
+                    operation: .prepareAccountDeletion,
+                    status: .presentationRequired,
+                    session: currentSession(for: state),
+                    message: "Apple account deletion needs a fresh Sign in with Apple confirmation window."
+                )
             }
-            _ = try await user.reauthenticate(with: credential)
-            try await Auth.auth().revokeToken(withAuthorizationCode: authorizationCode)
-            return OpenLARPAuthenticationResult(
-                operation: .prepareAccountDeletion,
-                status: .authenticated,
-                session: currentSession(for: state)
-            )
-        } catch OpenLARPAppleAuthorizationError.cancelled {
-            return OpenLARPAuthenticationResult(
-                operation: .prepareAccountDeletion,
-                status: .cancelled,
-                session: currentSession(for: state),
-                message: "Apple account deletion confirmation was cancelled."
-            )
-        } catch OpenLARPAppleAuthorizationError.nonceUnavailable {
+
+            do {
+                let appleCredential = try await requestAppleCredential(
+                    presenting: presentationAnchor,
+                    requestedScopes: []
+                )
+                let credential = try firebaseCredential(from: appleCredential)
+                guard let authorizationCode = appleCredential.authorizationCode else {
+                    return setupResult(operation: .prepareAccountDeletion, status: .providerSetupRequired, state: state)
+                }
+                _ = try await user.reauthenticate(with: credential)
+                _ = try await user.getIDTokenResult(forcingRefresh: true)
+                try await Auth.auth().revokeToken(withAuthorizationCode: authorizationCode)
+                return OpenLARPAuthenticationResult(
+                    operation: .prepareAccountDeletion,
+                    status: .authenticated,
+                    session: currentSession(for: state)
+                )
+            } catch OpenLARPAppleAuthorizationError.cancelled {
+                return OpenLARPAuthenticationResult(
+                    operation: .prepareAccountDeletion,
+                    status: .cancelled,
+                    session: currentSession(for: state),
+                    message: "Apple account deletion confirmation was cancelled."
+                )
+            } catch OpenLARPAppleAuthorizationError.nonceUnavailable {
+                return setupResult(operation: .prepareAccountDeletion, status: .sdkUnavailable, state: state)
+            } catch OpenLARPAppleAuthorizationError.missingIdentityToken,
+                    OpenLARPAppleAuthorizationError.missingAuthorizationCode {
+                return setupResult(operation: .prepareAccountDeletion, status: .providerSetupRequired, state: state)
+            } catch {
+                return OpenLARPAuthenticationResult(
+                    operation: .prepareAccountDeletion,
+                    status: .failed,
+                    session: currentSession(for: state),
+                    message: error.localizedDescription
+                )
+            }
+            #else
             return setupResult(operation: .prepareAccountDeletion, status: .sdkUnavailable, state: state)
-        } catch OpenLARPAppleAuthorizationError.missingIdentityToken,
-                OpenLARPAppleAuthorizationError.missingAuthorizationCode {
-            return setupResult(operation: .prepareAccountDeletion, status: .providerSetupRequired, state: state)
-        } catch {
-            return OpenLARPAuthenticationResult(
-                operation: .prepareAccountDeletion,
-                status: .failed,
-                session: currentSession(for: state),
-                message: error.localizedDescription
-            )
+            #endif
         }
-        #elseif canImport(FirebaseCore) && canImport(FirebaseAuth) && canImport(AuthenticationServices)
+
+        if providerIDs.contains("google.com") {
+            #if canImport(GoogleSignIn)
+            guard configureGoogleSignInIfPossible() else {
+                return setupResult(operation: .prepareAccountDeletion, status: .configurationMissing, state: state)
+            }
+
+            guard let anchor else {
+                return OpenLARPAuthenticationResult(
+                    operation: .prepareAccountDeletion,
+                    status: .presentationRequired,
+                    session: currentSession(for: state),
+                    message: "Google account deletion needs a fresh Google Sign-In confirmation window."
+                )
+            }
+
+            do {
+                let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: anchor)
+                guard let credential = firebaseCredential(from: result.user) else {
+                    return setupResult(operation: .prepareAccountDeletion, status: .providerSetupRequired, state: state)
+                }
+                _ = try await user.reauthenticate(with: credential)
+                _ = try await user.getIDTokenResult(forcingRefresh: true)
+                return OpenLARPAuthenticationResult(
+                    operation: .prepareAccountDeletion,
+                    status: .authenticated,
+                    session: currentSession(for: state)
+                )
+            } catch {
+                return OpenLARPAuthenticationResult(
+                    operation: .prepareAccountDeletion,
+                    status: .failed,
+                    session: currentSession(for: state),
+                    message: error.localizedDescription
+                )
+            }
+            #else
+            return setupResult(operation: .prepareAccountDeletion, status: .sdkUnavailable, state: state)
+            #endif
+        }
+
+        if providerIDs.isEmpty {
+            return setupResult(operation: .prepareAccountDeletion, status: .providerSetupRequired, state: state)
+        }
+
+        return OpenLARPAuthenticationResult(
+            operation: .prepareAccountDeletion,
+            status: .providerSetupRequired,
+            session: currentSession(for: state),
+            message: "Cloud account deletion needs a supported provider reauthentication step before it can continue."
+        )
+        #elseif canImport(FirebaseCore) && canImport(FirebaseAuth)
         return setupResult(operation: .prepareAccountDeletion, status: .presentationRequired, state: state)
         #else
         return setupResult(operation: .prepareAccountDeletion, status: .sdkUnavailable, state: state)
@@ -523,8 +575,10 @@ struct FirebaseOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
 
     private func configurationMessage(for operation: OpenLARPAuthenticationOperation) -> String {
         switch operation {
-        case .signInWithApple, .prepareAccountDeletion:
+        case .signInWithApple:
             "Firebase must be configured with local GoogleService-Info.plist and Apple provider setup before Sign in with Apple can run."
+        case .prepareAccountDeletion:
+            "Firebase must be configured with local GoogleService-Info.plist and provider setup before cloud account deletion can run."
         case .restorePreviousSession, .signInWithGoogle, .signOut, .handleOpenURL:
             "Firebase must be configured with local GoogleService-Info.plist and Google provider setup before Google Sign-In can run."
         }
@@ -532,8 +586,10 @@ struct FirebaseOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
 
     private func sdkUnavailableMessage(for operation: OpenLARPAuthenticationOperation) -> String {
         switch operation {
-        case .signInWithApple, .prepareAccountDeletion:
+        case .signInWithApple:
             "FirebaseAuth, AuthenticationServices, and CryptoKit must be available before Sign in with Apple can run."
+        case .prepareAccountDeletion:
+            "FirebaseAuth and the signed-in account provider SDK must be linked before cloud account deletion can run."
         case .restorePreviousSession, .signInWithGoogle, .signOut, .handleOpenURL:
             "FirebaseAuth and GoogleSignIn SDK products must be linked before Google Sign-In can run."
         }
@@ -541,8 +597,10 @@ struct FirebaseOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
 
     private func providerSetupMessage(for operation: OpenLARPAuthenticationOperation) -> String {
         switch operation {
-        case .signInWithApple, .prepareAccountDeletion:
+        case .signInWithApple:
             "Apple provider setup is incomplete. Enable Sign in with Apple in Apple Developer and Firebase Auth."
+        case .prepareAccountDeletion:
+            "Provider setup is incomplete. Enable the signed-in provider in Firebase Auth before cloud account deletion."
         case .restorePreviousSession, .signInWithGoogle, .signOut, .handleOpenURL:
             "Google provider setup is incomplete. Enable Google Sign-In in Firebase Auth and add the reversed client ID URL scheme."
         }
@@ -553,7 +611,7 @@ struct FirebaseOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
         case .signInWithApple:
             "Sign in with Apple needs a presentation window from the current iOS screen."
         case .prepareAccountDeletion:
-            "Apple account deletion needs a fresh Sign in with Apple confirmation window."
+            "Cloud account deletion needs a fresh provider confirmation window."
         case .restorePreviousSession, .signInWithGoogle, .signOut, .handleOpenURL:
             "Google Sign-In needs a presenting UIViewController from the app UI."
         }
@@ -618,14 +676,9 @@ struct FirebaseOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
         operation: OpenLARPAuthenticationOperation,
         state: OpenLARPState
     ) async -> OpenLARPAuthenticationResult {
-        guard let idToken = googleUser.idToken?.tokenString else {
+        guard let credential = firebaseCredential(from: googleUser) else {
             return setupResult(operation: operation, status: .providerSetupRequired, state: state)
         }
-
-        let credential = GoogleAuthProvider.credential(
-            withIDToken: idToken,
-            accessToken: googleUser.accessToken.tokenString
-        )
 
         do {
             _ = try await Auth.auth().signIn(with: credential)
@@ -643,6 +696,17 @@ struct FirebaseOpenLARPAuthenticationService: OpenLARPAuthenticationServicing {
                 message: error.localizedDescription
             )
         }
+    }
+
+    private func firebaseCredential(from googleUser: GIDGoogleUser) -> AuthCredential? {
+        guard let idToken = googleUser.idToken?.tokenString else {
+            return nil
+        }
+
+        return GoogleAuthProvider.credential(
+            withIDToken: idToken,
+            accessToken: googleUser.accessToken.tokenString
+        )
     }
     #endif
 }

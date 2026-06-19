@@ -867,11 +867,13 @@ struct LocalMockPrivateEvidenceBackupCleanupService: PrivateEvidenceBackupCleanu
 enum AccountDeletionStatus: String, Codable, CaseIterable {
     case deleted
     case partial
+    case unknown
 }
 
 enum AccountDeletionScopeStatus: String, Codable, CaseIterable {
     case completed
     case failed
+    case unknown
 }
 
 enum AccountDeletionFirebaseAuthStatus: String, Codable, CaseIterable {
@@ -879,6 +881,7 @@ enum AccountDeletionFirebaseAuthStatus: String, Codable, CaseIterable {
     case alreadyMissing
     case failed
     case skipped
+    case unknown
 }
 
 struct AccountDeletionScopeResult: Codable, Equatable {
@@ -976,6 +979,51 @@ struct AccountDeletionResult: Codable, Equatable {
         self.firebaseAuthUser = firebaseAuthUser
         self.deletionRequestMarker = deletionRequestMarker
         self.externalActionTaken = externalActionTaken
+    }
+
+    static func unknownAfterRequestStarted(
+        request: AccountDeletionRequest,
+        at timestamp: Date
+    ) -> AccountDeletionResult {
+        AccountDeletionResult(
+            request: request,
+            completedAt: timestamp,
+            didContactNetwork: true,
+            status: .unknown,
+            firestoreUserTree: AccountDeletionScopeResult(
+                status: .unknown,
+                deletedCount: 0,
+                attemptedCount: nil,
+                failedCount: nil,
+                failedPathSamples: nil,
+                errorMessage: "Cloud account deletion outcome is unknown because the response was not confirmed."
+            ),
+            storageUserPrefix: AccountDeletionScopeResult(
+                status: .unknown,
+                deletedCount: 0,
+                attemptedCount: nil,
+                failedCount: nil,
+                failedPathSamples: nil,
+                errorMessage: "Cloud account deletion outcome is unknown because the response was not confirmed."
+            ),
+            quotaUsageTree: AccountDeletionScopeResult(
+                status: .unknown,
+                deletedCount: 0,
+                attemptedCount: nil,
+                failedCount: nil,
+                failedPathSamples: nil,
+                errorMessage: "Cloud account deletion outcome is unknown because the response was not confirmed."
+            ),
+            firebaseAuthUser: AccountDeletionAuthResult(
+                status: .unknown,
+                errorMessage: "Cloud account deletion outcome is unknown because the response was not confirmed."
+            ),
+            deletionRequestMarker: AccountDeletionMarkerResult(
+                status: .unknown,
+                errorMessage: "Cloud account deletion outcome is unknown because the response was not confirmed."
+            ),
+            externalActionTaken: true
+        )
     }
 }
 

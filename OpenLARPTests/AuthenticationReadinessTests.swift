@@ -921,6 +921,199 @@ final class AuthenticationReadinessTests: XCTestCase {
         XCTAssertNil(store.accountDeletionResult?.firestoreUserTree.failedPathSamples)
         XCTAssertNil(store.accountDeletionResult?.firestoreUserTree.errorMessage)
     }
+
+    func testAccountDeletionBackendFailurePersistsUnknownSupportState() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let authenticatedSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_delete_unknown",
+            accountID: "firebase_uid_delete_unknown",
+            email: "student@example.com"
+        )
+        let deletionService = RecordingAccountDeletionService { _ in
+            throw NSError(domain: "OpenLARPTests", code: 1001)
+        }
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(restoredSession: authenticatedSession),
+            accountDeletionService: deletionService
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        await store.deleteCloudAccount(confirmationText: AccountDeletionRequest.confirmationText)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(deletionService.requests.count, 1)
+        XCTAssertEqual(store.accountDeletionResult?.status, .unknown)
+        XCTAssertEqual(store.accountDeletionResult?.firestoreUserTree.status, .unknown)
+        XCTAssertEqual(store.accountDeletionResult?.storageUserPrefix.status, .unknown)
+        XCTAssertEqual(store.accountDeletionResult?.quotaUsageTree.status, .unknown)
+        XCTAssertEqual(store.accountDeletionResult?.firebaseAuthUser.status, .unknown)
+        XCTAssertEqual(store.accountDeletionResult?.deletionRequestMarker.status, .unknown)
+        XCTAssertEqual(reloaded.accountDeletionResult?.status, .unknown)
+        XCTAssertEqual(reloaded.accountDeletionResult?.firebaseAuthUser.status, .unknown)
+        XCTAssertTrue(store.currentBackendSessionSnapshot().isAuthenticated)
+        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_delete_unknown")
+        XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .accountDeletionRequested })
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .accountDeletionCompleted })
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .accountDeletionPartial })
+        XCTAssertEqual(
+            store.errorMessage,
+            "Cloud account deletion started, but OpenLARP could not confirm the final backend result. Keep this status for support, sign in again, and retry before assuming cloud data still exists."
+        )
+    }
+
+    func testAccountDeletionPersistsUnknownBeforeBackendResponseReturns() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let authenticatedSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_delete_suspended",
+            accountID: "firebase_uid_delete_suspended",
+            email: "student@example.com"
+        )
+        let deletionService = DelayedAccountDeletionService()
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: MockOpenLARPAuthenticationService(restoredSession: authenticatedSession),
+            accountDeletionService: deletionService
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        let deletionTask = Task {
+            await store.deleteCloudAccount(confirmationText: AccountDeletionRequest.confirmationText)
+        }
+        await deletionService.waitUntilRequestStarted()
+
+        let reloadedDuringSuspendedCall = try persistence.load()
+        XCTAssertEqual(deletionService.requests.count, 1)
+        XCTAssertEqual(reloadedDuringSuspendedCall.accountDeletionResult?.status, .unknown)
+        XCTAssertEqual(reloadedDuringSuspendedCall.accountDeletionResult?.firebaseAuthUser.status, .unknown)
+        XCTAssertTrue(reloadedDuringSuspendedCall.betaEvents.contains { $0.kind == .accountDeletionRequested })
+        XCTAssertFalse(reloadedDuringSuspendedCall.betaEvents.contains { $0.kind == .accountDeletionCompleted })
+        XCTAssertFalse(reloadedDuringSuspendedCall.betaEvents.contains { $0.kind == .accountDeletionPartial })
+
+        deletionService.completePendingRequest()
+        await deletionTask.value
+    }
+
+    func testAccountDeletionDoesNotCallBackendWhenUnknownStatusCannotBeSaved() async throws {
+        let failingPersistence = OpenLARPPersistence(directory: URL(fileURLWithPath: "/dev/null"))
+        let attachmentDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let authenticatedSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_delete_save_failed",
+            accountID: "firebase_uid_delete_save_failed",
+            email: "student@example.com"
+        )
+        let deletionService = RecordingAccountDeletionService()
+        let store = OpenLARPStore(
+            persistence: failingPersistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: attachmentDirectory),
+            authenticationService: MockOpenLARPAuthenticationService(restoredSession: authenticatedSession),
+            accountDeletionService: deletionService
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: Date(timeIntervalSince1970: 20_600))
+        await store.restorePreviousAuthenticationSession()
+
+        await store.deleteCloudAccount(confirmationText: AccountDeletionRequest.confirmationText)
+
+        XCTAssertTrue(deletionService.requests.isEmpty)
+        XCTAssertNil(store.accountDeletionResult)
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .accountDeletionRequested })
+        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_delete_save_failed")
+        XCTAssertEqual(
+            store.errorMessage,
+            "Cloud account deletion could not start because local support status could not be saved."
+        )
+    }
+
+    func testUnknownAccountDeletionSupportResultPersistsAcrossAccountSwitch() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let deletedAccountSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_delete_unknown_switch",
+            accountID: "firebase_uid_delete_unknown_switch",
+            email: "student@example.com"
+        )
+        let nextAccountSession = BackendUserSession.firebaseAuthenticated(
+            ownerUserID: "firebase_uid_after_unknown_delete",
+            accountID: "firebase_uid_after_unknown_delete",
+            email: "next@example.com"
+        )
+        let authService = MockOpenLARPAuthenticationService(
+            restoredSession: deletedAccountSession,
+            googleSignInSession: nextAccountSession
+        )
+        let deletionService = RecordingAccountDeletionService { _ in
+            throw NSError(domain: "OpenLARPTests", code: 1002)
+        }
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            authenticationService: authService,
+            accountDeletionService: deletionService
+        )
+
+        await store.confirmGoal(goal)
+        await store.restorePreviousAuthenticationSession()
+        await store.deleteCloudAccount(confirmationText: AccountDeletionRequest.confirmationText)
+        await store.signInWithGoogle(presenting: nil)
+
+        XCTAssertEqual(store.currentBackendSessionSnapshot().ownerUserID, "firebase_uid_after_unknown_delete")
+        XCTAssertEqual(store.state.userProfile?.accountID, "firebase_uid_after_unknown_delete")
+        XCTAssertEqual(store.accountDeletionResult?.status, .unknown)
+        XCTAssertEqual(store.accountDeletionResult?.firebaseAuthUser.status, .unknown)
+        XCTAssertNil(store.accountDeletionResult?.firestoreUserTree.failedPathSamples)
+        XCTAssertNil(store.accountDeletionResult?.firestoreUserTree.errorMessage)
+    }
+}
+
+@MainActor
+private final class DelayedAccountDeletionService: AccountDeletionServicing {
+    private var pendingContinuation: CheckedContinuation<Void, Never>?
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var hasStarted = false
+    private(set) var requests: [AccountDeletionRequest] = []
+
+    func deleteAccount(_ request: AccountDeletionRequest) async throws -> AccountDeletionResult {
+        requests.append(request)
+        hasStarted = true
+        startedContinuation?.resume()
+        startedContinuation = nil
+        await withCheckedContinuation { continuation in
+            pendingContinuation = continuation
+        }
+        return AccountDeletionResult(
+            request: request,
+            completedAt: request.requestedAt.addingTimeInterval(2),
+            didContactNetwork: true,
+            status: .partial,
+            firestoreUserTree: AccountDeletionScopeResult(status: .failed, deletedCount: 0, attemptedCount: 1, failedCount: 1),
+            storageUserPrefix: AccountDeletionScopeResult(status: .completed, deletedCount: 0, attemptedCount: 0, failedCount: 0),
+            quotaUsageTree: AccountDeletionScopeResult(status: .completed, deletedCount: 0, attemptedCount: 0, failedCount: 0),
+            firebaseAuthUser: AccountDeletionAuthResult(status: .skipped),
+            deletionRequestMarker: AccountDeletionMarkerResult(status: .completed),
+            externalActionTaken: true
+        )
+    }
+
+    func waitUntilRequestStarted() async {
+        guard !hasStarted else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuation = continuation
+        }
+    }
+
+    func completePendingRequest() {
+        pendingContinuation?.resume()
+        pendingContinuation = nil
+    }
 }
 
 @MainActor

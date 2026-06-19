@@ -686,8 +686,23 @@ final class OpenLARPStore {
             confirmationText: confirmationText,
             requestedAt: requestedAt
         )
+        let previousActiveAccountDeletionResult = activeAccountDeletionResult
+        let previousAccountDeletionResult = state.accountDeletionResult
+        let previousBetaEvents = state.betaEvents
+        let unknownResult = AccountDeletionResult.unknownAfterRequestStarted(
+            request: request,
+            at: requestedAt
+        )
+        activeAccountDeletionResult = unknownResult
+        state.accountDeletionResult = sanitizedAccountDeletionResult(unknownResult)
         recordBetaEvent(.accountDeletionRequested, occurredAt: requestedAt)
-        save()
+        guard save() else {
+            activeAccountDeletionResult = previousActiveAccountDeletionResult
+            state.accountDeletionResult = previousAccountDeletionResult
+            state.betaEvents = previousBetaEvents
+            errorMessage = "Cloud account deletion could not start because local support status could not be saved."
+            return
+        }
 
         do {
             let result = try await accountDeletionService.deleteAccount(request)
@@ -718,7 +733,8 @@ final class OpenLARPStore {
             errorMessage = result.status == .deleted ? nil : partialAccountDeletionMessage(for: result)
             save()
         } catch {
-            errorMessage = "Cloud account deletion could not be completed. Reauthenticate, then try again."
+            errorMessage = unknownAccountDeletionMessage()
+            save()
         }
     }
 
@@ -1303,7 +1319,7 @@ final class OpenLARPStore {
         let preservedDeletionSupportResult: AccountDeletionResult?
         if preservingPartialAccountDeletionSupport,
            let result = state.accountDeletionResult,
-           result.status == .partial
+           result.status == .partial || result.status == .unknown
         {
             preservedDeletionSupportResult = sanitizedAccountDeletionResult(result)
         } else {
@@ -1317,12 +1333,20 @@ final class OpenLARPStore {
     }
 
     private func partialAccountDeletionMessage(for result: AccountDeletionResult) -> String {
+        if result.status == .unknown {
+            return unknownAccountDeletionMessage()
+        }
+
         switch result.firebaseAuthUser.status {
         case .deleted, .alreadyMissing:
-            "Cloud account deletion is partial after Firebase Auth was removed. Keep this result for support and contact support."
-        case .skipped, .failed:
-            "Cloud account deletion is partial. Keep this result for support and retry after reauthenticating."
+            return "Cloud account deletion is partial after Firebase Auth was removed. Keep this result for support and contact support."
+        case .skipped, .failed, .unknown:
+            return "Cloud account deletion is partial. Keep this result for support and retry after reauthenticating."
         }
+    }
+
+    private func unknownAccountDeletionMessage() -> String {
+        "Cloud account deletion started, but OpenLARP could not confirm the final backend result. Keep this status for support, sign in again, and retry before assuming cloud data still exists."
     }
 
     private func sanitizedPrivateEvidenceBackupCleanupResult(
