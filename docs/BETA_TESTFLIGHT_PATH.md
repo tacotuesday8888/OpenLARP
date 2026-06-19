@@ -40,6 +40,7 @@ This document tracks the practical path from the current local product foundatio
 - iOS App Check provider scaffolding is linked, real-device builds have the production App Attest entitlement, and simulator debug App Check is explicit opt-in to avoid leaking debug tokens in logs. Firebase product enforcement is still off until console registration, debug tokens, and device metrics are verified.
 - Subscription identity sync/reset, refresh, offering load, package purchase, restore, paywall exposure, one-time free sprint measurement, and RevenueCat customer-info mapping are wired through the store boundary.
 - `npm run firebase:signed-in-smoke` passed against the Firebase dev project on June 20, 2026, covering a temporary signed-in Auth session, deterministic workflow callable, private evidence consent, Storage proof upload/read, proof receipt promotion, upload reconciliation, backend event acknowledgement, account deletion, and cleanup. The smoke now fails early if Firestore or Storage App Check enforcement is already enabled without a supported smoke App Check token path.
+- `docs/APP_STORE_TESTFLIGHT_READINESS.md` now contains draft App Store metadata, TestFlight notes, privacy/support checklists, screenshot plan, review notes, and pre-submission gates. Hosted legal/support pages and final screenshots are still required before submission.
 
 ## Required Before TestFlight
 
@@ -50,7 +51,7 @@ This document tracks the practical path from the current local product foundatio
 5. Create RevenueCat/App Store products, add ignored local `RevenueCat-Info.plist`, replace the compact purchase CTA with the designer-led paywall, and complete sandbox/Test Store purchase verification including anonymous purchase aliasing, Firebase UID login, sign-out reset, restore, cancellation, expiration, and account-switch cases.
 6. Register App Check in Firebase Console, register simulator debug tokens as private secrets, verify device App Attest metrics, update live smoke tooling for App Check tokens, then enable App Check enforcement before treating all cloud data as authoritative or enabling live AI.
 7. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way, and configure explicit provider pricing/budgets before enabling live model calls.
-8. Add privacy policy, support URL, App Store screenshots, and TestFlight notes.
+8. Finalize hosted privacy policy, support URL, App Store screenshots, and TestFlight notes from the draft launch packet.
 9. Run a signed archive on the Apple Developer team and upload to App Store Connect.
 
 ## Live Dev Readiness Check
