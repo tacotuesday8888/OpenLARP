@@ -8,6 +8,13 @@ struct OpenLARPSubscriptionConfiguration: Codable, Equatable {
     var freeSprintDurationDays: Int
 
     var revenueCatOfferingID: String { defaultOfferingID }
+    var configuredPurchaseProductIDs: [String] {
+        var seenProductIDs = Set<String>()
+        return [monthlyProductID, studentMonthlyProductID]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { seenProductIDs.insert($0).inserted }
+    }
 
     static let placeholder = OpenLARPSubscriptionConfiguration(
         revenueCatEntitlementID: "openlarp_beta_sprint_entitlement_placeholder",
@@ -29,6 +36,10 @@ struct OpenLARPSubscriptionConfiguration: Codable, Equatable {
         self.defaultOfferingID = defaultOfferingID
         self.studentMonthlyProductID = studentMonthlyProductID
         self.freeSprintDurationDays = freeSprintDurationDays
+    }
+
+    func isConfiguredPurchaseProductID(_ productID: String) -> Bool {
+        configuredPurchaseProductIDs.contains(productID)
     }
 }
 
@@ -183,6 +194,51 @@ struct RevenueCatOfferingSnapshot: Codable, Equatable, Identifiable {
     var id: String { identifier }
     var identifier: String
     var packages: [RevenueCatPackageSnapshot]
+
+    func preferredPurchasePackage(
+        for configuration: OpenLARPSubscriptionConfiguration
+    ) -> RevenueCatPackageSnapshot? {
+        for productID in configuration.configuredPurchaseProductIDs {
+            if let package = packages.first(where: { $0.product.productID == productID }) {
+                return package
+            }
+        }
+        return nil
+    }
+}
+
+enum OpenLARPSubscriptionPurchaseFailure: String, Codable, Equatable {
+    case notConfigured
+    case noCurrentOffering
+    case packageUnavailable
+    case entitlementMissingAfterPurchase
+    case storeError
+
+    var message: String {
+        switch self {
+        case .notConfigured:
+            "Subscriptions are not configured for this build yet."
+        case .noCurrentOffering:
+            "No subscription offering is available yet."
+        case .packageUnavailable:
+            "That subscription option is no longer available."
+        case .entitlementMissingAfterPurchase:
+            "Purchase completed, but the required entitlement was not active."
+        case .storeError:
+            "The store could not complete the purchase."
+        }
+    }
+}
+
+enum OpenLARPSubscriptionPurchaseOutcome: Equatable {
+    case purchased
+    case cancelled
+    case failed(OpenLARPSubscriptionPurchaseFailure)
+}
+
+struct OpenLARPSubscriptionPurchaseResult: Equatable {
+    var outcome: OpenLARPSubscriptionPurchaseOutcome
+    var subscriptionState: OpenLARPSubscriptionState
 }
 
 protocol RevenueCatCustomerInfoProviding {
@@ -190,7 +246,9 @@ protocol RevenueCatCustomerInfoProviding {
 }
 
 protocol RevenueCatOfferingProviding {
-    func currentOfferingSnapshot() async throws -> RevenueCatOfferingSnapshot?
+    func offeringSnapshot(
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatOfferingSnapshot?
 }
 
 protocol RevenueCatPurchaseRestoring {
@@ -500,6 +558,10 @@ struct OpenLARPSubscriptionState: Codable, Equatable {
 
 @MainActor
 protocol OpenLARPSubscriptionServicing {
+    var subscriptionConfiguration: OpenLARPSubscriptionConfiguration { get }
+
+    func currentOffering() async throws -> RevenueCatOfferingSnapshot?
+
     func refreshSubscriptionState(
         currentState: OpenLARPSubscriptionState,
         at timestamp: Date
@@ -509,18 +571,38 @@ protocol OpenLARPSubscriptionServicing {
         currentState: OpenLARPSubscriptionState,
         at timestamp: Date
     ) async throws -> OpenLARPSubscriptionState
+
+    func purchasePackage(
+        identifier: String,
+        expectedProductID: String,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionPurchaseResult
 }
 
 struct MockOpenLARPSubscriptionService: OpenLARPSubscriptionServicing {
+    var subscriptionConfiguration: OpenLARPSubscriptionConfiguration
+    var offering: RevenueCatOfferingSnapshot?
     var refreshedState: OpenLARPSubscriptionState?
     var restoredCustomerInfo: RevenueCatCustomerInfoSnapshot?
+    var purchaseResult: OpenLARPSubscriptionPurchaseResult?
 
     init(
+        subscriptionConfiguration: OpenLARPSubscriptionConfiguration = .placeholder,
+        offering: RevenueCatOfferingSnapshot? = nil,
         refreshedState: OpenLARPSubscriptionState? = nil,
-        restoredCustomerInfo: RevenueCatCustomerInfoSnapshot? = nil
+        restoredCustomerInfo: RevenueCatCustomerInfoSnapshot? = nil,
+        purchaseResult: OpenLARPSubscriptionPurchaseResult? = nil
     ) {
+        self.subscriptionConfiguration = subscriptionConfiguration
+        self.offering = offering
         self.refreshedState = refreshedState
         self.restoredCustomerInfo = restoredCustomerInfo
+        self.purchaseResult = purchaseResult
+    }
+
+    func currentOffering() async throws -> RevenueCatOfferingSnapshot? {
+        offering
     }
 
     func refreshSubscriptionState(
@@ -540,5 +622,17 @@ struct MockOpenLARPSubscriptionService: OpenLARPSubscriptionServicing {
         return currentState
             .restoreRequested(at: timestamp)
             .restoreSucceeded(with: restoredCustomerInfo, at: timestamp)
+    }
+
+    func purchasePackage(
+        identifier: String,
+        expectedProductID: String,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionPurchaseResult {
+        purchaseResult ?? OpenLARPSubscriptionPurchaseResult(
+            outcome: .failed(.notConfigured),
+            subscriptionState: currentState
+        )
     }
 }

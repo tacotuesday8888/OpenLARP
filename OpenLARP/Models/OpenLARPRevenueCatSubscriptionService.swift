@@ -11,6 +11,8 @@ enum OpenLARPRevenueCatConfigurationKey: String, CaseIterable {
 
 enum OpenLARPRevenueCatAdapterError: Error, Equatable {
     case notConfigured
+    case noCurrentOffering
+    case packageUnavailable
 }
 
 struct OpenLARPRevenueCatRuntimeConfiguration: Equatable {
@@ -102,12 +104,41 @@ protocol OpenLARPRevenueCatClient {
         at timestamp: Date,
         configuration: OpenLARPSubscriptionConfiguration
     ) async throws -> RevenueCatCustomerInfoSnapshot
-    func currentOfferingSnapshot() async throws -> RevenueCatOfferingSnapshot?
+    func offeringSnapshot(
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatOfferingSnapshot?
+    func purchasePackageSnapshot(
+        identifier: String,
+        expectedProductID: String,
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> OpenLARPRevenueCatPurchaseClientResult
+}
+
+enum OpenLARPRevenueCatPurchaseClientResult: Equatable {
+    case purchased(RevenueCatCustomerInfoSnapshot)
+    case cancelled
+}
+
+enum OpenLARPRevenueCatPurchaseValidator {
+    static func isExpectedConfiguredProduct(
+        productID: String,
+        expectedProductID: String,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) -> Bool {
+        let normalizedProductID = productID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedExpectedProductID = expectedProductID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedProductID == normalizedExpectedProductID &&
+            configuration.isConfiguredPurchaseProductID(normalizedProductID)
+    }
 }
 
 struct OpenLARPRevenueCatSubscriptionService: OpenLARPSubscriptionServicing {
     var runtimeConfiguration: OpenLARPRevenueCatRuntimeConfiguration
     var client: any OpenLARPRevenueCatClient
+    var subscriptionConfiguration: OpenLARPSubscriptionConfiguration {
+        runtimeConfiguration.subscriptionConfiguration
+    }
 
     init(
         runtimeConfiguration: OpenLARPRevenueCatRuntimeConfiguration = .fromMainBundle(),
@@ -121,6 +152,17 @@ struct OpenLARPRevenueCatSubscriptionService: OpenLARPSubscriptionServicing {
         OpenLARPRevenueCatSubscriptionService(
             runtimeConfiguration: .fromMainBundle(bundle: bundle),
             client: OpenLARPRevenueCatPurchasesClient.shared
+        )
+    }
+
+    func currentOffering() async throws -> RevenueCatOfferingSnapshot? {
+        guard let publicIOSAPIKey = runtimeConfiguration.normalizedPublicIOSAPIKey else {
+            return nil
+        }
+
+        client.configureIfNeeded(publicIOSAPIKey: publicIOSAPIKey)
+        return try await client.offeringSnapshot(
+            configuration: runtimeConfiguration.subscriptionConfiguration
         )
     }
 
@@ -191,6 +233,95 @@ struct OpenLARPRevenueCatSubscriptionService: OpenLARPSubscriptionServicing {
             return restoring.restoreFailed(at: timestamp)
         }
     }
+
+    func purchasePackage(
+        identifier: String,
+        expectedProductID: String,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionPurchaseResult {
+        var purchasedState = currentState
+        purchasedState.configuration = runtimeConfiguration.subscriptionConfiguration
+        purchasedState.lastUpdatedAt = timestamp
+
+        guard let publicIOSAPIKey = runtimeConfiguration.normalizedPublicIOSAPIKey else {
+            return OpenLARPSubscriptionPurchaseResult(
+                outcome: .failed(.notConfigured),
+                subscriptionState: purchasedState
+            )
+        }
+
+        guard OpenLARPRevenueCatPurchaseValidator.isExpectedConfiguredProduct(
+            productID: expectedProductID,
+            expectedProductID: expectedProductID,
+            configuration: runtimeConfiguration.subscriptionConfiguration
+        ) else {
+            return OpenLARPSubscriptionPurchaseResult(
+                outcome: .failed(.packageUnavailable),
+                subscriptionState: purchasedState
+            )
+        }
+
+        client.configureIfNeeded(publicIOSAPIKey: publicIOSAPIKey)
+
+        do {
+            let result = try await client.purchasePackageSnapshot(
+                identifier: identifier,
+                expectedProductID: expectedProductID,
+                at: timestamp,
+                configuration: runtimeConfiguration.subscriptionConfiguration
+            )
+
+            switch result {
+            case .cancelled:
+                return OpenLARPSubscriptionPurchaseResult(
+                    outcome: .cancelled,
+                    subscriptionState: purchasedState
+                )
+            case .purchased(let customerInfo):
+                purchasedState.customerInfo = customerInfo
+                purchasedState.connectionStatus = .online
+
+                guard customerInfo.hasActiveEntitlement(
+                    runtimeConfiguration.subscriptionConfiguration.revenueCatEntitlementID,
+                    at: timestamp
+                ) else {
+                    return OpenLARPSubscriptionPurchaseResult(
+                        outcome: .failed(.entitlementMissingAfterPurchase),
+                        subscriptionState: purchasedState
+                    )
+                }
+
+                return OpenLARPSubscriptionPurchaseResult(
+                    outcome: .purchased,
+                    subscriptionState: purchasedState
+                )
+            }
+        } catch let error as OpenLARPRevenueCatAdapterError {
+            return OpenLARPSubscriptionPurchaseResult(
+                outcome: .failed(subscriptionPurchaseFailure(for: error)),
+                subscriptionState: purchasedState
+            )
+        } catch {
+            return OpenLARPSubscriptionPurchaseResult(
+                outcome: .failed(.storeError),
+                subscriptionState: purchasedState
+            )
+        }
+    }
+
+    private func subscriptionPurchaseFailure(
+        for error: OpenLARPRevenueCatAdapterError
+    ) -> OpenLARPSubscriptionPurchaseFailure {
+        switch error {
+        case .notConfigured:
+            .notConfigured
+        case .noCurrentOffering:
+            .noCurrentOffering
+        case .packageUnavailable:
+            .packageUnavailable
+        }
+    }
 }
 
 @MainActor
@@ -243,16 +374,79 @@ final class OpenLARPRevenueCatPurchasesClient: OpenLARPRevenueCatClient {
         )
     }
 
-    func currentOfferingSnapshot() async throws -> RevenueCatOfferingSnapshot? {
+    func offeringSnapshot(
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatOfferingSnapshot? {
         guard Purchases.isConfigured else {
             throw OpenLARPRevenueCatAdapterError.notConfigured
         }
 
-        guard let currentOffering = try await Purchases.shared.offerings().current else {
+        guard let offering = try await Purchases.shared.offerings().offering(
+            identifier: configuration.revenueCatOfferingID
+        ) else {
             return nil
         }
 
-        return OpenLARPRevenueCatSnapshotMapper.snapshot(from: currentOffering)
+        return OpenLARPRevenueCatSnapshotMapper.snapshot(from: offering)
+    }
+
+    func purchasePackageSnapshot(
+        identifier: String,
+        expectedProductID: String,
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> OpenLARPRevenueCatPurchaseClientResult {
+        guard Purchases.isConfigured else {
+            throw OpenLARPRevenueCatAdapterError.notConfigured
+        }
+
+        guard let offering = try await Purchases.shared.offerings().offering(
+            identifier: configuration.revenueCatOfferingID
+        ) else {
+            throw OpenLARPRevenueCatAdapterError.noCurrentOffering
+        }
+        guard let package = offering.availablePackages.first(where: { $0.identifier == identifier }) else {
+            throw OpenLARPRevenueCatAdapterError.packageUnavailable
+        }
+        guard OpenLARPRevenueCatPurchaseValidator.isExpectedConfiguredProduct(
+            productID: package.storeProduct.productIdentifier,
+            expectedProductID: expectedProductID,
+            configuration: configuration
+        ) else {
+            throw OpenLARPRevenueCatAdapterError.packageUnavailable
+        }
+
+        do {
+            let result = try await Purchases.shared.purchase(package: package)
+            if result.userCancelled {
+                return .cancelled
+            }
+
+            return .purchased(
+                OpenLARPRevenueCatSnapshotMapper.snapshot(
+                    from: result.customerInfo,
+                    fallbackFetchedAt: timestamp,
+                    configuration: configuration
+                )
+            )
+        } catch {
+            if Self.isPurchaseCancellation(error) {
+                return .cancelled
+            }
+            throw error
+        }
+    }
+
+    private static func isPurchaseCancellation(_ error: Error) -> Bool {
+        if let revenueCatError = error as? ErrorCode,
+           revenueCatError == .purchaseCancelledError {
+            return true
+        }
+
+        let nsError = error as NSError
+        let purchaseCancelledError = ErrorCode.purchaseCancelledError as NSError
+        return nsError.domain == purchaseCancelledError.domain &&
+            nsError.code == purchaseCancelledError.code
     }
 }
 

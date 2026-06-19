@@ -206,7 +206,9 @@ final class SubscriptionReadinessTests: XCTestCase {
         state.betaEvents = [
             BetaEventRecord(kind: .freeSprintStarted, occurredAt: now),
             BetaEventRecord(kind: .subscriptionRestoreRequested, occurredAt: date(year: 2026, month: 6, day: 2)),
-            BetaEventRecord(kind: .subscriptionRestoreCompleted, occurredAt: date(year: 2026, month: 6, day: 2, hour: 1))
+            BetaEventRecord(kind: .subscriptionRestoreCompleted, occurredAt: date(year: 2026, month: 6, day: 2, hour: 1)),
+            BetaEventRecord(kind: .subscriptionPurchaseStarted, occurredAt: date(year: 2026, month: 6, day: 3)),
+            BetaEventRecord(kind: .subscriptionPurchaseCompleted, occurredAt: date(year: 2026, month: 6, day: 3, hour: 1))
         ]
 
         let summary = BetaMeasurementSummaryContent(state: state, generatedAt: now)
@@ -216,12 +218,12 @@ final class SubscriptionReadinessTests: XCTestCase {
             as: UTF8.self
         )
 
-        XCTAssertEqual(summary.paymentEventCount, 3)
+        XCTAssertEqual(summary.paymentEventCount, 5)
         XCTAssertEqual(summary.subscriptionAccessStatus, .active)
         XCTAssertEqual(summary.subscriptionAccessSource, .revenueCatCustomerInfo)
         XCTAssertTrue(summary.subscriptionHasAccess)
         XCTAssertFalse(summary.subscriptionNeedsPaywall)
-        XCTAssertTrue(exportedText.contains("Payment events: 3"))
+        XCTAssertTrue(exportedText.contains("Payment events: 5"))
         XCTAssertTrue(exportedText.contains("Subscription access: Active"))
         XCTAssertFalse(exportedText.contains(OpenLARPSubscriptionConfiguration.placeholder.monthlyProductID))
         XCTAssertFalse(exportedText.contains("private-product-id-should-not-export"))
@@ -358,6 +360,338 @@ final class SubscriptionReadinessTests: XCTestCase {
         XCTAssertEqual(try persistence.load().subscriptionState.restoreState.status, .failed)
     }
 
+    @MainActor
+    func testStoreLoadsSubscriptionOfferingAndRecordsEvent() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let now = date(year: 2026, month: 6, day: 20)
+        let service = CapturingSubscriptionService(
+            subscriptionConfiguration: revenueCatConfiguration().subscriptionConfiguration,
+            offering: subscriptionOffering()
+        )
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { now },
+            calendar: calendar
+        )
+
+        await store.loadSubscriptionOffering()
+
+        XCTAssertEqual(service.offeringRequestCount, 1)
+        XCTAssertEqual(store.currentSubscriptionOffering, subscriptionOffering())
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionOfferingLoaded)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(try persistence.load().betaEvents.last?.kind, .subscriptionOfferingLoaded)
+    }
+
+    func testSubscriptionOfferingPrefersConfiguredProductOverPackageOrder() {
+        let configuration = revenueCatConfiguration().subscriptionConfiguration
+        let offering = subscriptionOffering(packages: [
+            RevenueCatPackageSnapshot(
+                identifier: "annual",
+                product: RevenueCatProductSnapshot(
+                    productID: "com.openlarp.annual",
+                    displayName: "OpenLARP Annual",
+                    displayPrice: "$79.99",
+                    subscriptionPeriod: "1 year"
+                )
+            ),
+            RevenueCatPackageSnapshot(
+                identifier: "monthly",
+                product: RevenueCatProductSnapshot(
+                    productID: "com.openlarp.monthly",
+                    displayName: "OpenLARP Monthly",
+                    displayPrice: "$9.99",
+                    subscriptionPeriod: "1 month"
+                )
+            )
+        ])
+
+        XCTAssertEqual(offering.preferredPurchasePackage(for: configuration)?.identifier, "monthly")
+        XCTAssertEqual(configuration.configuredPurchaseProductIDs, [
+            "com.openlarp.monthly",
+            "com.openlarp.student.monthly"
+        ])
+    }
+
+    func testSubscriptionOfferingUsesConfigurationPriorityForConfiguredProducts() {
+        let configuration = revenueCatConfiguration().subscriptionConfiguration
+        let offering = subscriptionOffering(packages: [
+            RevenueCatPackageSnapshot(
+                identifier: "student",
+                product: RevenueCatProductSnapshot(
+                    productID: "com.openlarp.student.monthly",
+                    displayName: "OpenLARP Student",
+                    displayPrice: "$4.99",
+                    subscriptionPeriod: "1 month"
+                )
+            ),
+            RevenueCatPackageSnapshot(
+                identifier: "monthly",
+                product: RevenueCatProductSnapshot(
+                    productID: "com.openlarp.monthly",
+                    displayName: "OpenLARP Monthly",
+                    displayPrice: "$9.99",
+                    subscriptionPeriod: "1 month"
+                )
+            )
+        ])
+
+        XCTAssertEqual(offering.preferredPurchasePackage(for: configuration)?.identifier, "monthly")
+    }
+
+    func testRevenueCatPurchaseValidatorRequiresExactConfiguredProductMatch() {
+        let configuration = revenueCatConfiguration().subscriptionConfiguration
+
+        XCTAssertTrue(
+            OpenLARPRevenueCatPurchaseValidator.isExpectedConfiguredProduct(
+                productID: "com.openlarp.monthly",
+                expectedProductID: " com.openlarp.monthly ",
+                configuration: configuration
+            )
+        )
+        XCTAssertFalse(
+            OpenLARPRevenueCatPurchaseValidator.isExpectedConfiguredProduct(
+                productID: "com.openlarp.student.monthly",
+                expectedProductID: "com.openlarp.monthly",
+                configuration: configuration
+            )
+        )
+        XCTAssertFalse(
+            OpenLARPRevenueCatPurchaseValidator.isExpectedConfiguredProduct(
+                productID: "com.openlarp.annual",
+                expectedProductID: "com.openlarp.annual",
+                configuration: configuration
+            )
+        )
+    }
+
+    @MainActor
+    func testStoreRejectsOfferingWithoutConfiguredPurchaseProduct() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = date(year: 2026, month: 6, day: 20)
+        let service = CapturingSubscriptionService(
+            subscriptionConfiguration: revenueCatConfiguration().subscriptionConfiguration,
+            offering: subscriptionOffering(packages: [
+                RevenueCatPackageSnapshot(
+                    identifier: "annual",
+                    product: RevenueCatProductSnapshot(
+                        productID: "com.openlarp.annual",
+                        displayName: "OpenLARP Annual",
+                        displayPrice: "$79.99",
+                        subscriptionPeriod: "1 year"
+                    )
+                )
+            ])
+        )
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { now },
+            calendar: calendar
+        )
+        store.state.subscriptionState.configuration = revenueCatConfiguration().subscriptionConfiguration
+
+        await store.loadSubscriptionOffering()
+
+        XCTAssertEqual(service.offeringRequestCount, 1)
+        XCTAssertNil(store.currentSubscriptionOffering)
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionOfferingUnavailable)
+        XCTAssertTrue(store.errorMessage?.contains("Configured subscription options") == true)
+    }
+
+    @MainActor
+    func testStoreUnavailableSubscriptionOfferingRecordsEventAndMessage() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = date(year: 2026, month: 6, day: 20)
+        let service = CapturingSubscriptionService(
+            subscriptionConfiguration: revenueCatConfiguration().subscriptionConfiguration,
+            offering: nil
+        )
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { now },
+            calendar: calendar
+        )
+
+        await store.loadSubscriptionOffering()
+
+        XCTAssertEqual(service.offeringRequestCount, 1)
+        XCTAssertNil(store.currentSubscriptionOffering)
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionOfferingUnavailable)
+        XCTAssertTrue(store.errorMessage?.contains("not available") == true)
+    }
+
+    @MainActor
+    func testStorePurchasePackageSuccessRecordsEventsAndUnlocksAccess() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let now = date(year: 2026, month: 6, day: 20)
+        let activeState = OpenLARPSubscriptionState(
+            configuration: revenueCatConfiguration().subscriptionConfiguration,
+            customerInfo: RevenueCatCustomerInfoSnapshot(
+                fetchedAt: now,
+                activeEntitlementIDs: ["openlarp_pro"],
+                activeProductIDs: ["com.openlarp.monthly"],
+                entitlementExpirationDate: date(year: 2026, month: 7, day: 20)
+            ),
+            connectionStatus: .online,
+            lastUpdatedAt: now
+        )
+        let service = CapturingSubscriptionService(
+            purchaseResult: OpenLARPSubscriptionPurchaseResult(
+                outcome: .purchased,
+                subscriptionState: activeState
+            )
+        )
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { now },
+            calendar: calendar
+        )
+
+        await store.purchaseSubscriptionPackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.monthly"
+        )
+
+        XCTAssertEqual(service.purchaseRequestCount, 1)
+        XCTAssertEqual(service.purchasedPackageIdentifiers, ["monthly"])
+        XCTAssertEqual(service.purchasedExpectedProductIDs, ["com.openlarp.monthly"])
+        XCTAssertEqual(store.state.subscriptionState, activeState)
+        XCTAssertEqual(store.subscriptionAccess().status, .active)
+        XCTAssertEqual(store.state.betaEvents.map(\.kind), [
+            .subscriptionPurchaseStarted,
+            .subscriptionPurchaseCompleted
+        ])
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(try persistence.load().subscriptionState, activeState)
+    }
+
+    @MainActor
+    func testStorePurchasePackageCancellationLeavesStateAndDoesNotShowFailure() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let now = date(year: 2026, month: 6, day: 20)
+        let currentState = OpenLARPSubscriptionState.localFreeSprint(startedAt: date(year: 2026, month: 6, day: 1))
+        let service = CapturingSubscriptionService(
+            purchaseResult: OpenLARPSubscriptionPurchaseResult(
+                outcome: .cancelled,
+                subscriptionState: currentState
+            )
+        )
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { now },
+            calendar: calendar
+        )
+        store.state.subscriptionState = currentState
+        store.errorMessage = "Previous non-payment message"
+
+        await store.purchaseSubscriptionPackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.monthly"
+        )
+
+        XCTAssertEqual(service.purchaseRequestCount, 1)
+        XCTAssertEqual(store.state.subscriptionState, currentState)
+        XCTAssertEqual(store.state.betaEvents.map(\.kind), [
+            .subscriptionPurchaseStarted,
+            .subscriptionPurchaseCancelled
+        ])
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(try persistence.load().subscriptionState, currentState)
+    }
+
+    @MainActor
+    func testStorePurchasePackageFailureDoesNotUnlockAccess() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = date(year: 2026, month: 6, day: 20)
+        let currentState = OpenLARPSubscriptionState.localFreeSprint(startedAt: date(year: 2026, month: 6, day: 1))
+        let service = CapturingSubscriptionService(
+            purchaseResult: OpenLARPSubscriptionPurchaseResult(
+                outcome: .failed(.packageUnavailable),
+                subscriptionState: currentState
+            )
+        )
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { now },
+            calendar: calendar
+        )
+        store.state.subscriptionState = currentState
+        store.currentSubscriptionOffering = subscriptionOffering()
+
+        await store.purchaseSubscriptionPackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.monthly"
+        )
+
+        XCTAssertEqual(service.purchaseRequestCount, 1)
+        XCTAssertNil(store.currentSubscriptionOffering)
+        XCTAssertEqual(store.state.subscriptionState, currentState)
+        XCTAssertEqual(store.state.betaEvents.map(\.kind), [
+            .subscriptionPurchaseStarted,
+            .subscriptionPurchaseFailed
+        ])
+        XCTAssertTrue(store.errorMessage?.contains("no longer available") == true)
+        XCTAssertFalse(store.subscriptionAccess().isEntitled)
+    }
+
+    @MainActor
+    func testPurchaseInFlightBlocksRestoreAttempt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = date(year: 2026, month: 6, day: 20)
+        let service = CapturingSubscriptionService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { now },
+            calendar: calendar
+        )
+        store.isPurchasingSubscriptionPackage = true
+
+        await store.restorePurchases()
+
+        XCTAssertEqual(service.restoreRequestCount, 0)
+        XCTAssertTrue(store.state.betaEvents.isEmpty)
+    }
+
+    @MainActor
+    func testRefreshInFlightBlocksPurchaseAttempt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = date(year: 2026, month: 6, day: 20)
+        let service = CapturingSubscriptionService()
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            subscriptionService: service,
+            now: { now },
+            calendar: calendar
+        )
+        store.isRefreshingSubscriptionStatus = true
+
+        await store.purchaseSubscriptionPackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.monthly"
+        )
+
+        XCTAssertEqual(service.purchaseRequestCount, 0)
+        XCTAssertTrue(store.state.betaEvents.isEmpty)
+    }
+
     func testRevenueCatRuntimeConfigurationMapsPlistLikeValues() {
         let configuration = OpenLARPRevenueCatRuntimeConfiguration.fromDictionary([
             OpenLARPRevenueCatConfigurationKey.iosAPIKey.rawValue: "  appl_public_test_key  ",
@@ -418,6 +752,98 @@ final class SubscriptionReadinessTests: XCTestCase {
         XCTAssertEqual(refreshed.freeSprint, currentState.freeSprint)
         XCTAssertEqual(refreshed.connectionStatus, .notConfigured)
         XCTAssertEqual(refreshed.lastUpdatedAt, now)
+    }
+
+    @MainActor
+    func testRevenueCatServiceMissingConfigurationDoesNotCallSDKForOfferingOrPurchase() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let client = FakeRevenueCatClient()
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: OpenLARPRevenueCatRuntimeConfiguration(),
+            client: client
+        )
+
+        let offering = try await service.currentOffering()
+        let purchaseResult = try await service.purchasePackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.monthly",
+            currentState: .notStarted(),
+            at: now
+        )
+
+        XCTAssertNil(offering)
+        XCTAssertEqual(client.configuredPublicIOSAPIKeys, [])
+        XCTAssertEqual(client.offeringRequestCount, 0)
+        XCTAssertEqual(client.purchaseRequestCount, 0)
+        XCTAssertEqual(purchaseResult.outcome, .failed(.notConfigured))
+    }
+
+    @MainActor
+    func testRevenueCatServiceRequestsConfiguredOfferingForLoadAndPurchase() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let configuration = revenueCatConfiguration()
+        let client = FakeRevenueCatClient()
+        client.currentOffering = subscriptionOffering(identifier: "beta")
+        client.purchaseResult = .cancelled
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: configuration,
+            client: client
+        )
+
+        let offering = try await service.currentOffering()
+        _ = try await service.purchasePackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.monthly",
+            currentState: .notStarted(),
+            at: now
+        )
+
+        XCTAssertEqual(offering?.identifier, "beta")
+        XCTAssertEqual(client.requestedOfferingIDs, ["beta"])
+        XCTAssertEqual(client.purchaseOfferingIDs, ["beta"])
+        XCTAssertEqual(client.purchasedExpectedProductIDs, ["com.openlarp.monthly"])
+    }
+
+    @MainActor
+    func testRevenueCatServiceMissingConfiguredOfferingFailsPurchaseWithoutUnlocking() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let client = FakeRevenueCatClient()
+        client.purchaseError = OpenLARPRevenueCatAdapterError.noCurrentOffering
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+
+        let result = try await service.purchasePackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.monthly",
+            currentState: .notStarted(),
+            at: now
+        )
+
+        XCTAssertEqual(result.outcome, .failed(.noCurrentOffering))
+        XCTAssertFalse(result.subscriptionState.access(at: now, calendar: calendar).isEntitled)
+    }
+
+    @MainActor
+    func testRevenueCatServiceRejectsUnconfiguredExpectedPurchaseProductBeforeSDKPurchase() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let client = FakeRevenueCatClient()
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+
+        let result = try await service.purchasePackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.annual",
+            currentState: .notStarted(),
+            at: now
+        )
+
+        XCTAssertEqual(result.outcome, .failed(.packageUnavailable))
+        XCTAssertEqual(client.configuredPublicIOSAPIKeys, [])
+        XCTAssertEqual(client.purchaseRequestCount, 0)
     }
 
     @MainActor
@@ -507,6 +933,35 @@ final class SubscriptionReadinessTests: XCTestCase {
         XCTAssertEqual(restored.restoreState.requestedAt, now)
         XCTAssertFalse(restored.access(at: now, calendar: calendar).isEntitled)
         XCTAssertEqual(restored.access(at: now, calendar: calendar).status, .restoreFailed)
+    }
+
+    @MainActor
+    func testRevenueCatServicePurchaseWithoutActiveEntitlementFailsWithoutUnlocking() async throws {
+        let now = date(year: 2026, month: 6, day: 20)
+        let client = FakeRevenueCatClient()
+        client.purchaseResult = .purchased(
+            RevenueCatCustomerInfoSnapshot(
+                fetchedAt: now,
+                activeEntitlementIDs: ["different_entitlement"],
+                activeProductIDs: ["com.openlarp.monthly"],
+                entitlementExpirationDate: date(year: 2026, month: 7, day: 20)
+            )
+        )
+        let service = OpenLARPRevenueCatSubscriptionService(
+            runtimeConfiguration: revenueCatConfiguration(),
+            client: client
+        )
+
+        let result = try await service.purchasePackage(
+            identifier: "monthly",
+            expectedProductID: "com.openlarp.monthly",
+            currentState: .notStarted(),
+            at: now
+        )
+
+        XCTAssertEqual(client.purchaseRequestCount, 1)
+        XCTAssertEqual(result.outcome, .failed(.entitlementMissingAfterPurchase))
+        XCTAssertFalse(result.subscriptionState.access(at: now, calendar: calendar).isEntitled)
     }
 
     func testRevenueCatPureMapperSortsAndDeduplicatesPrivateIdentifiers() {
@@ -744,6 +1199,26 @@ final class SubscriptionReadinessTests: XCTestCase {
             )
         )
     }
+
+    private func subscriptionOffering(
+        identifier: String = "beta",
+        packages: [RevenueCatPackageSnapshot] = [
+            RevenueCatPackageSnapshot(
+                identifier: "monthly",
+                product: RevenueCatProductSnapshot(
+                    productID: "com.openlarp.monthly",
+                    displayName: "OpenLARP Monthly",
+                    displayPrice: "$9.99",
+                    subscriptionPeriod: "1 month"
+                )
+            )
+        ]
+    ) -> RevenueCatOfferingSnapshot {
+        RevenueCatOfferingSnapshot(
+            identifier: identifier,
+            packages: packages
+        )
+    }
 }
 
 private struct FailingSubscriptionGateAIWorkflowService: V0AIWorkflowServicing {
@@ -774,17 +1249,35 @@ private struct FailingSubscriptionGateCareerGraphSyncService: CareerGraphSyncSer
 
 @MainActor
 private final class CapturingSubscriptionService: OpenLARPSubscriptionServicing {
+    var subscriptionConfiguration: OpenLARPSubscriptionConfiguration
+    var offering: RevenueCatOfferingSnapshot?
     var refreshedState: OpenLARPSubscriptionState?
     var restoredCustomerInfo: RevenueCatCustomerInfoSnapshot?
+    var purchaseResult: OpenLARPSubscriptionPurchaseResult?
+    private(set) var offeringRequestCount = 0
     private(set) var refreshRequestCount = 0
     private(set) var restoreRequestCount = 0
+    private(set) var purchaseRequestCount = 0
+    private(set) var purchasedPackageIdentifiers: [String] = []
+    private(set) var purchasedExpectedProductIDs: [String] = []
 
     init(
+        subscriptionConfiguration: OpenLARPSubscriptionConfiguration = .placeholder,
+        offering: RevenueCatOfferingSnapshot? = nil,
         refreshedState: OpenLARPSubscriptionState? = nil,
-        restoredCustomerInfo: RevenueCatCustomerInfoSnapshot? = nil
+        restoredCustomerInfo: RevenueCatCustomerInfoSnapshot? = nil,
+        purchaseResult: OpenLARPSubscriptionPurchaseResult? = nil
     ) {
+        self.subscriptionConfiguration = subscriptionConfiguration
+        self.offering = offering
         self.refreshedState = refreshedState
         self.restoredCustomerInfo = restoredCustomerInfo
+        self.purchaseResult = purchaseResult
+    }
+
+    func currentOffering() async throws -> RevenueCatOfferingSnapshot? {
+        offeringRequestCount += 1
+        return offering
     }
 
     func refreshSubscriptionState(
@@ -805,6 +1298,21 @@ private final class CapturingSubscriptionService: OpenLARPSubscriptionServicing 
         }
         return currentState.restoreSucceeded(with: restoredCustomerInfo, at: timestamp)
     }
+
+    func purchasePackage(
+        identifier: String,
+        expectedProductID: String,
+        currentState: OpenLARPSubscriptionState,
+        at timestamp: Date
+    ) async throws -> OpenLARPSubscriptionPurchaseResult {
+        purchaseRequestCount += 1
+        purchasedPackageIdentifiers.append(identifier)
+        purchasedExpectedProductIDs.append(expectedProductID)
+        return purchaseResult ?? OpenLARPSubscriptionPurchaseResult(
+            outcome: .failed(.notConfigured),
+            subscriptionState: currentState
+        )
+    }
 }
 
 private enum RevenueCatAdapterTestError: Error {
@@ -816,13 +1324,20 @@ private final class FakeRevenueCatClient: OpenLARPRevenueCatClient {
     var customerInfoSnapshot: RevenueCatCustomerInfoSnapshot?
     var restoreSnapshot: RevenueCatCustomerInfoSnapshot?
     var currentOffering: RevenueCatOfferingSnapshot?
+    var purchaseResult: OpenLARPRevenueCatPurchaseClientResult?
     var customerInfoError: Error?
     var restoreError: Error?
     var offeringError: Error?
+    var purchaseError: Error?
     private(set) var configuredPublicIOSAPIKeys: [String] = []
     private(set) var customerInfoRequestCount = 0
     private(set) var restoreRequestCount = 0
     private(set) var offeringRequestCount = 0
+    private(set) var purchaseRequestCount = 0
+    private(set) var purchasedPackageIdentifiers: [String] = []
+    private(set) var purchasedExpectedProductIDs: [String] = []
+    private(set) var requestedOfferingIDs: [String] = []
+    private(set) var purchaseOfferingIDs: [String] = []
 
     func configureIfNeeded(publicIOSAPIKey: String) {
         configuredPublicIOSAPIKeys.append(publicIOSAPIKey)
@@ -850,11 +1365,30 @@ private final class FakeRevenueCatClient: OpenLARPRevenueCatClient {
         return restoreSnapshot ?? RevenueCatCustomerInfoSnapshot(fetchedAt: timestamp)
     }
 
-    func currentOfferingSnapshot() async throws -> RevenueCatOfferingSnapshot? {
+    func offeringSnapshot(
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> RevenueCatOfferingSnapshot? {
         offeringRequestCount += 1
+        requestedOfferingIDs.append(configuration.revenueCatOfferingID)
         if let offeringError {
             throw offeringError
         }
         return currentOffering
+    }
+
+    func purchasePackageSnapshot(
+        identifier: String,
+        expectedProductID: String,
+        at timestamp: Date,
+        configuration: OpenLARPSubscriptionConfiguration
+    ) async throws -> OpenLARPRevenueCatPurchaseClientResult {
+        purchaseRequestCount += 1
+        purchasedPackageIdentifiers.append(identifier)
+        purchasedExpectedProductIDs.append(expectedProductID)
+        purchaseOfferingIDs.append(configuration.revenueCatOfferingID)
+        if let purchaseError {
+            throw purchaseError
+        }
+        return purchaseResult ?? .cancelled
     }
 }

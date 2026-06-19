@@ -226,7 +226,11 @@ struct ProfileView: View {
                     .foregroundStyle(Color.openLARPSoftInk)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 10) {
+                    if access.shouldShowPaywall {
+                        subscriptionPurchaseActions
+                    }
+
                     Button {
                         Task {
                             await store.refreshSubscriptionStatus()
@@ -243,7 +247,7 @@ struct ProfileView: View {
                         }
                     }
                     .buttonStyle(SecondaryButtonStyle())
-                    .disabled(store.isRefreshingSubscriptionStatus || store.isRestoringPurchases)
+                    .disabled(store.isRefreshingSubscriptionStatus || store.isRestoringPurchases || store.isPurchasingSubscriptionPackage)
 
                     if access.shouldShowPaywall {
                         restorePurchasesButton
@@ -253,6 +257,71 @@ struct ProfileView: View {
                             .buttonStyle(SecondaryButtonStyle())
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var subscriptionPurchaseActions: some View {
+        let package = store.currentSubscriptionOffering?.preferredPurchasePackage(
+            for: store.state.subscriptionState.configuration
+        )
+
+        VStack(alignment: .leading, spacing: 8) {
+            if let package {
+                Text("\(package.product.displayName) \(package.product.displayPrice)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    Task {
+                        await store.purchaseSubscriptionPackage(
+                            identifier: package.identifier,
+                            expectedProductID: package.product.productID
+                        )
+                    }
+                } label: {
+                    if store.isPurchasingSubscriptionPackage {
+                        HStack {
+                            ProgressView()
+                                .tint(.white)
+                            Text("Continuing")
+                        }
+                    } else {
+                        Label("Continue Sprint", systemImage: "creditcard")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(
+                    store.isPurchasingSubscriptionPackage ||
+                        store.isRestoringPurchases ||
+                        store.isRefreshingSubscriptionStatus ||
+                        store.isLoadingSubscriptionOffering
+                )
+            } else {
+                Button {
+                    Task {
+                        await store.loadSubscriptionOffering()
+                    }
+                } label: {
+                    if store.isLoadingSubscriptionOffering {
+                        HStack {
+                            ProgressView()
+                                .tint(.white)
+                            Text("Loading")
+                        }
+                    } else {
+                        Label("Load Options", systemImage: "tray.and.arrow.down")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(
+                    store.isLoadingSubscriptionOffering ||
+                        store.isRestoringPurchases ||
+                        store.isRefreshingSubscriptionStatus ||
+                        store.isPurchasingSubscriptionPackage
+                )
             }
         }
     }
@@ -273,7 +342,7 @@ struct ProfileView: View {
                 Label("Restore", systemImage: "arrow.uturn.backward")
             }
         }
-        .disabled(store.isRefreshingSubscriptionStatus || store.isRestoringPurchases)
+        .disabled(store.isRefreshingSubscriptionStatus || store.isRestoringPurchases || store.isPurchasingSubscriptionPackage)
     }
 
     private func subscriptionDetail(for access: OpenLARPSubscriptionAccess) -> String {
@@ -281,7 +350,7 @@ struct ProfileView: View {
         case .notStarted:
             return "The first proof sprint starts when you set a career goal. No live RevenueCat purchase is required in local beta mode."
         case .active:
-            return "A RevenueCat-shaped entitlement is active. Live SDK purchase verification still waits for App Store and RevenueCat setup."
+            return "A RevenueCat entitlement is active for this account."
         case .freeSprint:
             return "Your local free sprint is active. New quest and proof actions remain available while it is running."
         case .expired:
