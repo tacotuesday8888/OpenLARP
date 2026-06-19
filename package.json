@@ -12,6 +12,7 @@
     "test:backend": "npm --workspace backend/ai test && npm --workspace backend/functions test",
     "build:backend": "npm --workspace backend/functions run build",
     "public:safety": "node scripts/public-repo-safety-check.mjs",
+    "beta:gate": "node scripts/beta-release-gate.mjs",
     "test:rules": "npm --workspace firebase-rules test",
     "test:rules:emulators": "JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21} PATH=\"${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}/bin:$PATH\" firebase emulators:exec --project openlarp-rules-test --only firestore,storage \"npm run test:rules\"",
     "test:scripts": "npm run public:safety && vitest run scripts/tests",

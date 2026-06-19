@@ -59,10 +59,11 @@ This document tracks the practical path from the current local product foundatio
 Use this command before each TestFlight-readiness pass:
 
 ```bash
+npm run beta:gate
 npm run firebase:live-readiness
 ```
 
-Expected current result is a clean pass with no missing Google OAuth ID or missing Storage bucket warnings. The script also reports Firebase App Check App Attest registration and Firestore, Storage, and Google Identity enforcement status; warnings there mean App Check enforcement is still not beta-ready. A clean readiness script does not replace the required signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage proof upload/read rules, and callable fallback behavior.
+`npm run beta:gate` checks repo-controlled release gates such as the privacy manifest, bundle/config wiring, CI coverage, launch packet, and known external setup warnings. Expected current `firebase:live-readiness` result is a clean pass with no missing Google OAuth ID or missing Storage bucket warnings. The script also reports Firebase App Check App Attest registration and Firestore, Storage, and Google Identity enforcement status; warnings there mean App Check enforcement is still not beta-ready. A clean readiness script does not replace the required signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage proof upload/read rules, and callable fallback behavior.
 
 ## Backend Dependency Risk
 

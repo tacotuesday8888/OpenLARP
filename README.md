@@ -64,6 +64,7 @@ npm run typecheck:backend
 npm run test:backend
 npm run build:backend
 npm run public:safety
+npm run beta:gate
 npm run test:scripts
 npm run test:rules:emulators
 npm run firebase:live-readiness
