@@ -96,7 +96,10 @@ struct ProfileView: View {
                     let confirmationText = accountDeletionConfirmationText
                     accountDeletionConfirmationText = ""
                     Task {
-                        await store.deleteCloudAccount(confirmationText: confirmationText)
+                        await store.deleteCloudAccount(
+                            confirmationText: confirmationText,
+                            presenting: authenticationPresentationAnchor
+                        )
                     }
                 }
                 Button("Cancel", role: .cancel) {
@@ -665,6 +668,24 @@ struct ProfileView: View {
 
                     Button {
                         Task {
+                            await store.signInWithApple(presenting: authenticationPresentationAnchor)
+                        }
+                    } label: {
+                        if store.isSigningInWithApple {
+                            HStack {
+                                ProgressView()
+                                    .tint(.white)
+                                Text("Opening Apple")
+                            }
+                        } else {
+                            Label("Continue With Apple", systemImage: "apple.logo")
+                        }
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(store.isAuthenticationOperationInFlight || store.isAccountDataOperationInFlight)
+
+                    Button {
+                        Task {
                             await store.restorePreviousAuthenticationSession()
                         }
                     } label: {
@@ -697,11 +718,13 @@ struct ProfileView: View {
         case .configurationMissing:
             return "Firebase config needed"
         case .providerSetupRequired:
-            return "Google provider needed"
+            return "\(accountProviderName(for: result?.operation)) provider needed"
         case .sdkUnavailable:
             return "SDK unavailable"
         case .presentationRequired:
             return "Sign-in presenter needed"
+        case .cancelled:
+            return "Sign-in cancelled"
         case .failed:
             return "Sign-in failed"
         case .signedOut:
@@ -723,17 +746,34 @@ struct ProfileView: View {
 
         switch result?.status {
         case .configurationMissing:
-            return "The app is Firebase-ready, but this local build needs GoogleService-Info.plist and the Google callback URL scheme."
+            return "The app is Firebase-ready, but this local build needs GoogleService-Info.plist and provider setup for live sign-in."
         case .providerSetupRequired:
-            return "Enable the Google provider in Firebase Auth and add the reversed client ID URL scheme before live sign-in."
+            if result?.operation == .signInWithApple || result?.operation == .prepareAccountDeletion {
+                return "Enable Sign in with Apple in Apple Developer and Firebase Auth before live Apple sign-in."
+            }
+            return "Enable the Google provider in Firebase Auth and add the reversed client ID URL scheme before live Google sign-in."
         case .sdkUnavailable:
-            return "FirebaseAuth and GoogleSignIn must be linked in this build before live account sync."
+            return "FirebaseAuth plus the selected provider SDKs must be linked in this build before live account sync."
         case .presentationRequired:
+            if result?.operation == .signInWithApple || result?.operation == .prepareAccountDeletion {
+                return "Sign in with Apple needs a presentation window from the current iOS screen."
+            }
             return "Google Sign-In needs a presentation anchor from the current iOS screen."
+        case .cancelled:
+            return "The sign-in sheet was cancelled. Local OpenLARP progress is still available on this device."
         case .failed:
             return "The account session did not finish. Local OpenLARP progress is still available on this device."
         default:
-            return "Connect Google to make this device profile account-backed. Local progress still works without signing in."
+            return "Connect Google or Apple to make this device profile account-backed. Local progress still works without signing in."
+        }
+    }
+
+    private func accountProviderName(for operation: OpenLARPAuthenticationOperation?) -> String {
+        switch operation {
+        case .signInWithApple, .prepareAccountDeletion:
+            return "Apple"
+        case .restorePreviousSession, .signInWithGoogle, .signOut, .handleOpenURL, nil:
+            return "Google"
         }
     }
 

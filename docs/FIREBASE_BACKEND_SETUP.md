@@ -19,10 +19,10 @@ OpenLARP now has a Firebase-ready backend boundary without requiring the iOS cli
 - `FirebaseBackendSessionProvider` is compile-gated behind Firebase SDK imports and can expose the current Firebase Auth user when the SDK is linked.
 - `FirebaseCallableBackendEventSyncService` is compile-gated and calls `acknowledgeBackendEvents` to promote local backend event outbox records into server-owned `users/{uid}/backendEvents/{eventId}` history.
 - `FirebaseReadyBackendEventSyncService` routes authenticated sessions to the callable event acknowledgement boundary and keeps events pending when Firebase Auth needs sign-in or Firebase runtime config is missing.
-- `FirebaseGoogleSignInAuthenticationService` provides a Google Sign-In boundary for restore, sign-in, sign-out, and URL handling without faking success when setup is incomplete.
+- `FirebaseOpenLARPAuthenticationService` provides a Firebase Auth boundary for restore, Google Sign-In, Sign in with Apple, sign-out, Apple token revocation preparation for account deletion, and URL handling without faking success when setup is incomplete.
 - `OpenLARPFirebaseBootstrap.configureIfAvailable()` configures Firebase only when the SDK and plist are both available, and installs the Firebase App Check provider factory before `FirebaseApp.configure()`.
 - `OpenLARPStore` now owns authentication state through `OpenLARPAuthenticationServicing`, restores previous sessions on app launch/foreground, forwards auth callback URLs, updates local profile account fields, and uses the same authenticated session source for backend events and career graph previews.
-- `ProfileView` exposes account status, Google sign-in, restore, and sign-out controls while preserving local/mock mode.
+- `ProfileView` exposes account status, Google sign-in, Apple sign-in, restore, and sign-out controls while preserving local/mock mode.
 - `FirebaseReadyCareerGraphSyncService` routes signed-in users to a Firestore-backed career graph metadata sync and keeps signed-out users in local preview mode.
 - `FirebaseFirestoreCareerGraphSyncService` uploads available proof attachment bytes to Firebase Storage before writing account-owned Firestore metadata for profiles, goals, target roles, proof records, outcomes, and readiness snapshots.
 - Private goal context, private outcomes, proof records, proof attachment metadata, and proof attachment files are included only when the user has enabled explicit private evidence cloud sync. Public "share wins" permission is separate and does not allow private evidence backup.
@@ -47,7 +47,7 @@ Firebase Apple SDK products are now linked through Swift Package Manager via `pr
 - `FirebaseFunctions`
 - `FirebaseAppCheck`
 
-Google Sign-In packages are also linked as the next auth UI integration point:
+Google Sign-In packages are also linked:
 
 - `GoogleSignIn`
 - `GoogleSignInSwift`
@@ -55,6 +55,18 @@ Google Sign-In packages are also linked as the next auth UI integration point:
 `GoogleService-Info.plist` remains ignored by Git and excluded from normal XcodeGen sources. The generated Xcode project includes an optional post-build copy script that copies the local plist into the app bundle only when the ignored local file exists.
 
 The generated project includes the public `GOOGLE_REVERSED_CLIENT_ID` callback URL scheme for the `openlarp-dev-langqi` iOS app. Do not commit the real local Firebase plist; it carries the project SDK config and is copied into local app bundles only when present.
+
+## Sign In With Apple Readiness
+
+The iOS app now declares the Sign in with Apple entitlement and routes Apple auth through the same Firebase-backed auth boundary as Google. Apple sign-in uses a fresh random nonce, sends the SHA-256 nonce through `AuthenticationServices`, exchanges the Apple credential with Firebase Auth, and keeps Apple identity tokens, authorization codes, and nonces out of local app state.
+
+Before a signed simulator/device or TestFlight pass:
+
+1. Enable Sign in with Apple for the app identifier in Apple Developer.
+2. Regenerate/download provisioning profiles that include the Sign in with Apple capability.
+3. Enable the Apple provider in Firebase Auth for `openlarp-dev-langqi`.
+4. Verify Sign in with Apple on a signed simulator/device build; unsigned CI builds can only verify compile/readiness behavior.
+5. Verify Apple-linked account deletion. Apple users require a fresh Apple authorization so Firebase Auth can revoke the Apple token before the server-owned `deleteOpenLARPAccount` callable runs.
 
 ## App Check Readiness
 
@@ -212,16 +224,16 @@ OPENLARP_FIREBASE_SMOKE_UID=openlarp-smoke-manual
 OPENLARP_FIREBASE_SIGNING_SERVICE_ACCOUNT=firebase-adminsdk-...@openlarp-dev-langqi.iam.gserviceaccount.com
 ```
 
-This CLI smoke test complements but does not replace a real simulator/device Google Sign-In UX pass. After App Check enforcement is enabled, this smoke test must also obtain or send a valid App Check token.
+This CLI smoke test complements but does not replace real simulator/device Google and Apple sign-in UX passes. After App Check enforcement is enabled, this smoke test must also obtain or send a valid App Check token.
 
 ## Next Backend Steps
 
-1. Verify live Google Sign-In on a simulator or device with the ignored local Firebase plist.
+1. Verify live Google Sign-In and Sign in with Apple on a simulator or device with the ignored local Firebase plist and signed capabilities.
 2. Keep `npm run firebase:live-readiness` and `npm run firebase:signed-in-smoke` passing after backend deploys.
 3. Test Firestore career graph sync, Storage proof attachment upload, server proof receipt promotion, and authenticated Firebase callable AI fallback behavior on a simulator or device.
 4. Verify the in-app account data controls for uploaded proof backup cleanup and full cloud account deletion on a signed-in simulator/device, then finalize privacy/legal/support copy.
 5. Register App Check in Firebase Console, verify simulator/debug and device App Attest metrics, update smoke tooling for App Check tokens, then enable App Check enforcement.
-6. Add Sign in with Apple before broad external TestFlight/App Store review if Google remains a primary sign-in option.
+6. Complete signed-device Apple account deletion/revocation testing before broad external TestFlight/App Store review.
 7. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
 8. Keep provider model IDs and API keys only on the backend.
 

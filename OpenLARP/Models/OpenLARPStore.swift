@@ -31,6 +31,7 @@ final class OpenLARPStore {
     var isPreparingCareerGraphSyncPreview = false
     var isRestoringAuthenticationSession = false
     var isSigningInWithGoogle = false
+    var isSigningInWithApple = false
     var isSigningOutOfAccount = false
     var isSyncingBackendEvents = false
     var isUpdatingPrivateEvidenceCloudSyncConsent = false
@@ -119,7 +120,10 @@ final class OpenLARPStore {
     }
 
     var isAuthenticationOperationInFlight: Bool {
-        isRestoringAuthenticationSession || isSigningInWithGoogle || isSigningOutOfAccount
+        isRestoringAuthenticationSession ||
+            isSigningInWithGoogle ||
+            isSigningInWithApple ||
+            isSigningOutOfAccount
     }
 
     func confirmGoal(_ goal: CareerGoal) async {
@@ -630,7 +634,10 @@ final class OpenLARPStore {
         }
     }
 
-    func deleteCloudAccount(confirmationText: String) async {
+    func deleteCloudAccount(
+        confirmationText: String,
+        presenting anchor: OpenLARPAuthenticationPresentationAnchor? = nil
+    ) async {
         guard !isDeletingAccount else { return }
         guard !isAccountDataOperationInFlight else {
             errorMessage = "Wait for account data controls to finish before deleting the cloud account."
@@ -646,6 +653,32 @@ final class OpenLARPStore {
             return
         }
 
+        isDeletingAccount = true
+        defer { isDeletingAccount = false }
+
+        let preparationResult = await authenticationService.prepareAccountDeletion(
+            presenting: anchor,
+            for: state
+        )
+        authenticationResult = preparationResult
+        guard preparationResult.status == .authenticated else {
+            switch preparationResult.status {
+            case .cancelled:
+                errorMessage = nil
+            case .signedOut:
+                errorMessage = preparationResult.message ?? "Sign in again before deleting the cloud account."
+            case .configurationMissing, .sdkUnavailable, .providerSetupRequired, .presentationRequired, .failed:
+                errorMessage = preparationResult.message ?? "Cloud account deletion needs recent sign-in before it can continue."
+            case .authenticated:
+                break
+            }
+            return
+        }
+        guard currentBackendSession().ownerUserID == session.ownerUserID else {
+            errorMessage = "The signed-in account changed before cloud account deletion could start."
+            return
+        }
+
         let requestedAt = now()
         let request = AccountDeletionRequest(
             session: session,
@@ -655,9 +688,6 @@ final class OpenLARPStore {
         )
         recordBetaEvent(.accountDeletionRequested, occurredAt: requestedAt)
         save()
-
-        isDeletingAccount = true
-        defer { isDeletingAccount = false }
 
         do {
             let result = try await accountDeletionService.deleteAccount(request)
@@ -712,6 +742,22 @@ final class OpenLARPStore {
         defer { isSigningInWithGoogle = false }
 
         let result = await authenticationService.signInWithGoogle(presenting: anchor, for: state)
+        applyAuthenticationResult(result, shouldSurfaceMessage: true)
+        if result.status == .authenticated {
+            await syncBackendEvents()
+        }
+    }
+
+    func signInWithApple(presenting anchor: OpenLARPAuthenticationPresentationAnchor?) async {
+        guard !isSigningInWithApple else { return }
+        guard !isAccountDataOperationInFlight else {
+            errorMessage = "Wait for account data controls to finish before changing accounts."
+            return
+        }
+        isSigningInWithApple = true
+        defer { isSigningInWithApple = false }
+
+        let result = await authenticationService.signInWithApple(presenting: anchor, for: state)
         applyAuthenticationResult(result, shouldSurfaceMessage: true)
         if result.status == .authenticated {
             await syncBackendEvents()
@@ -1193,7 +1239,7 @@ final class OpenLARPStore {
             let currentAccountID = result.session.accountID ?? result.session.ownerUserID
             if result.operation == .restorePreviousSession && previousAccountID != currentAccountID {
                 recordBetaEvent(.accountSessionRestored, occurredAt: now())
-            } else if result.operation == .signInWithGoogle {
+            } else if isInteractiveSignIn(result.operation) {
                 recordBetaEvent(.accountSignInCompleted, occurredAt: now())
             }
             clearCareerGraphSyncPreview()
@@ -1209,8 +1255,12 @@ final class OpenLARPStore {
                 errorMessage = nil
                 save()
             }
+        case .cancelled:
+            if shouldSurfaceMessage {
+                errorMessage = nil
+            }
         case .configurationMissing, .sdkUnavailable, .providerSetupRequired, .presentationRequired, .failed:
-            if result.operation == .signInWithGoogle {
+            if isInteractiveSignIn(result.operation) {
                 recordBetaEvent(.accountSignInFailed, occurredAt: now())
                 save()
             }
@@ -1232,6 +1282,10 @@ final class OpenLARPStore {
         profile.updatedAt = now()
         state.userProfile = profile
         state.updatedAt = profile.updatedAt
+    }
+
+    private func isInteractiveSignIn(_ operation: OpenLARPAuthenticationOperation) -> Bool {
+        operation == .signInWithGoogle || operation == .signInWithApple
     }
 
     private func clearAuthenticatedAccount() {
