@@ -13,10 +13,10 @@ OpenLARP has a RevenueCat-ready subscription model and the RevenueCat iOS SDK de
   - restore in progress
   - restore failed
 - `RevenueCatCustomerInfoSnapshot` and offering/product snapshots keep the app code SDK-independent outside the RevenueCat adapter.
-- `OpenLARPSubscriptionServicing` defines the service boundary for refresh and restore.
-- `OpenLARPRevenueCatSubscriptionService` reads an ignored local `RevenueCat-Info.plist`, configures the SDK only when a valid public iOS SDK key is present, maps CustomerInfo into OpenLARP state, and treats restore as successful only when the configured entitlement is active.
+- `OpenLARPSubscriptionServicing` defines the service boundary for offering load, configured-package purchase, refresh, and restore.
+- `OpenLARPRevenueCatSubscriptionService` reads an ignored local `RevenueCat-Info.plist`, configures the SDK only when a valid public iOS SDK key is present, maps CustomerInfo into OpenLARP state, fetches the configured RevenueCat offering ID, purchases only packages whose product IDs match configured OpenLARP product IDs, and treats restore/purchase as successful only when the configured entitlement is active.
 - `MockOpenLARPSubscriptionService` supports local tests and future UI wiring.
-- `OpenLARPStore` now injects `OpenLARPSubscriptionServicing`, refreshes subscription state, restores purchases, records paywall exposure, and records the first local free sprint start.
+- `OpenLARPStore` now injects `OpenLARPSubscriptionServicing`, refreshes subscription state, loads offerings, starts package purchases, restores purchases, records paywall exposure, and records the first local free sprint start.
 - Beta exports include access status and payment event counts, but intentionally omit product IDs, customer identifiers, and billing URLs.
 
 ## Product Policy
@@ -43,7 +43,7 @@ Without that file, the app keeps working in local/mock mode and reports subscrip
 2. Create the RevenueCat project and entitlement.
 3. Replace placeholder IDs in app configuration from a safe runtime source, not hardcoded private values.
 4. Add the ignored local `OpenLARP/RevenueCat-Info.plist` with the public iOS SDK key and product identifiers.
-5. Add paywall UI and purchase actions after the service adapter is verified.
-6. Validate restore and sandbox purchases before TestFlight.
+5. Replace the compact profile purchase CTA with the designer-led paywall once final UI is ready.
+6. Validate purchase, cancel, restore, expiration, and sandbox/Test Store flows before TestFlight.
 
 Do not commit RevenueCat keys, App Store shared secrets, `.env` files, or private product-management notes. The RevenueCat iOS SDK key is public by design, but OpenLARP still keeps it out of source so public repo builds stay generic and product IDs do not leak before launch.

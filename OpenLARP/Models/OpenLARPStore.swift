@@ -40,8 +40,11 @@ final class OpenLARPStore {
     var isDeletingAccount = false
     var isRefreshingSubscriptionStatus = false
     var isRestoringPurchases = false
+    var isLoadingSubscriptionOffering = false
+    var isPurchasingSubscriptionPackage = false
     var authenticationResult: OpenLARPAuthenticationResult?
     var careerGraphSyncPreview: CareerGraphSyncPreview?
+    var currentSubscriptionOffering: RevenueCatOfferingSnapshot?
     private var careerGraphSyncPreviewGeneration = 0
     private var activePrivateEvidenceBackupCleanupResult: PrivateEvidenceBackupCleanupResult?
     private var activeAccountDeletionResult: AccountDeletionResult?
@@ -1068,8 +1071,46 @@ final class OpenLARPStore {
         save()
     }
 
+    func loadSubscriptionOffering() async {
+        guard !isLoadingSubscriptionOffering else { return }
+        guard !isRefreshingSubscriptionStatus else { return }
+        guard !isRestoringPurchases else { return }
+        guard !isPurchasingSubscriptionPackage else { return }
+        let requestedAt = now()
+
+        isLoadingSubscriptionOffering = true
+        defer { isLoadingSubscriptionOffering = false }
+
+        do {
+            state.subscriptionState.configuration = subscriptionService.subscriptionConfiguration
+            let offering = try await subscriptionService.currentOffering()
+            let hasPurchaseOption = offering?.preferredPurchasePackage(
+                for: state.subscriptionState.configuration
+            ) != nil
+            currentSubscriptionOffering = hasPurchaseOption ? offering : nil
+            recordBetaEvent(
+                hasPurchaseOption
+                    ? .subscriptionOfferingLoaded
+                    : .subscriptionOfferingUnavailable,
+                occurredAt: requestedAt
+            )
+            errorMessage = hasPurchaseOption
+                ? nil
+                : "Configured subscription options are not available yet."
+            save()
+        } catch {
+            currentSubscriptionOffering = nil
+            recordBetaEvent(.subscriptionOfferingUnavailable, occurredAt: requestedAt)
+            errorMessage = "Subscription options could not be loaded."
+            save()
+        }
+    }
+
     func refreshSubscriptionStatus() async {
         guard !isRefreshingSubscriptionStatus else { return }
+        guard !isLoadingSubscriptionOffering else { return }
+        guard !isRestoringPurchases else { return }
+        guard !isPurchasingSubscriptionPackage else { return }
         let requestedAt = now()
 
         isRefreshingSubscriptionStatus = true
@@ -1092,6 +1133,9 @@ final class OpenLARPStore {
 
     func restorePurchases() async {
         guard !isRestoringPurchases else { return }
+        guard !isLoadingSubscriptionOffering else { return }
+        guard !isRefreshingSubscriptionStatus else { return }
+        guard !isPurchasingSubscriptionPackage else { return }
         let requestedAt = now()
         state.subscriptionState = state.subscriptionState.restoreRequested(at: requestedAt)
         recordBetaEvent(.subscriptionRestoreRequested, occurredAt: requestedAt)
@@ -1117,6 +1161,50 @@ final class OpenLARPStore {
             state.subscriptionState = state.subscriptionState.restoreFailed(at: failedAt)
             recordBetaEvent(.subscriptionRestoreFailed, occurredAt: failedAt)
             errorMessage = "Purchases could not be restored."
+            save()
+        }
+    }
+
+    func purchaseSubscriptionPackage(identifier: String, expectedProductID: String) async {
+        guard !isPurchasingSubscriptionPackage else { return }
+        guard !isLoadingSubscriptionOffering else { return }
+        guard !isRefreshingSubscriptionStatus else { return }
+        guard !isRestoringPurchases else { return }
+        let requestedAt = now()
+
+        isPurchasingSubscriptionPackage = true
+        recordBetaEvent(.subscriptionPurchaseStarted, occurredAt: requestedAt)
+        save()
+
+        defer { isPurchasingSubscriptionPackage = false }
+
+        do {
+            let result = try await subscriptionService.purchasePackage(
+                identifier: identifier,
+                expectedProductID: expectedProductID,
+                currentState: state.subscriptionState,
+                at: requestedAt
+            )
+            state.subscriptionState = result.subscriptionState
+
+            switch result.outcome {
+            case .purchased:
+                recordBetaEvent(.subscriptionPurchaseCompleted, occurredAt: now())
+                errorMessage = nil
+            case .cancelled:
+                recordBetaEvent(.subscriptionPurchaseCancelled, occurredAt: now())
+                errorMessage = nil
+            case .failed(let failure):
+                recordBetaEvent(.subscriptionPurchaseFailed, occurredAt: now())
+                if failure == .noCurrentOffering || failure == .packageUnavailable {
+                    currentSubscriptionOffering = nil
+                }
+                errorMessage = failure.message
+            }
+            save()
+        } catch {
+            recordBetaEvent(.subscriptionPurchaseFailed, occurredAt: now())
+            errorMessage = "Subscription purchase could not be completed."
             save()
         }
     }

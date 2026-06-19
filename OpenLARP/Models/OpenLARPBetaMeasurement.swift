@@ -21,9 +21,15 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
     case freeSprintStarted
     case subscriptionStatusChecked
     case subscriptionPaywallViewed
+    case subscriptionOfferingLoaded
+    case subscriptionOfferingUnavailable
     case subscriptionRestoreRequested
     case subscriptionRestoreCompleted
     case subscriptionRestoreFailed
+    case subscriptionPurchaseStarted
+    case subscriptionPurchaseCompleted
+    case subscriptionPurchaseCancelled
+    case subscriptionPurchaseFailed
     case privateEvidenceBackupCleanupReported
     case privateEvidenceBackupCleanupDeleted
     case accountDeletionRequested
@@ -54,9 +60,15 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
         case .freeSprintStarted: "Free sprint started"
         case .subscriptionStatusChecked: "Subscription status checked"
         case .subscriptionPaywallViewed: "Subscription paywall viewed"
+        case .subscriptionOfferingLoaded: "Subscription offering loaded"
+        case .subscriptionOfferingUnavailable: "Subscription offering unavailable"
         case .subscriptionRestoreRequested: "Subscription restore requested"
         case .subscriptionRestoreCompleted: "Subscription restore completed"
         case .subscriptionRestoreFailed: "Subscription restore failed"
+        case .subscriptionPurchaseStarted: "Subscription purchase started"
+        case .subscriptionPurchaseCompleted: "Subscription purchase completed"
+        case .subscriptionPurchaseCancelled: "Subscription purchase cancelled"
+        case .subscriptionPurchaseFailed: "Subscription purchase failed"
         case .privateEvidenceBackupCleanupReported: "Private evidence backup cleanup reported"
         case .privateEvidenceBackupCleanupDeleted: "Private evidence backup cleanup deleted"
         case .accountDeletionRequested: "Account deletion requested"
@@ -276,9 +288,15 @@ struct BetaMeasurementSummaryContent: Codable, Equatable {
         .freeSprintStarted,
         .subscriptionStatusChecked,
         .subscriptionPaywallViewed,
+        .subscriptionOfferingLoaded,
+        .subscriptionOfferingUnavailable,
         .subscriptionRestoreRequested,
         .subscriptionRestoreCompleted,
-        .subscriptionRestoreFailed
+        .subscriptionRestoreFailed,
+        .subscriptionPurchaseStarted,
+        .subscriptionPurchaseCompleted,
+        .subscriptionPurchaseCancelled,
+        .subscriptionPurchaseFailed
     ]
 }
 
