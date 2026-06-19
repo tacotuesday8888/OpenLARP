@@ -13,10 +13,10 @@ OpenLARP has a RevenueCat-ready subscription model and the RevenueCat iOS SDK de
   - restore in progress
   - restore failed
 - `RevenueCatCustomerInfoSnapshot` and offering/product snapshots keep the app code SDK-independent outside the RevenueCat adapter.
-- `OpenLARPSubscriptionServicing` defines the service boundary for offering load, configured-package purchase, refresh, and restore.
-- `OpenLARPRevenueCatSubscriptionService` reads an ignored local `RevenueCat-Info.plist`, configures the SDK only when a valid public iOS SDK key is present, maps CustomerInfo into OpenLARP state, fetches the configured RevenueCat offering ID, purchases only packages whose product IDs match configured OpenLARP product IDs, and treats restore/purchase as successful only when the configured entitlement is active.
+- `OpenLARPSubscriptionServicing` defines the service boundary for identity sync, sign-out reset, offering load, configured-package purchase, refresh, and restore.
+- `OpenLARPRevenueCatSubscriptionService` reads an ignored local `RevenueCat-Info.plist`, configures the SDK only when a valid public iOS SDK key is present, maps CustomerInfo into OpenLARP state, logs in RevenueCat with the stable Firebase owner UID after confirmed auth, logs out/reset on account sign-out, fetches the configured RevenueCat offering ID, purchases only packages whose product IDs match configured OpenLARP product IDs, and treats restore/purchase as successful only when the configured entitlement is active.
 - `MockOpenLARPSubscriptionService` supports local tests and future UI wiring.
-- `OpenLARPStore` now injects `OpenLARPSubscriptionServicing`, refreshes subscription state, loads offerings, starts package purchases, restores purchases, records paywall exposure, and records the first local free sprint start.
+- `OpenLARPStore` now injects `OpenLARPSubscriptionServicing`, syncs subscriber identity after restored/interactive Firebase auth, clears RevenueCat customer info and cached offerings on sign-out/account deletion, refreshes subscription state, loads offerings, starts package purchases, restores purchases, records paywall exposure, and records the first local free sprint start.
 - Beta exports include access status and payment event counts, but intentionally omit product IDs, customer identifiers, and billing URLs.
 
 ## Product Policy
@@ -36,6 +36,13 @@ Expected keys:
 - `REVENUECAT_STUDENT_MONTHLY_PRODUCT_ID`
 
 Without that file, the app keeps working in local/mock mode and reports subscription connection status as not configured.
+
+## Identity Rules
+
+- RevenueCat `appUserID` must be the backend owner UID from `BackendUserSession.ownerUserID`, not an email address, phone number, or display name.
+- RevenueCat login runs only after Firebase/Auth returns an authenticated session.
+- If RevenueCat cannot be configured or login fails during identity sync, OpenLARP clears cached RevenueCat customer info instead of showing paid access that might belong to a previous account. The local free sprint record is preserved.
+- Sign-out and cloud account deletion clear the in-memory offering cache and reset RevenueCat customer info. This prevents a signed-out user from seeing stale paid entitlement from the previous account on the same device.
 
 ## Next RevenueCat Steps
 
