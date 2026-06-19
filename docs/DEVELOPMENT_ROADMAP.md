@@ -22,7 +22,7 @@ OpenLARP currently has:
 - Firebase Auth, Firestore, Storage, Functions, Google Sign-In, and callable AI service boundaries behind local-safe adapters
 - A development Firebase project with deployed Firestore/Storage rules and deterministic Gen 2 callable functions
 - Server-trusted proof upload receipt promotion: the client uploads Storage bytes, then a callable verifies Storage metadata and writes the uploaded Firestore receipt
-- Backend AI contracts and a deterministic callable workflow boundary, with live model calls disabled until Genkit/Gemini safety, budget, and dependency work is ready
+- Backend AI contracts and a deterministic callable workflow boundary, with provider token/cost estimate metadata and live model calls disabled until Genkit/Gemini safety, secrets, observability, and dependency work is ready
 - RevenueCat/subscription contracts and local entitlement state, without live App Store products
 - GitHub Actions CI plus local backend, rules, simulator, and unsigned iOS build validation gates
 
@@ -141,7 +141,7 @@ Success criteria:
 
 Goal: make V0 usable across sessions/devices.
 
-Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, server-owned private evidence cloud sync consent gates, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned uploaded proof backup cleanup after revoked consent, server-owned backend event acknowledgement, server-owned account deletion, in-app account data controls, server-side per-user callable quotas, live readiness checks, signed-in CLI smoke tooling, and iOS App Check provider scaffolding exist. The remaining trust work is signed-in simulator/device Google Sign-In UX testing, account-controls privacy/legal/support copy, Firebase Console App Check registration and enforcement, provider-level token/cost accounting, derived readiness/history writes, and production-grade sync repair UX.
+Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, server-owned private evidence cloud sync consent gates, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned uploaded proof backup cleanup after revoked consent, server-owned backend event acknowledgement, server-owned account deletion, in-app account data controls, server-side per-user callable quotas, backend-only provider token/cost estimates, live readiness checks, signed-in CLI smoke tooling, and iOS App Check provider scaffolding exist. The remaining trust work is signed-in simulator/device Google Sign-In UX testing, account-controls privacy/legal/support copy, Firebase Console App Check registration and enforcement, live AI secret/observability/evaluation gates, derived readiness/history writes, and production-grade sync repair UX.
 
 Work:
 
@@ -150,7 +150,7 @@ Work:
 - Finish account-backed Google Sign-In and sync smoke tests on simulator/device
 - Keep backend event acknowledgement server-owned through Cloud Functions
 - Register App Check in Firebase Console, keep simulator debug tokens private, verify metrics from opt-in simulator/debug and App Attest device builds, then enable enforcement
-- Add provider-level token/cost accounting before live AI or broad beta traffic
+- Configure real provider pricing, daily budgets, observability, and evaluation gates before enabling live AI or broad beta traffic
 - Keep explicit server-owned private evidence cloud sync consent separate from public sharing language
 - Keep uploaded proof backup cleanup separate from consent revocation, and verify the user-facing account/private-data controls before broad beta
 

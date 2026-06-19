@@ -177,9 +177,93 @@ describe("handleOpenLARPWorkflowRequest", () => {
       occurredAt: new Date("2026-06-18T12:00:00.000Z"),
       metadata: {
         workflowKind: "cookedDiagnostic",
-        providerRoute: "firebaseCallableGenkit"
+        providerRoute: "firebaseCallableGenkit",
+        provider: "firebase-ai-logic",
+        liveModelCallsEnabled: false,
+        estimatedInputTokens: expect.any(Number),
+        maxOutputTokens: 1200,
+        estimatedTotalTokens: expect.any(Number),
+        priceConfigured: false,
+        estimatedCostMicros: 0,
+        budgetConfigured: false,
+        budgetExceeded: false
       }
     }]);
+    expect(JSON.stringify(charges)).not.toContain("AI product engineer");
+  });
+
+  it("blocks live AI when provider pricing and budget config are missing", async () => {
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      aiConfig: {
+        modelId: "gemini-private-model-id",
+        provider: "firebase-ai-logic",
+        enableLiveGeneration: true,
+        maxOutputTokens: 1200
+      },
+      budgetPolicy: null,
+      now: () => new Date("2026-06-18T12:00:00.000Z")
+    });
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "failed-precondition",
+      details: {
+        schemaVersion: 1,
+        provider: "firebase-ai-logic",
+        workflowKind: "cookedDiagnostic",
+        maxOutputTokens: 1200
+      }
+    });
+    expect(JSON.stringify(response)).not.toContain("gemini-private-model-id");
+  });
+
+  it("blocks live AI before dispatch when the estimated provider budget would be exceeded", async () => {
+    const { guard, charges } = makeQuotaGuard();
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("proofQualityCheck", {
+        context: workflowContext(),
+        proof: {
+          kind: "project_note",
+          text: "Private proof text that must not be returned in budget errors.",
+          link: "",
+          attachments: []
+        },
+        targetRoleTitle: "AI product engineer"
+      })
+    }, {
+      aiConfig: {
+        modelId: "gemini-private-model-id",
+        provider: "firebase-ai-logic",
+        enableLiveGeneration: true,
+        maxOutputTokens: 1200
+      },
+      budgetPolicy: {
+        inputTokenMicrosPerThousand: 20,
+        outputTokenMicrosPerThousand: 80,
+        dailyBudgetMicros: 50
+      },
+      quotaGuard: guard,
+      now: () => new Date("2026-06-18T12:00:00.000Z")
+    });
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "resource-exhausted",
+      details: {
+        schemaVersion: 1,
+        provider: "firebase-ai-logic",
+        workflowKind: "proofQualityCheck",
+        dailyBudgetMicros: 50
+      }
+    });
+    expect(charges).toEqual([]);
+    expect(JSON.stringify(response)).not.toContain("Private proof text");
+    expect(JSON.stringify(response)).not.toContain("gemini-private-model-id");
   });
 
   it("returns resource-exhausted before workflow dispatch when quota is exhausted", async () => {
