@@ -82,6 +82,8 @@ For review, provide a test account only after Firebase Auth and TestFlight accou
 
 ## Privacy Policy Checklist
 
+The app target includes `OpenLARP/PrivacyInfo.xcprivacy` as a conservative privacy manifest draft. Keep it aligned with the hosted privacy policy and App Store privacy nutrition labels before submission.
+
 A final hosted privacy policy must cover:
 
 - account identifiers from Firebase Auth
