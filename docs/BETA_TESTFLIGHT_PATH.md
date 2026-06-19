@@ -9,7 +9,8 @@ This document tracks the practical path from the current local product foundatio
 - Firebase bootstrap and Firestore sync scaffolding are compile-gated so the app still builds without Firebase SDKs.
 - Firestore and Storage security rules are tracked in the repo.
 - AI workflow request envelopes keep private identifiers, model IDs, and provider credentials out of the iOS client.
-- RevenueCat-shaped subscription contracts support free sprint, entitlement, restore, offline access, and expired states without importing the SDK.
+- RevenueCat-shaped subscription contracts support free sprint, entitlement, restore, offline access, and expired states.
+- RevenueCat iOS SDK `5.79.0` is linked through XcodeGen/SPM behind `OpenLARPSubscriptionServicing`, with ignored local plist configuration and a no-key fallback that keeps local beta mode working.
 - Beta measurement exports include AI, backend, quest, and payment readiness signals without private proof or billing identifiers.
 - GitHub Actions now has an iOS build/test workflow.
 - Firebase Auth, Sign in with Apple capability, and Google Sign-In packages are declared through XcodeGen/SPM while private plist config remains ignored.
@@ -36,7 +37,7 @@ This document tracks the practical path from the current local product foundatio
 - Profile now exposes account controls for Google/Apple sign-in plus signed-in account data controls: report-only synced private proof backup checks, confirmed eligible backup deletion, exact-phrase cloud account deletion, and partial-failure result visibility for retry/support. Local on-device career progress is intentionally kept separate from cloud account deletion.
 - Cloud account deletion now requires provider reauthentication before the destructive callable: Apple sessions request a fresh Apple credential and token revocation, while Google sessions request a fresh Google Sign-In credential and Firebase reauthentication. If the backend response is lost after the request starts, iOS persists an `unknown` deletion result for retry/support instead of hiding the ambiguity behind a transient error.
 - iOS App Check provider scaffolding is linked, real-device builds have the production App Attest entitlement, and simulator debug App Check is explicit opt-in to avoid leaking debug tokens in logs. Firebase product enforcement is still off until console registration, debug tokens, and device metrics are verified.
-- Subscription refresh, restore, paywall exposure, and one-time free sprint measurement are wired through the store boundary.
+- Subscription refresh, restore, paywall exposure, one-time free sprint measurement, and RevenueCat customer-info mapping are wired through the store boundary.
 
 ## Required Before TestFlight
 
@@ -44,7 +45,7 @@ This document tracks the practical path from the current local product foundatio
 2. Run `npm run firebase:signed-in-smoke` before each backend-readiness pass, then test account-backed proof attachment uploads, Firestore career graph writes, and the signed-in deterministic callable AI fallback route on a simulator/device.
 3. Test the iOS callable route signed-out fallback behavior.
 4. Verify uploaded proof backup cleanup and account deletion controls on signed-in Google and Apple simulator/device sessions, including Google recent reauthentication, Apple token revocation before deletion, lost-response/unknown-result support handling, then finalize privacy/legal/support copy for broad external TestFlight.
-5. Add RevenueCat SDK, real entitlement IDs, purchase UI, and sandbox purchase verification.
+5. Create RevenueCat/App Store products, add ignored local `RevenueCat-Info.plist`, implement purchase UI/actions, and complete sandbox purchase verification.
 6. Register App Check in Firebase Console, register simulator debug tokens as private secrets, verify device App Attest metrics, update live smoke tooling for App Check tokens, then enable App Check enforcement before treating all cloud data as authoritative or enabling live AI.
 7. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way.
 8. Add privacy policy, support URL, App Store screenshots, and TestFlight notes.

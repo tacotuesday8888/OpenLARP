@@ -10,6 +10,9 @@ packages:
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
     exactVersion: 9.2.0
+  RevenueCat:
+    url: https://github.com/RevenueCat/purchases-ios
+    exactVersion: 5.79.0
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -23,6 +26,7 @@ targets:
       - path: OpenLARP
         excludes:
           - GoogleService-Info.plist
+          - RevenueCat-Info.plist
     dependencies:
       - package: Firebase
         product: FirebaseCore
@@ -40,6 +44,8 @@ targets:
         product: GoogleSignIn
       - package: GoogleSignIn
         product: GoogleSignInSwift
+      - package: RevenueCat
+        product: RevenueCat
     postBuildScripts:
       - name: Copy Local Firebase Configuration
         script: |
@@ -51,6 +57,16 @@ targets:
           fi
         outputFiles:
           - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/GoogleService-Info.plist
+      - name: Copy Local RevenueCat Configuration
+        script: |
+          CONFIG_FILE="${SRCROOT}/OpenLARP/RevenueCat-Info.plist"
+          TARGET_FILE="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/RevenueCat-Info.plist"
+          if [ -f "$CONFIG_FILE" ]; then
+            mkdir -p "$(dirname "$TARGET_FILE")"
+            cp "$CONFIG_FILE" "$TARGET_FILE"
+          fi
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/RevenueCat-Info.plist
     scheme:
       testTargets:
         - OpenLARPTests

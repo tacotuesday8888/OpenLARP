@@ -24,6 +24,7 @@
 		4E8C53CC1AB2DCA6BAA5ABDD /* QuestMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC8DF9C8B644BCA48495AD3 /* QuestMapView.swift */; };
 		51AE5DCE1739E7F608591FC1 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 158AE576FBB3972BC8DFD382 /* TodayView.swift */; };
 		52877978FB95B59C9302B2B9 /* BetaMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D94367071D26EC53B70E4C2 /* BetaMeasurementTests.swift */; };
+		57A72D2BB918A1D781CF3070 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 133961EE0B4500149403D71C /* RevenueCat */; };
 		5AFEC180419B34F7CF040EB7 /* CompletedQuestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */; };
 		6670C3A6C0A0C12B42C846D6 /* OpenLARPShareCardExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9D4627A3B93C85AB8432AA7 /* OpenLARPShareCardExport.swift */; };
 		68ED80BD8BCA86D0FF55459F /* AgentChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56D7AF5561E51E598C8712C6 /* AgentChatView.swift */; };
@@ -47,6 +48,7 @@
 		AB4887FCA0C7653AA0A5FFC0 /* OpenLARPAttachmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8140307FB53F34C6E1DD623 /* OpenLARPAttachmentStore.swift */; };
 		AE1297BA0332DD5C9843B616 /* OpenLARPApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601E79F5844C6D89A84C354B /* OpenLARPApp.swift */; };
 		BB424273A8937B30B2419351 /* OpenLARPFirebaseCallableAIWorkflowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A76AAB73F44A0319F7F555C8 /* OpenLARPFirebaseCallableAIWorkflowService.swift */; };
+		BFE178288830F697764FA7FD /* OpenLARPRevenueCatSubscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9EC89317FF4D6707724926C /* OpenLARPRevenueCatSubscriptionService.swift */; };
 		C34A260A0624B02D5546FB74 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DC112A777D32FCE8C8EE04 /* ProfileView.swift */; };
 		CEA6BF731E8B671609BDCA34 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A32FE957054753A00B9C9E6F /* Assets.xcassets */; };
 		D0B7B958D8CCF43B25CF9FDE /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 3FE087F5A1C9EFD54C4CC94B /* GoogleSignIn */; };
@@ -109,6 +111,7 @@
 		B9D4627A3B93C85AB8432AA7 /* OpenLARPShareCardExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPShareCardExport.swift; sourceTree = "<group>"; };
 		C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedQuestDetailView.swift; sourceTree = "<group>"; };
 		C5FE9FFE5F44B22B0A266078 /* AuthenticationReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationReadinessTests.swift; sourceTree = "<group>"; };
+		C9EC89317FF4D6707724926C /* OpenLARPRevenueCatSubscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPRevenueCatSubscriptionService.swift; sourceTree = "<group>"; };
 		CA0BD29572C6A1B22588E89D /* AIBackendContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIBackendContractTests.swift; sourceTree = "<group>"; };
 		CC0ACFAB044B7890FEF3F2D6 /* OpenLARPAgentFoundation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPAgentFoundation.swift; sourceTree = "<group>"; };
 		D8140307FB53F34C6E1DD623 /* OpenLARPAttachmentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPAttachmentStore.swift; sourceTree = "<group>"; };
@@ -131,6 +134,7 @@
 				F3F70EC33A68F62AD2F57C33 /* FirebaseAppCheck in Frameworks */,
 				D0B7B958D8CCF43B25CF9FDE /* GoogleSignIn in Frameworks */,
 				8573ACB208493D7AD4DB1454 /* GoogleSignInSwift in Frameworks */,
+				57A72D2BB918A1D781CF3070 /* RevenueCat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -221,6 +225,7 @@
 				A76AAB73F44A0319F7F555C8 /* OpenLARPFirebaseCallableAIWorkflowService.swift */,
 				DF8AF0E1D740ACDC741F585D /* OpenLARPModels.swift */,
 				A9B5407A901AC7364EF7007F /* OpenLARPPersistence.swift */,
+				C9EC89317FF4D6707724926C /* OpenLARPRevenueCatSubscriptionService.swift */,
 				B9D4627A3B93C85AB8432AA7 /* OpenLARPShareCardExport.swift */,
 				0DB4C508489FA00F82B277CF /* OpenLARPStore.swift */,
 				3E597104F3EE10CDAA1EBC2C /* OpenLARPSubscriptionContracts.swift */,
@@ -256,6 +261,7 @@
 				18EA64D7D4D612853C465838 /* Resources */,
 				C8775F680FE453DA095109A9 /* Frameworks */,
 				3AC120E4C6067ABC20484BA8 /* Copy Local Firebase Configuration */,
+				41FA0A5A856DB3DB6328D82B /* Copy Local RevenueCat Configuration */,
 			);
 			buildRules = (
 			);
@@ -271,6 +277,7 @@
 				F2EBA1A67D68330AE3206115 /* FirebaseAppCheck */,
 				3FE087F5A1C9EFD54C4CC94B /* GoogleSignIn */,
 				4665062539415E613F754A93 /* GoogleSignInSwift */,
+				133961EE0B4500149403D71C /* RevenueCat */,
 			);
 			productName = OpenLARP;
 			productReference = AF4DB2E5098EE63EAE50613B /* OpenLARP.app */;
@@ -317,6 +324,7 @@
 			packageReferences = (
 				9E5A8DD073F1B5CDE4B6A2E4 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				456EBAB02F707068B1CD2094 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				B0FF2761DE531E170B1D24EC /* XCRemoteSwiftPackageReference "purchases-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 607E9569ECC61F04FDA90171 /* Products */;
@@ -359,6 +367,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "CONFIG_FILE=\"${SRCROOT}/OpenLARP/GoogleService-Info.plist\"\nTARGET_FILE=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/GoogleService-Info.plist\"\nif [ -f \"$CONFIG_FILE\" ]; then\n  mkdir -p \"$(dirname \"$TARGET_FILE\")\"\n  cp \"$CONFIG_FILE\" \"$TARGET_FILE\"\nfi\n";
+		};
+		41FA0A5A856DB3DB6328D82B /* Copy Local RevenueCat Configuration */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Local RevenueCat Configuration";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/RevenueCat-Info.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "CONFIG_FILE=\"${SRCROOT}/OpenLARP/RevenueCat-Info.plist\"\nTARGET_FILE=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/RevenueCat-Info.plist\"\nif [ -f \"$CONFIG_FILE\" ]; then\n  mkdir -p \"$(dirname \"$TARGET_FILE\")\"\n  cp \"$CONFIG_FILE\" \"$TARGET_FILE\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -403,6 +430,7 @@
 				BB424273A8937B30B2419351 /* OpenLARPFirebaseCallableAIWorkflowService.swift in Sources */,
 				9ED25057BE1A58BA82F7BA50 /* OpenLARPModels.swift in Sources */,
 				42E61DF100617B92FA6DF24F /* OpenLARPPersistence.swift in Sources */,
+				BFE178288830F697764FA7FD /* OpenLARPRevenueCatSubscriptionService.swift in Sources */,
 				6670C3A6C0A0C12B42C846D6 /* OpenLARPShareCardExport.swift in Sources */,
 				98FD63DD9FE8F0E6D1606BEB /* OpenLARPStore.swift in Sources */,
 				FEB94BF664A1A40EC36DC14F /* OpenLARPStyle.swift in Sources */,
@@ -671,9 +699,22 @@
 				version = 12.15.0;
 			};
 		};
+		B0FF2761DE531E170B1D24EC /* XCRemoteSwiftPackageReference "purchases-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios";
+			requirement = {
+				kind = exactVersion;
+				version = 5.79.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		133961EE0B4500149403D71C /* RevenueCat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B0FF2761DE531E170B1D24EC /* XCRemoteSwiftPackageReference "purchases-ios" */;
+			productName = RevenueCat;
+		};
 		17FD5B168EEE1FDC56F8E82F /* FirebaseStorage */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 9E5A8DD073F1B5CDE4B6A2E4 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
