@@ -151,4 +151,20 @@ describe("firebase-signed-in-smoke guardrails", () => {
     expect(liveReadinessScript).toContain('["deleteOpenLARPAccount", "nodejs22"]');
     expect(liveReadinessScript).toContain("Account deletion callable rejects unauthenticated requests");
   });
+
+  it("checks live readiness for Firebase App Check registration and enforcement", () => {
+    expect(liveReadinessScript).toContain("firebaseappcheck.googleapis.com/v1/projects");
+    expect(liveReadinessScript).toContain("X-Goog-User-Project");
+    expect(liveReadinessScript).toContain("appAttestConfig");
+    expect(liveReadinessScript).toContain("Firebase App Check App Attest config is registered for the iOS app");
+    expect(liveReadinessScript).toContain("firestore.googleapis.com");
+    expect(liveReadinessScript).toContain("firebasestorage.googleapis.com");
+    expect(liveReadinessScript).toContain("oauth2.googleapis.com");
+    expect(liveReadinessScript).toContain("Firebase App Check enforcement is off");
+  });
+
+  it("retries live readiness curl probes with a stable transport mode", () => {
+    expect(liveReadinessScript).toContain("curl_read_flags=(-sS --http1.1 --retry 3 --retry-delay 1 --retry-all-errors)");
+    expect(liveReadinessScript).not.toContain("curl -sS");
+  });
 });
