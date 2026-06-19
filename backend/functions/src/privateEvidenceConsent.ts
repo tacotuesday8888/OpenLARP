@@ -1,4 +1,9 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import {
+  accountDeletionBlockedError,
+  accountDeletionRequestPath,
+  isBlockingAccountDeletionRequest
+} from "./accountDeletionGuard.js";
 import { functionError, type OpenLARPFunctionError } from "./errors.js";
 
 export type OpenLARPPrivateEvidenceConsentAuth = {
@@ -33,7 +38,7 @@ export type PrivateEvidenceCloudSyncConsentDependencies = {
   writeConsentDocument: (
     userID: string,
     document: Record<string, unknown>
-  ) => Promise<void>;
+  ) => Promise<OpenLARPFunctionError | null | void>;
   now?: () => Date;
 };
 
@@ -89,7 +94,10 @@ export async function handlePrivateEvidenceCloudSyncConsentRequest(
     document.revokedAt = timestamp;
   }
 
-  await dependencies.writeConsentDocument(userID, document);
+  const writeError = await dependencies.writeConsentDocument(userID, document);
+  if (writeError) {
+    return writeError;
+  }
 
   return {
     ok: true,
@@ -163,9 +171,19 @@ export function adminPrivateEvidenceCloudSyncConsentDependencies(): PrivateEvide
       return snapshot.exists ? snapshot.data() ?? null : null;
     },
     async writeConsentDocument(userID, document) {
-      await getFirestore()
-        .doc(`users/${userID}/consents/privateEvidenceCloudSync`)
-        .set(document, { merge: false });
+      const firestore = getFirestore();
+      const deletionReference = firestore.doc(accountDeletionRequestPath(userID));
+      const consentReference = firestore.doc(`users/${userID}/consents/privateEvidenceCloudSync`);
+      return firestore.runTransaction(async (transaction) => {
+        const deletionSnapshot = await transaction.get(deletionReference);
+        const deletionDocument = deletionSnapshot.exists ? deletionSnapshot.data() : null;
+        if (isBlockingAccountDeletionRequest(userID, deletionDocument)) {
+          return accountDeletionBlockedError(deletionDocument.status);
+        }
+
+        transaction.set(consentReference, document, { merge: false });
+        return null;
+      });
     }
   };
 }

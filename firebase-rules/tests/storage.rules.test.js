@@ -85,6 +85,19 @@ describe("Storage rules", () => {
     ));
   });
 
+  it("rejects proof attachment uploads after account deletion has been requested", async () => {
+    const alice = testEnv.authenticatedContext("alice").storage();
+    await seedPrivateEvidenceConsent("alice");
+    await seedAccountDeletionRequest("alice");
+
+    await assertFails(uploadString(
+      ref(alice, "users/alice/proofAttachments/deleting-account.txt"),
+      "proof-bytes",
+      "raw",
+      storageMetadata("alice", "proof1", "deleting-account.txt", "text/plain")
+    ));
+  });
+
   it("blocks overwriting existing proof attachment bytes", async () => {
     const alice = testEnv.authenticatedContext("alice").storage();
     const attachment = ref(alice, "users/alice/proofAttachments/write-once.txt");
@@ -260,6 +273,25 @@ async function seedPrivateEvidenceConsent(ownerUserID, overrides = {}) {
       doc(context.firestore(), `users/${ownerUserID}/consents/privateEvidenceCloudSync`),
       {
         ...documentData,
+        ...overrides
+      }
+    );
+  });
+}
+
+async function seedAccountDeletionRequest(ownerUserID, overrides = {}) {
+  const timestamp = new Date("2026-06-18T00:00:00.000Z");
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(
+      doc(context.firestore(), `_accountDeletionRequests/${ownerUserID}`),
+      {
+        schemaVersion: 1,
+        ownerUserID,
+        status: "deleting",
+        requestedAt: timestamp,
+        updatedAt: timestamp,
+        collectionPath: "_accountDeletionRequests",
+        documentPath: `_accountDeletionRequests/${ownerUserID}`,
         ...overrides
       }
     );

@@ -401,6 +401,7 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
     var proofUploadPromotionFunctionName: String
     var privateEvidenceConsentFunctionName: String
     var privateEvidenceBackupCleanupFunctionName: String
+    var accountDeletionFunctionName: String
     var usesEmulator: Bool
     var emulatorHost: String
     var emulatorPort: Int
@@ -413,6 +414,7 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
         proofUploadPromotionFunctionName: String = "promoteProofUploadReceipt",
         privateEvidenceConsentFunctionName: String = "setPrivateEvidenceCloudSyncConsent",
         privateEvidenceBackupCleanupFunctionName: String = "cleanupRevokedPrivateEvidenceUploads",
+        accountDeletionFunctionName: String = "deleteOpenLARPAccount",
         usesEmulator: Bool = false,
         emulatorHost: String = "localhost",
         emulatorPort: Int = 5001
@@ -421,6 +423,7 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
         self.proofUploadPromotionFunctionName = proofUploadPromotionFunctionName
         self.privateEvidenceConsentFunctionName = privateEvidenceConsentFunctionName
         self.privateEvidenceBackupCleanupFunctionName = privateEvidenceBackupCleanupFunctionName
+        self.accountDeletionFunctionName = accountDeletionFunctionName
         self.usesEmulator = usesEmulator
         self.emulatorHost = emulatorHost
         self.emulatorPort = emulatorPort
@@ -671,6 +674,135 @@ struct FirebaseCallablePrivateEvidenceBackupCleanupService: PrivateEvidenceBacku
             decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
         )
         let response = try await callable.call(FirebasePrivateEvidenceBackupCleanupPayload(request: request))
+        return try response.validatedResult(for: request)
+        #else
+        throw FirebaseBackendServiceError.sdkUnavailable
+        #endif
+    }
+}
+
+private struct FirebaseAccountDeletionPayload: Encodable, Equatable, Sendable {
+    var schemaVersion: Int
+    var confirmDeletion: Bool
+    var confirmationText: String
+
+    init(request: AccountDeletionRequest) {
+        schemaVersion = request.schemaVersion
+        confirmDeletion = request.confirmDeletion
+        confirmationText = request.confirmationText
+    }
+}
+
+private struct FirebaseAccountDeletionResponse: Codable, Equatable, Sendable {
+    var ok: Bool
+    var schemaVersion: Int
+    var userID: String
+    var status: AccountDeletionStatus
+    var requestedAt: Date
+    var completedAt: Date
+    var firestoreUserTree: AccountDeletionScopeResult
+    var storageUserPrefix: AccountDeletionScopeResult
+    var quotaUsageTree: AccountDeletionScopeResult
+    var firebaseAuthUser: AccountDeletionAuthResult
+    var deletionRequestMarker: AccountDeletionMarkerResult
+    var externalActionTaken: Bool
+
+    func validatedResult(for request: AccountDeletionRequest) throws -> AccountDeletionResult {
+        guard ok,
+              schemaVersion == 1,
+              userID == request.session.ownerUserID,
+              requestedAt <= completedAt,
+              allCountsAreNonNegative,
+              statusMatchesScopeResults,
+              externalActionTaken == responseTookExternalAction
+        else {
+            throw FirebaseBackendServiceError.contractMismatch("Account deletion response did not match the signed-in user or deletion contract.")
+        }
+
+        return AccountDeletionResult(
+            request: request,
+            completedAt: completedAt,
+            didContactNetwork: true,
+            status: status,
+            firestoreUserTree: firestoreUserTree,
+            storageUserPrefix: storageUserPrefix,
+            quotaUsageTree: quotaUsageTree,
+            firebaseAuthUser: firebaseAuthUser,
+            deletionRequestMarker: deletionRequestMarker,
+            externalActionTaken: externalActionTaken
+        )
+    }
+
+    private var allCountsAreNonNegative: Bool {
+        [firestoreUserTree, storageUserPrefix, quotaUsageTree].allSatisfy { scope in
+            scope.deletedCount >= 0 &&
+                (scope.attemptedCount ?? 0) >= 0 &&
+                (scope.failedCount ?? 0) >= 0
+        }
+    }
+
+    private var statusMatchesScopeResults: Bool {
+        let dataScopesCompleted = [
+            firestoreUserTree.status,
+            storageUserPrefix.status,
+            quotaUsageTree.status
+        ].allSatisfy { $0 == .completed }
+        let authDeleted = firebaseAuthUser.status == .deleted || firebaseAuthUser.status == .alreadyMissing
+        let markerFinalized = deletionRequestMarker.status == .completed
+
+        switch status {
+        case .deleted:
+            return dataScopesCompleted && authDeleted && markerFinalized
+        case .partial:
+            return !(dataScopesCompleted && authDeleted && markerFinalized)
+        }
+    }
+
+    private var responseTookExternalAction: Bool {
+        [firestoreUserTree, storageUserPrefix, quotaUsageTree].contains { scope in
+            scope.deletedCount > 0 || (scope.attemptedCount ?? 0) > 0
+        } || firebaseAuthUser.status == .deleted
+    }
+}
+
+struct FirebaseCallableAccountDeletionService: AccountDeletionServicing {
+    private let configuration: OpenLARPFirebaseCallableBackendConfiguration
+
+    init(configuration: OpenLARPFirebaseCallableBackendConfiguration = .production) {
+        self.configuration = configuration
+    }
+
+    func deleteAccount(_ request: AccountDeletionRequest) async throws -> AccountDeletionResult {
+        guard request.session.isAuthenticated else {
+            throw FirebaseBackendServiceError.authenticationRequired
+        }
+        guard request.confirmDeletion,
+              request.confirmationText == AccountDeletionRequest.confirmationText
+        else {
+            throw FirebaseBackendServiceError.contractMismatch("Account deletion requires the exact confirmation phrase before contacting the backend.")
+        }
+
+        #if canImport(FirebaseFunctions) && canImport(FirebaseCore) && canImport(FirebaseSharedSwift)
+        guard FirebaseApp.app() != nil else {
+            throw FirebaseBackendServiceError.configurationMissing
+        }
+
+        let functions = Functions.functions()
+        if configuration.usesEmulator {
+            functions.useEmulator(withHost: configuration.emulatorHost, port: configuration.emulatorPort)
+        }
+
+        let callable: Callable<
+            FirebaseAccountDeletionPayload,
+            FirebaseAccountDeletionResponse
+        > = functions.httpsCallable(
+            configuration.accountDeletionFunctionName,
+            requestAs: FirebaseAccountDeletionPayload.self,
+            responseAs: FirebaseAccountDeletionResponse.self,
+            encoder: FirebaseCallableAIWorkflowJSON.firebaseDataEncoder(),
+            decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
+        )
+        let response = try await callable.call(FirebaseAccountDeletionPayload(request: request))
         return try response.validatedResult(for: request)
         #else
         throw FirebaseBackendServiceError.sdkUnavailable

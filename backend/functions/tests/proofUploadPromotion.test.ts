@@ -84,6 +84,28 @@ function makeDependencies(
   return { dependencies, writes, readPaths, consentReads };
 }
 
+function makeDeletingAccountDependencies(object: ProofUploadPromotionStorageObject | null) {
+  const dependencies: ProofUploadPromotionDependencies = {
+    async readPrivateEvidenceCloudSyncConsent() {
+      return true;
+    },
+    async readStorageObject() {
+      return object;
+    },
+    async writeProofAttachmentDocument() {
+      return {
+        ok: false,
+        code: "failed-precondition",
+        message: "This OpenLARP account is already scheduled for deletion.",
+        details: { status: "deleting" }
+      };
+    },
+    now: () => now
+  };
+
+  return { dependencies };
+}
+
 function authed(
   data: unknown,
   dependencies: ProofUploadPromotionDependencies
@@ -121,6 +143,18 @@ describe("handleProofUploadPromotionRequest", () => {
       ...validConsent,
       consentTextVersion: "private-evidence-cloud-sync-v0"
     })).toBe(false);
+  });
+
+  it("stops before writing proof receipt when account deletion starts concurrently", async () => {
+    const { dependencies } = makeDeletingAccountDependencies(storageObject());
+
+    const response = await authed(promotionIntent(), dependencies);
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "failed-precondition",
+      details: { status: "deleting" }
+    });
   });
 
   it("requires Firebase Auth before promoting uploaded proof receipts", async () => {

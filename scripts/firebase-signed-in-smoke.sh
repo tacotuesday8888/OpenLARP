@@ -146,6 +146,7 @@ try {
   await smokeWorkflow(idToken);
   await smokeProofPromotionAndReconciliation(idToken);
   await smokeBackendEventAcknowledgement(idToken);
+  await smokeAccountDeletion(idToken);
   pass("Signed-in callable, Storage, and Firestore smoke completed");
 } catch (error) {
   throw new Error(smokeFailureMessage(error));
@@ -363,6 +364,33 @@ async function smokeBackendEventAcknowledgement(idToken) {
   pass("Signed-in backend event acknowledgement wrote user-readable Firestore history");
 }
 
+async function smokeAccountDeletion(idToken) {
+  const deletion = await callCallable("deleteOpenLARPAccount", idToken, {
+    schemaVersion: 1,
+    confirmDeletion: true,
+    confirmationText: "DELETE MY OPENLARP ACCOUNT"
+  });
+
+  assert(deletion.ok === true, "account deletion did not return ok=true");
+  assert(deletion.userID === uid, "account deletion response userID did not match smoke UID");
+  assert(deletion.status === "deleted", "account deletion did not report deleted status");
+  assert(deletion.storageUserPrefix?.status === "completed", "account deletion did not complete Storage cleanup");
+  assert(deletion.firestoreUserTree?.status === "completed", "account deletion did not complete Firestore cleanup");
+  assert(deletion.quotaUsageTree?.status === "completed", "account deletion did not complete quota cleanup");
+  assert(deletion.deletionRequestMarker?.status === "completed", "account deletion did not finalize the deletion marker");
+  assert(
+    deletion.firebaseAuthUser?.status === "deleted" || deletion.firebaseAuthUser?.status === "alreadyMissing",
+    "account deletion did not delete Firebase Auth user"
+  );
+  assert(deletion.externalActionTaken === true, "account deletion did not report external action");
+  await assertSmokeUserDeleted();
+  await assertStorageUserPrefixEmpty();
+  await assertFirestoreUserTreeEmpty(firestore.doc(`users/${uid}`));
+  await assertQuotaUsageTreeEmpty();
+  await assertAccountDeletionMarker("deleted");
+  pass("Signed-in account deletion callable removed temporary Auth, Firestore, Storage, and quota data");
+}
+
 async function callCallable(name, idToken, data) {
   const response = await withTransientRetry(name, () => fetch(`${callableBaseURL}/${name}`, {
       method: "POST",
@@ -418,6 +446,7 @@ async function cleanupSmokeState() {
     deleteStoragePrefix(),
     deleteFirestoreUserTree(),
     deleteQuotaDays(),
+    deleteAccountDeletionMarker(),
     deleteSmokeUser()
   ];
 
@@ -427,7 +456,7 @@ async function cleanupSmokeState() {
     const reasons = rejected.map((result) => result.reason?.message ?? String(result.reason));
     throw new Error([
       `Smoke cleanup failed for ${rejected.length} task(s): ${reasons.join("; ")}`,
-      `Manual cleanup may be needed for smoke UID ${uid}, Storage prefix users/${uid}/proofAttachments/, Firestore tree users/${uid}, and quota documents for this UID.`
+      `Manual cleanup may be needed for smoke UID ${uid}, Storage prefix users/${uid}/proofAttachments/, Firestore tree users/${uid}, quota documents for this UID, and _accountDeletionRequests/${uid}.`
     ].join("\n"));
   }
 
@@ -477,6 +506,43 @@ async function deleteQuotaDays() {
   await Promise.all([...dayKeys].map((dayKey) => deleteQuotaDay(dayKey)));
 }
 
+async function assertQuotaUsageTreeEmpty() {
+  const userBucketID = createHash("sha256").update(uid).digest("hex").slice(0, 40);
+  const quotaReference = firestore.doc(`_serverUsage/${userBucketID}`);
+  const snapshot = await quotaReference.get();
+  if (snapshot.exists) {
+    throw new Error(`Account deletion left quota document ${quotaReference.path}`);
+  }
+
+  const collections = await quotaReference.listCollections();
+  const remaining = [];
+  for (const collection of collections) {
+    const documents = await collection.listDocuments();
+    remaining.push(...documents.map((document) => document.path));
+  }
+  if (remaining.length > 0) {
+    throw new Error(`Account deletion left ${remaining.length} quota document(s): ${remaining.join(", ")}`);
+  }
+}
+
+async function deleteAccountDeletionMarker() {
+  if (!uid.startsWith("openlarp-smoke-")) {
+    throw new Error(`Refusing to delete account deletion marker for non-smoke UID ${uid}`);
+  }
+  await firestore.doc(`_accountDeletionRequests/${uid}`).delete();
+}
+
+async function assertAccountDeletionMarker(expectedStatus) {
+  const snapshot = await firestore.doc(`_accountDeletionRequests/${uid}`).get();
+  if (!snapshot.exists) {
+    throw new Error(`Account deletion did not write _accountDeletionRequests/${uid}`);
+  }
+  const data = snapshot.data();
+  if (data?.ownerUserID !== uid || data?.status !== expectedStatus) {
+    throw new Error(`Account deletion marker had unexpected shape: ${JSON.stringify(data)}`);
+  }
+}
+
 async function deleteQuotaDay(dayKey) {
   const userBucketID = createHash("sha256").update(uid).digest("hex").slice(0, 40);
   const dayReference = firestore.doc(`_serverUsage/${userBucketID}/days/${dayKey}`);
@@ -492,6 +558,14 @@ async function deleteStoragePrefix() {
   const [remainingFiles] = await bucket.getFiles({ prefix });
   if (remainingFiles.length > 0) {
     throw new Error(`Smoke Storage prefix cleanup left ${remainingFiles.length} object(s) under ${prefix}`);
+  }
+}
+
+async function assertStorageUserPrefixEmpty() {
+  const prefix = `users/${uid}/`;
+  const [remainingFiles] = await bucket.getFiles({ prefix });
+  if (remainingFiles.length > 0) {
+    throw new Error(`Account deletion left ${remainingFiles.length} Storage object(s) under ${prefix}`);
   }
 }
 
@@ -527,6 +601,18 @@ async function assertFirestoreUserTreeEmpty(userReference) {
   if (remaining.length > 0) {
     throw new Error(`Smoke Firestore cleanup left ${remaining.length} document(s): ${remaining.join(", ")}`);
   }
+}
+
+async function assertSmokeUserDeleted() {
+  try {
+    await auth.getUser(uid);
+  } catch (error) {
+    if (error?.code === "auth/user-not-found") {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(`Account deletion left Firebase Auth user ${uid}`);
 }
 
 function assert(condition, message) {

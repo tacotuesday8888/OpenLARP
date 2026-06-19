@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import {
+  accountDeletionBlockedError,
+  accountDeletionRequestPath,
+  isBlockingAccountDeletionRequest
+} from "./accountDeletionGuard.js";
 import { type CallableQuotaGuard } from "./callableQuotaGuard.js";
 import { functionError, type OpenLARPFunctionError } from "./errors.js";
 
@@ -522,8 +527,18 @@ export function adminBackendEventSyncDependencies(
   return {
     async acknowledgeBackendEventDocument(userID, eventID, idempotencyKey, document) {
       const firestore = getFirestore();
+      const deletionReference = firestore.doc(accountDeletionRequestPath(userID));
       const reference = firestore.doc(`users/${userID}/backendEvents/${eventID}`);
       return firestore.runTransaction(async (transaction) => {
+        const deletionSnapshot = await transaction.get(deletionReference);
+        const deletionDocument = deletionSnapshot.exists ? deletionSnapshot.data() : null;
+        if (isBlockingAccountDeletionRequest(userID, deletionDocument)) {
+          return {
+            ok: false,
+            error: accountDeletionBlockedError(deletionDocument.status)
+          };
+        }
+
         const snapshot = await transaction.get(reference);
         if (snapshot.exists) {
           if (snapshot.get("idempotencyKey") !== idempotencyKey) {

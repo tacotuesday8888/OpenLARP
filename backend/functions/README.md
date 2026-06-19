@@ -12,6 +12,7 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 - Callable export: `promoteProofUploadReceipt`
 - Callable export: `cleanupRevokedPrivateEvidenceUploads`
 - Callable export: `acknowledgeBackendEvents`
+- Callable export: `deleteOpenLARPAccount`
 - Callable quota: per-user daily Firestore-backed units for work-producing
   authenticated callables
 - Runtime: Node.js 22
@@ -26,8 +27,9 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
   Firebase Cloud Build installs the same deploy-source dependency graph
 - Dev deploy: `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`,
   `reconcileProofUploads`, `promoteProofUploadReceipt`,
-  `cleanupRevokedPrivateEvidenceUploads`, and `acknowledgeBackendEvents` are
-  expected active Gen 2 callables in `openlarp-dev-langqi` / `us-central1`
+  `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and
+  `deleteOpenLARPAccount` are expected active Gen 2 callables in
+  `openlarp-dev-langqi` / `us-central1`
 - Live endpoint smoke: unsigned workflow requests return `UNAUTHENTICATED`
 - Artifact cleanup: `gcf-artifacts` keeps the most recent 5 versions and deletes
   artifacts older than 7 days
@@ -79,6 +81,8 @@ Firestore and Storage rules require `status: accepted` and
 attachment metadata, or proof bytes can be written. Client create, update, and
 delete are denied for consent documents. Revocation stops future private
 evidence sync; it does not automatically delete prior uploaded proof backups.
+Account deletion is a separate callable and removes account-scoped live app data,
+including any remaining uploaded proof backups under the user's Storage prefix.
 
 ## Revoked Proof Backup Cleanup
 
@@ -107,6 +111,41 @@ This is uploaded-proof-backup cleanup only. It does not delete proof records,
 outcomes, readiness history, goals, provider backups, legal/audit records, or
 the Firebase/Auth account.
 
+## Account Deletion
+
+`deleteOpenLARPAccount` is an authenticated Firebase callable that provides the
+server-owned account and user-data deletion foundation needed before broad beta
+or App Store review.
+
+The callable:
+
+- requires Firebase Auth
+- requires a recent Firebase authentication timestamp from the callable auth
+  token
+- accepts only schema version 1
+- requires `confirmDeletion: true`
+- requires the exact confirmation phrase `DELETE MY OPENLARP ACCOUNT`
+- writes a minimal retained `_accountDeletionRequests/{uid}` marker before
+  destructive cleanup starts
+- blocks client SDK writes and rechecks the marker inside Admin write
+  transactions for other account-writing callables, so stale signed-in clients
+  and in-flight callables cannot keep writing account data while deletion is
+  running
+- deletes the user's Storage prefix under `users/{uid}/`
+- recursively deletes the Firestore user tree under `users/{uid}`
+- recursively deletes the hashed callable quota tree under `_serverUsage`
+- deletes the Firebase Auth user only after Storage, Firestore user data, and
+  quota cleanup complete
+- returns `deleted` or `partial` with separate scope statuses, including marker
+  finalization, so the app can distinguish complete deletion from a
+  retry/support case
+
+Account deletion is intentionally outside the daily callable quota guard so a
+user can delete their account even after exhausting workflow or proof-sync
+quota. This is the backend deletion foundation; production launch still needs
+the user-facing in-app initiation UX, privacy policy/support copy, legal
+retention decisions, and real-device verification.
+
 ## Callable Quota / Budget Guard
 
 Work-producing authenticated callables use `callableQuotaGuard.ts` before
@@ -129,6 +168,10 @@ Quota exhaustion returns Firebase callable error code `resource-exhausted` with
 safe details: callable name, user-daily scope, limit units, used units,
 requested units, and reset time. The response does not include UID, email,
 proof text, proof paths, provider metadata, prompts, or audit keys.
+
+Consent toggles and account deletion are intentionally outside the daily quota
+guard so users can always revoke private evidence cloud sync and request account
+deletion.
 
 This is a beta request-unit guard. Live Genkit/Gemini still needs provider token
 accounting, App Check enforcement, observability, and alerting before broad

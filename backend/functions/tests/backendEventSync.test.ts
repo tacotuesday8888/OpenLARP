@@ -98,6 +98,25 @@ function makeDependencies(
   return { dependencies, reads, writes };
 }
 
+function makeDeletingAccountDependencies() {
+  const dependencies: BackendEventSyncDependencies = {
+    async acknowledgeBackendEventDocument() {
+      return {
+        ok: false,
+        error: {
+          ok: false,
+          code: "failed-precondition",
+          message: "This OpenLARP account is already scheduled for deletion.",
+          details: { status: "deleting" }
+        }
+      };
+    },
+    now: () => now
+  };
+
+  return { dependencies };
+}
+
 function authed(
   data: unknown,
   dependencies: BackendEventSyncDependencies
@@ -122,6 +141,18 @@ function timestampToISOString(value: unknown): string {
 }
 
 describe("handleBackendEventSyncRequest", () => {
+  it("stops before acknowledging backend events when account deletion starts concurrently", async () => {
+    const { dependencies } = makeDeletingAccountDependencies();
+
+    const response = await authed(syncPayload(), dependencies);
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "failed-precondition",
+      details: { status: "deleting" }
+    });
+  });
+
   it("requires Firebase Auth before acknowledging backend events", async () => {
     const { dependencies } = makeDependencies();
 

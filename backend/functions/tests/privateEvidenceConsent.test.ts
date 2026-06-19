@@ -28,6 +28,27 @@ function makeDependencies(existingConsentDocument: Record<string, unknown> | nul
   return { dependencies, writes, reads };
 }
 
+function makeDeletingAccountDependencies() {
+  const writes: string[] = [];
+  const dependencies: PrivateEvidenceCloudSyncConsentDependencies = {
+    async readConsentDocument() {
+      return null;
+    },
+    async writeConsentDocument(userID) {
+      writes.push(userID);
+      return {
+        ok: false,
+        code: "failed-precondition",
+        message: "This OpenLARP account is already scheduled for deletion.",
+        details: { status: "deleting" }
+      };
+    },
+    now: () => now
+  };
+
+  return { dependencies, writes };
+}
+
 function authed(
   data: unknown,
   dependencies: PrivateEvidenceCloudSyncConsentDependencies
@@ -89,6 +110,23 @@ describe("handlePrivateEvidenceCloudSyncConsentRequest", () => {
     expect(writes[0]?.document.acceptedAt).toBeInstanceOf(Timestamp);
     expect(writes[0]?.document.updatedAt).toBeInstanceOf(Timestamp);
     expect(writes[0]?.document).not.toHaveProperty("revokedAt");
+  });
+
+  it("stops before writing consent when account deletion starts concurrently", async () => {
+    const { dependencies, writes } = makeDeletingAccountDependencies();
+
+    const response = await authed({
+      schemaVersion: 1,
+      enabled: true,
+      consentTextVersion: "private-evidence-cloud-sync-v1"
+    }, dependencies);
+
+    expect(response).toMatchObject({
+      ok: false,
+      code: "failed-precondition",
+      details: { status: "deleting" }
+    });
+    expect(writes).toEqual(["user_123"]);
   });
 
   it("records revoked consent without leaving an accepted rules shape", async () => {
