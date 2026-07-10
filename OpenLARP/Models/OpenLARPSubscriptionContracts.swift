@@ -305,6 +305,12 @@ struct OpenLARPAccessGateDecision: Codable, Equatable {
 }
 
 enum OpenLARPAccessGate {
+    static func unrestrictedDecision(
+        for action: OpenLARPAccessControlledAction
+    ) -> OpenLARPAccessGateDecision {
+        allowedDecision(action: action, accessStatus: .active)
+    }
+
     static func decision(
         for action: OpenLARPAccessControlledAction,
         access: OpenLARPSubscriptionAccess

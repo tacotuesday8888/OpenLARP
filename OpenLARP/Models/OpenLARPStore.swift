@@ -16,6 +16,7 @@ final class OpenLARPStore {
     private let accountDeletionService: any AccountDeletionServicing
     private let backendSessionProvider: any BackendSessionProviding
     private let subscriptionService: any OpenLARPSubscriptionServicing
+    let releaseConfiguration: OpenLARPReleaseConfiguration
     private let now: () -> Date
     private let calendar: Calendar
     private let backendEventRetryDelay: TimeInterval
@@ -77,6 +78,7 @@ final class OpenLARPStore {
         accountDeletionService: any AccountDeletionServicing = LocalMockAccountDeletionService(),
         backendSessionProvider: (any BackendSessionProviding)? = nil,
         subscriptionService: any OpenLARPSubscriptionServicing = MockOpenLARPSubscriptionService(),
+        releaseConfiguration: OpenLARPReleaseConfiguration = .internalBeta,
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .autoupdatingCurrent,
         backendEventRetryDelay: TimeInterval = 300,
@@ -95,6 +97,7 @@ final class OpenLARPStore {
         self.accountDeletionService = accountDeletionService
         self.backendSessionProvider = backendSessionProvider ?? resolvedAuthenticationService
         self.subscriptionService = subscriptionService
+        self.releaseConfiguration = releaseConfiguration
         self.now = now
         self.calendar = calendar
         self.backendEventRetryDelay = backendEventRetryDelay
@@ -1074,8 +1077,14 @@ final class OpenLARPStore {
         state.subscriptionState.access(at: now(), calendar: calendar)
     }
 
-    func subscriptionGateDecision(for action: OpenLARPAccessControlledAction) -> OpenLARPAccessGateDecision {
-        OpenLARPAccessGate.decision(for: action, access: subscriptionAccess())
+    func subscriptionGateDecision(
+        for action: OpenLARPAccessControlledAction
+    ) -> OpenLARPAccessGateDecision {
+        if releaseConfiguration.accessMode == .free {
+            return OpenLARPAccessGate.unrestrictedDecision(for: action)
+        }
+
+        return OpenLARPAccessGate.decision(for: action, access: subscriptionAccess())
     }
 
     func recordSubscriptionPaywallViewed() {
@@ -1322,6 +1331,7 @@ final class OpenLARPStore {
     }
 
     private func recordFreeSprintStartedIfNeeded(at timestamp: Date) {
+        guard releaseConfiguration.accessMode == .subscription else { return }
         let access = state.subscriptionState.access(at: timestamp, calendar: calendar)
         guard access.status == .freeSprint else { return }
         guard !state.betaEvents.contains(where: { $0.kind == .freeSprintStarted }) else { return }

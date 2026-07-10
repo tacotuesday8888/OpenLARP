@@ -1154,6 +1154,52 @@ final class SubscriptionReadinessTests: XCTestCase {
     }
 
     @MainActor
+    func testAppStoreMVPAllowsCoreProgressAfterPersistedFreeSprintExpired() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let start = date(year: 2026, month: 6, day: 1)
+        let now = date(year: 2026, month: 6, day: 20)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            releaseConfiguration: .appStoreMVP,
+            now: { now },
+            calendar: calendar
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: start)
+        store.state.subscriptionState = .localFreeSprint(startedAt: start)
+
+        store.startCurrentQuest()
+
+        XCTAssertEqual(store.state.currentQuest?.status, .inProgress)
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .subscriptionPaywallViewed })
+        XCTAssertNil(store.errorMessage)
+    }
+
+    @MainActor
+    func testInternalBetaStillEnforcesExpiredSubscriptionAccess() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let start = date(year: 2026, month: 6, day: 1)
+        let now = date(year: 2026, month: 6, day: 20)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            releaseConfiguration: .internalBeta,
+            now: { now },
+            calendar: calendar
+        )
+        store.state = OpenLARPEngine.confirmGoal(goal, now: start)
+        store.state.subscriptionState = .localFreeSprint(startedAt: start)
+
+        store.startCurrentQuest()
+
+        XCTAssertEqual(store.state.currentQuest?.status, .available)
+        XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionPaywallViewed)
+        XCTAssertTrue(store.errorMessage?.contains("Sprint access ended") == true)
+    }
+
+    @MainActor
     func testExpiredSprintBlocksQuestProgressionAndRecordsPaywallExposure() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let start = date(year: 2026, month: 6, day: 1)
@@ -1311,6 +1357,25 @@ final class SubscriptionReadinessTests: XCTestCase {
         XCTAssertTrue(store.state.needsGoalSetup)
         XCTAssertEqual(store.state.betaEvents.last?.kind, .subscriptionPaywallViewed)
         XCTAssertTrue(store.errorMessage?.contains("Sprint access ended") == true)
+    }
+
+    @MainActor
+    func testAppStoreMVPGoalConfirmationDoesNotRecordFreeSprintStart() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let now = date(year: 2026, month: 6, day: 1)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            releaseConfiguration: .appStoreMVP,
+            now: { now },
+            calendar: calendar
+        )
+
+        await store.confirmGoal(goal)
+
+        XCTAssertFalse(store.state.needsGoalSetup)
+        XCTAssertFalse(store.state.betaEvents.contains { $0.kind == .freeSprintStarted })
     }
 
     @MainActor
