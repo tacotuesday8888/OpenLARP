@@ -88,7 +88,15 @@ function extractCodeBlock(text, expectedPrefix, openingCharacter, closingCharact
 
 function extractIndentedBlock(text, header) {
   const lines = text.split(/\r?\n/);
-  const headerIndex = lines.findIndex((line) => line.trim() === header);
+  const directChildIndentation = lines
+    .filter((line) => line.trim())
+    .reduce(
+      (minimum, line) => Math.min(minimum, line.search(/\S/)),
+      Number.POSITIVE_INFINITY
+    );
+  const headerIndex = lines.findIndex(
+    (line) => line.search(/\S/) === directChildIndentation && line.trim() === header
+  );
   if (headerIndex < 0) {
     return "";
   }
@@ -216,7 +224,7 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
       guardCondition,
       "let channel = OpenLARPReleaseChannel(rawValue: rawChannel)"
     ) &&
-    textHasTopLevelLine(guardFallback, "return .appStoreMVP")
+    guardFallback.trim() === "return .appStoreMVP"
   ) {
     addResult(results, "pass", "App Store release configuration is free and fail-safe.");
   } else {

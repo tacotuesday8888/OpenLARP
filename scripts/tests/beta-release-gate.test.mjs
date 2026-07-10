@@ -228,6 +228,13 @@ describe("beta release gate", () => {
       "            return .appStoreMVP",
       "            return .internalBeta"
     )],
+    ["early internal return before an App Store fallback return", releaseConfigurationFixture.replace(
+      "            return .appStoreMVP",
+      [
+        "            if infoDictionary[infoDictionaryKey] == nil { return .internalBeta }",
+        "            return .appStoreMVP"
+      ].join("\n")
+    )],
     ["missing guard with matching comments and an unrelated else", replacingResolver(
       releaseConfigurationFixture,
       [
@@ -299,6 +306,21 @@ describe("beta release gate", () => {
         "          OPENLARP_RELEASE_CHANNEL: preview",
         "          metadata:",
         "            OPENLARP_RELEASE_CHANNEL: internal-beta"
+      ].join("\n")
+    )],
+    ["nested safe Debug header before the unsafe real configuration", projectFixture.replace(
+      [
+        "      configs:",
+        "        Debug:",
+        "          OPENLARP_RELEASE_CHANNEL: internal-beta"
+      ].join("\n"),
+      [
+        "      configs:",
+        "        metadata:",
+        "          Debug:",
+        "            OPENLARP_RELEASE_CHANNEL: internal-beta",
+        "        Debug:",
+        "          OPENLARP_RELEASE_CHANNEL: preview"
       ].join("\n")
     )]
   ])("blocks %s", (_scenario, unsafeProject) => {
