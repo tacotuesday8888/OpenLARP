@@ -124,13 +124,61 @@ final class ReleaseConfigurationTests: XCTestCase {
         betaMeasurementCard
         }
         """))
-        XCTAssertTrue(normalizedProfileView.contains("""
+        XCTAssertTrue(containsGatedPrivateEvidenceCloudControl(profileView))
+        XCTAssertTrue(profileView.contains("OpenLARP suggests next steps. You approve every external action."))
+    }
+
+    func testProfileCloudPrivacyGateMatcherRejectsMovedPrivateEvidenceControl() {
+        let weakenedProfileView = """
+        if store.releaseConfiguration.isEnabled(.cloudSync) {
+            PrivacyToggleRow(
+                title: "Shareable wins",
+                detail: "Allow proof wins to be shared later.",
+                isOn: shareWinsBinding
+            )
+        } else {
+            Label("Career context and proof stay on this device in this release.", systemImage: "iphone.and.arrow.forward")
+        }
+
+        PrivacyToggleRow(
+            title: "Private evidence cloud sync",
+            detail: "Allow future proof, files, links, and private notes in account backup.",
+            isOn: privateEvidenceCloudSyncBinding
+        )
+        .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
+
+        Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
+        """
+
+        XCTAssertFalse(containsGatedPrivateEvidenceCloudControl(weakenedProfileView))
+    }
+
+    private func containsGatedPrivateEvidenceCloudControl(_ profileView: String) -> Bool {
+        let normalizedProfileView = profileView
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .joined(separator: "\n")
+
+        return normalizedProfileView.contains("""
         if store.releaseConfiguration.isEnabled(.cloudSync) {
         PrivacyToggleRow(
-        """))
-        XCTAssertTrue(profileView.contains("isOn: privateEvidenceCloudSyncBinding"))
-        XCTAssertTrue(profileView.contains("Career context and proof stay on this device in this release."))
-        XCTAssertTrue(profileView.contains("OpenLARP suggests next steps. You approve every external action."))
+        title: "Private evidence cloud sync",
+        detail: "Allow future proof, files, links, and private notes in account backup.",
+        isOn: privateEvidenceCloudSyncBinding
+        )
+        .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
+
+        Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
+        .font(.caption)
+        .foregroundStyle(Color.openLARPSoftInk)
+        .fixedSize(horizontal: false, vertical: true)
+        } else {
+        Label("Career context and proof stay on this device in this release.", systemImage: "iphone.and.arrow.forward")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color.openLARPSoftInk)
+        .fixedSize(horizontal: false, vertical: true)
+        }
+        """)
     }
 
     private func source(_ relativePath: String) throws -> String {
