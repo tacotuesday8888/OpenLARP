@@ -29,6 +29,7 @@ coverage/
 
 # XcodeGen and local tooling
 .xcodebuildmcp/
+.worktrees/
 
 # Secrets and local configuration
 .env
