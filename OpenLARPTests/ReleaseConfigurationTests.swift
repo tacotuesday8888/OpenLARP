@@ -96,6 +96,43 @@ final class ReleaseConfigurationTests: XCTestCase {
         XCTAssertTrue(todayView.contains("releaseConfiguration.isEnabled(.agent)"))
     }
 
+    func testPublicProfileConsumesEveryInfrastructureGate() throws {
+        let profileView = try source("OpenLARP/Views/ProfileView.swift")
+        let normalizedProfileView = profileView
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .joined(separator: "\n")
+
+        XCTAssertTrue(normalizedProfileView.contains("""
+        if store.releaseConfiguration.isEnabled(.account) {
+        accountProfileCard
+        accountDataControlsCard
+        }
+        """))
+        XCTAssertTrue(normalizedProfileView.contains("""
+        if store.releaseConfiguration.isEnabled(.cloudSync) {
+        careerGraphSetupStatusCard
+        }
+        """))
+        XCTAssertTrue(normalizedProfileView.contains("""
+        if store.releaseConfiguration.isEnabled(.subscriptions) {
+        subscriptionStatusCard
+        }
+        """))
+        XCTAssertTrue(normalizedProfileView.contains("""
+        if store.releaseConfiguration.isEnabled(.developerTools) {
+        betaMeasurementCard
+        }
+        """))
+        XCTAssertTrue(normalizedProfileView.contains("""
+        if store.releaseConfiguration.isEnabled(.cloudSync) {
+        PrivacyToggleRow(
+        """))
+        XCTAssertTrue(profileView.contains("isOn: privateEvidenceCloudSyncBinding"))
+        XCTAssertTrue(profileView.contains("Career context and proof stay on this device in this release."))
+        XCTAssertTrue(profileView.contains("OpenLARP suggests next steps. You approve every external action."))
+    }
+
     private func source(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

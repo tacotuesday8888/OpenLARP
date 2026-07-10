@@ -26,11 +26,19 @@ struct ProfileView: View {
                 )
 
                 careerSummaryCard
-                accountProfileCard
-                accountDataControlsCard
-                subscriptionStatusCard
-                careerGraphSetupStatusCard
-                betaMeasurementCard
+                if store.releaseConfiguration.isEnabled(.account) {
+                    accountProfileCard
+                    accountDataControlsCard
+                }
+                if store.releaseConfiguration.isEnabled(.subscriptions) {
+                    subscriptionStatusCard
+                }
+                if store.releaseConfiguration.isEnabled(.cloudSync) {
+                    careerGraphSetupStatusCard
+                }
+                if store.releaseConfiguration.isEnabled(.developerTools) {
+                    betaMeasurementCard
+                }
                 activeGoalCard
                 recentOutcomesCard
                 streakCard
@@ -943,19 +951,28 @@ struct ProfileView: View {
                         detail: "Allow proof wins to be shared later.",
                         isOn: shareWinsBinding
                     )
-                    PrivacyToggleRow(
-                        title: "Private evidence cloud sync",
-                        detail: "Allow future proof, files, links, and private notes in account backup.",
-                        isOn: privateEvidenceCloudSyncBinding
-                    )
-                    .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
+                    if store.releaseConfiguration.isEnabled(.cloudSync) {
+                        PrivacyToggleRow(
+                            title: "Private evidence cloud sync",
+                            detail: "Allow future proof, files, links, and private notes in account backup.",
+                            isOn: privateEvidenceCloudSyncBinding
+                        )
+                        .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
 
-                    Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
-                        .font(.caption)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                        .fixedSize(horizontal: false, vertical: true)
+                        Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
+                            .font(.caption)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Label("Career context and proof stay on this device in this release.", systemImage: "iphone.and.arrow.forward")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                    Text(memoryEnabled ? "Local memory is on for this device. Real cloud memory is not built yet." : "Memory is off for future sensitive chats on this device.")
+                    Text(memoryEnabled
+                        ? "Local career context is available on this device."
+                        : "Local career context is off.")
                         .font(.subheadline)
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1095,7 +1112,7 @@ struct ProfileView: View {
 
                 Label("Package real experience aggressively.", systemImage: "sparkles")
                 Label("Never invent employers, schools, certificates, titles, dates, projects, or ownership.", systemImage: "checkmark.shield")
-                Label("The agent drafts. You approve external actions.", systemImage: "hand.tap")
+                Label("OpenLARP suggests next steps. You approve every external action.", systemImage: "hand.tap")
             }
             .font(.subheadline)
             .foregroundStyle(Color.openLARPSoftInk)
