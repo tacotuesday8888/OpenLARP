@@ -38,6 +38,41 @@ enum AppTab: String, CaseIterable, Identifiable {
     }
 }
 
+enum AppLifecycleOperation: Equatable, Sendable {
+    case refreshDailyAvailability
+    case restoreAuthentication
+    case refreshSubscription
+    case syncBackendEvents
+}
+
+struct AppLifecyclePolicy {
+    static func activationOperations(
+        for configuration: OpenLARPReleaseConfiguration
+    ) -> [AppLifecycleOperation] {
+        var operations: [AppLifecycleOperation] = [.refreshDailyAvailability]
+        if configuration.runsAuthenticationLifecycle {
+            operations.append(.restoreAuthentication)
+        }
+        if configuration.runsSubscriptionLifecycle {
+            operations.append(.refreshSubscription)
+        }
+        if configuration.runsBackendEventSync {
+            operations.append(.syncBackendEvents)
+        }
+        return operations
+    }
+
+    static func tabChangeOperations(
+        for configuration: OpenLARPReleaseConfiguration
+    ) -> [AppLifecycleOperation] {
+        var operations: [AppLifecycleOperation] = [.refreshDailyAvailability]
+        if configuration.runsBackendEventSync {
+            operations.append(.syncBackendEvents)
+        }
+        return operations
+    }
+}
+
 struct AppRootView: View {
     let store: OpenLARPStore
 
@@ -137,9 +172,11 @@ struct AppRootView: View {
             refreshForActiveState()
         }
         .onChange(of: selectedTab) {
-            store.refreshDailyAvailability()
-            guard store.releaseConfiguration.runsBackendEventSync else { return }
-            Task { await store.syncBackendEvents() }
+            performLifecycleOperations(
+                AppLifecyclePolicy.tabChangeOperations(
+                    for: store.releaseConfiguration
+                )
+            )
         }
         .onOpenURL { url in
             _ = store.handleOpenURL(url)
@@ -147,18 +184,39 @@ struct AppRootView: View {
     }
 
     private func refreshForActiveState() {
-        store.refreshDailyAvailability()
-        let configuration = store.releaseConfiguration
+        performLifecycleOperations(
+            AppLifecyclePolicy.activationOperations(
+                for: store.releaseConfiguration
+            )
+        )
+    }
+
+    private func performLifecycleOperations(
+        _ operations: [AppLifecycleOperation]
+    ) {
+        var serviceOperations: [AppLifecycleOperation] = []
+        for operation in operations {
+            if operation == .refreshDailyAvailability {
+                store.refreshDailyAvailability()
+            } else {
+                serviceOperations.append(operation)
+            }
+        }
+
+        guard !serviceOperations.isEmpty else { return }
 
         Task {
-            if configuration.runsAuthenticationLifecycle {
-                await store.restorePreviousAuthenticationSession()
-            }
-            if configuration.runsSubscriptionLifecycle {
-                await store.refreshSubscriptionStatus()
-            }
-            if configuration.runsBackendEventSync {
-                await store.syncBackendEvents()
+            for operation in serviceOperations {
+                switch operation {
+                case .refreshDailyAvailability:
+                    break
+                case .restoreAuthentication:
+                    await store.restorePreviousAuthenticationSession()
+                case .refreshSubscription:
+                    await store.refreshSubscriptionStatus()
+                case .syncBackendEvents:
+                    await store.syncBackendEvents()
+                }
             }
         }
     }

@@ -57,12 +57,34 @@ final class ReleaseConfigurationTests: XCTestCase {
         )
     }
 
-    func testAppStoreActivationDoesNotRunHiddenServiceLifecycles() {
-        let configuration = OpenLARPReleaseConfiguration.appStoreMVP
+    func testAppStoreActivationRequestsOnlyDailyAvailabilityRefresh() {
+        XCTAssertEqual(
+            AppLifecyclePolicy.activationOperations(for: .appStoreMVP),
+            [.refreshDailyAvailability]
+        )
+    }
 
-        XCTAssertFalse(configuration.runsAuthenticationLifecycle)
-        XCTAssertFalse(configuration.runsSubscriptionLifecycle)
-        XCTAssertFalse(configuration.runsBackendEventSync)
+    func testInternalActivationRequestsServiceWorkInOrder() {
+        XCTAssertEqual(
+            AppLifecyclePolicy.activationOperations(for: .internalBeta),
+            [
+                .refreshDailyAvailability,
+                .restoreAuthentication,
+                .refreshSubscription,
+                .syncBackendEvents
+            ]
+        )
+    }
+
+    func testTabChangesAlwaysRefreshDailyAvailabilityAndOnlySyncWhenEnabled() {
+        XCTAssertEqual(
+            AppLifecyclePolicy.tabChangeOperations(for: .appStoreMVP),
+            [.refreshDailyAvailability]
+        )
+        XCTAssertEqual(
+            AppLifecyclePolicy.tabChangeOperations(for: .internalBeta),
+            [.refreshDailyAvailability, .syncBackendEvents]
+        )
     }
 
     func testPublicRootAndTodayConsumeReleaseGates() throws {
