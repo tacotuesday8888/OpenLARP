@@ -29,6 +29,83 @@ function textIncludesAll(text, values) {
   return values.every((value) => text.includes(value));
 }
 
+function textHasLine(text, expectedLine) {
+  return text.split(/\r?\n/).some((line) => line.trim() === expectedLine);
+}
+
+function textHasTopLevelLine(text, expectedLine) {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  const minimumIndentation = lines.reduce(
+    (minimum, line) => Math.min(minimum, line.search(/\S/)),
+    Number.POSITIVE_INFINITY
+  );
+  return lines.some(
+    (line) => line.search(/\S/) === minimumIndentation && line.trim() === expectedLine
+  );
+}
+
+function codeLineOffset(text, expectedPrefix) {
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    const trimmedLine = line.trimStart();
+    if (trimmedLine.startsWith(expectedPrefix)) {
+      return offset + line.indexOf(trimmedLine);
+    }
+    offset += line.length + 1;
+  }
+  return -1;
+}
+
+function extractBalancedBlockAfter(text, startIndex, openingCharacter, closingCharacter) {
+  const openingIndex = text.indexOf(openingCharacter, startIndex);
+  if (startIndex < 0 || openingIndex < 0) {
+    return "";
+  }
+
+  let depth = 0;
+  for (let index = openingIndex; index < text.length; index += 1) {
+    if (text[index] === openingCharacter) {
+      depth += 1;
+    } else if (text[index] === closingCharacter) {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(openingIndex + 1, index);
+      }
+    }
+  }
+
+  return "";
+}
+
+function extractCodeBlock(text, expectedPrefix, openingCharacter, closingCharacter) {
+  return extractBalancedBlockAfter(
+    text,
+    codeLineOffset(text, expectedPrefix),
+    openingCharacter,
+    closingCharacter
+  );
+}
+
+function extractIndentedBlock(text, header) {
+  const lines = text.split(/\r?\n/);
+  const headerIndex = lines.findIndex((line) => line.trim() === header);
+  if (headerIndex < 0) {
+    return "";
+  }
+
+  const headerIndentation = lines[headerIndex].search(/\S/);
+  const blockLines = [];
+  for (let index = headerIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() && line.search(/\S/) <= headerIndentation) {
+      break;
+    }
+    blockLines.push(line);
+  }
+
+  return blockLines.join("\n");
+}
+
 function readTrackedText(path) {
   try {
     return readFileSync(path, "utf8");
@@ -87,11 +164,23 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
       addResult(results, "blocker", "Local Firebase and RevenueCat plist copy hooks are missing from project.yml.");
     }
 
-    if (textIncludesAll(project, [
-      "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)",
-      "OPENLARP_RELEASE_CHANNEL: internal-beta",
-      "OPENLARP_RELEASE_CHANNEL: app-store"
-    ])) {
+    const targets = extractIndentedBlock(project, "targets:");
+    const appTarget = extractIndentedBlock(targets, "OpenLARP:");
+    const infoProperties = extractIndentedBlock(
+      extractIndentedBlock(appTarget, "info:"),
+      "properties:"
+    );
+    const configurations = extractIndentedBlock(
+      extractIndentedBlock(appTarget, "settings:"),
+      "configs:"
+    );
+    const debugConfiguration = extractIndentedBlock(configurations, "Debug:");
+    const releaseConfiguration = extractIndentedBlock(configurations, "Release:");
+    if (
+      textHasTopLevelLine(infoProperties, "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)") &&
+      textHasTopLevelLine(debugConfiguration, "OPENLARP_RELEASE_CHANNEL: internal-beta") &&
+      textHasTopLevelLine(releaseConfiguration, "OPENLARP_RELEASE_CHANNEL: app-store")
+    ) {
       addResult(results, "pass", "Debug and Release builds declare explicit release channels.");
     } else {
       addResult(results, "blocker", "Debug or Release build channel configuration is missing.");
@@ -99,12 +188,36 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   }
 
   const releaseConfiguration = readText("OpenLARP/Models/OpenLARPReleaseConfiguration.swift");
-  if (textIncludesAll(releaseConfiguration, [
-    "static let appStoreMVP",
-    "accessMode: .free",
-    "enabledCapabilities: []",
-    "return .appStoreMVP"
-  ])) {
+  const appStoreProfile = extractCodeBlock(
+    releaseConfiguration,
+    "static let appStoreMVP = OpenLARPReleaseConfiguration",
+    "(",
+    ")"
+  );
+  const currentResolver = extractCodeBlock(
+    releaseConfiguration,
+    "static func current(",
+    "{",
+    "}"
+  );
+  const guardIndex = codeLineOffset(currentResolver, "guard ");
+  const guardElseIndex = guardIndex < 0 ? -1 : currentResolver.indexOf("else {", guardIndex);
+  const guardCondition = guardElseIndex < 0 ? "" : currentResolver.slice(guardIndex, guardElseIndex);
+  const guardFallback = extractBalancedBlockAfter(currentResolver, guardElseIndex, "{", "}");
+  if (
+    textHasTopLevelLine(appStoreProfile, "channel: .appStore,") &&
+    textHasTopLevelLine(appStoreProfile, "accessMode: .free,") &&
+    textHasTopLevelLine(appStoreProfile, "enabledCapabilities: []") &&
+    textHasLine(
+      guardCondition,
+      "guard let rawChannel = infoDictionary[infoDictionaryKey] as? String,"
+    ) &&
+    textHasLine(
+      guardCondition,
+      "let channel = OpenLARPReleaseChannel(rawValue: rawChannel)"
+    ) &&
+    textHasTopLevelLine(guardFallback, "return .appStoreMVP")
+  ) {
     addResult(results, "pass", "App Store release configuration is free and fail-safe.");
   } else {
     addResult(results, "blocker", "App Store release configuration is missing or not fail-safe.");

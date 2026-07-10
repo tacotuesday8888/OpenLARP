@@ -1,6 +1,91 @@
 import { describe, expect, it } from "vitest";
 import { evaluateBetaReleaseGate } from "../beta-release-gate.mjs";
 
+const projectFixture = [
+  "packages:",
+  "  FirebaseAppCheck:",
+  "  GoogleSignIn:",
+  "  RevenueCat:",
+  "targets:",
+  "  OpenLARP:",
+  "    preBuildScripts:",
+  "      - name: Local service configuration",
+  "        script: |",
+  "          GoogleService-Info.plist",
+  "          RevenueCat-Info.plist",
+  "    info:",
+  "      properties:",
+  "        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)",
+  "    settings:",
+  "      base:",
+  "        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app",
+  "      configs:",
+  "        Debug:",
+  "          OPENLARP_RELEASE_CHANNEL: internal-beta",
+  "        Release:",
+  "          OPENLARP_RELEASE_CHANNEL: app-store"
+].join("\n");
+
+const releaseConfigurationFixture = [
+  "struct OpenLARPReleaseConfiguration {",
+  "    static let appStoreMVP = OpenLARPReleaseConfiguration(",
+  "        channel: .appStore,",
+  "        accessMode: .free,",
+  "        enabledCapabilities: []",
+  "    )",
+  "",
+  "    static let internalBeta = OpenLARPReleaseConfiguration(",
+  "        channel: .internalBeta,",
+  "        accessMode: .subscription,",
+  "        enabledCapabilities: [.subscriptions]",
+  "    )",
+  "",
+  "    static func current(infoDictionary: [String: Any]) -> OpenLARPReleaseConfiguration {",
+  "        guard let rawChannel = infoDictionary[infoDictionaryKey] as? String,",
+  "              let channel = OpenLARPReleaseChannel(rawValue: rawChannel) else {",
+  "            return .appStoreMVP",
+  "        }",
+  "",
+  "        switch channel {",
+  "        case .appStore:",
+  "            return .appStoreMVP",
+  "        case .internalBeta:",
+  "            return .internalBeta",
+  "        }",
+  "    }",
+  "}"
+].join("\n");
+
+function addingSafeProfileDecoy(source) {
+  return [
+    source,
+    "",
+    "let legacyFreePreview = OpenLARPReleaseConfiguration(",
+    "    channel: .appStore,",
+    "    accessMode: .free,",
+    "    enabledCapabilities: []",
+    ")"
+  ].join("\n");
+}
+
+function replacingResolver(source, resolverLines) {
+  const start = source.indexOf("    static func current");
+  const end = source.lastIndexOf("\n}");
+  return `${source.slice(0, start)}${resolverLines.join("\n")}${source.slice(end)}`;
+}
+
+function addingExternalChannelDecoy(configuration, value) {
+  const expectedLine = `          OPENLARP_RELEASE_CHANNEL: ${value}`;
+  return [
+    projectFixture.replace(expectedLine, "          OPENLARP_RELEASE_CHANNEL: preview"),
+    "  DecoyTarget:",
+    "    settings:",
+    "      configs:",
+    `        ${configuration}:`,
+    expectedLine
+  ].join("\n");
+}
+
 const completeFiles = new Map([
   ["OpenLARP/PrivacyInfo.xcprivacy", [
     "<key>NSPrivacyTracking</key>",
@@ -36,23 +121,8 @@ const completeFiles = new Map([
     "xcodebuild",
     "test"
   ].join("\n")],
-  ["project.yml", [
-    "PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app",
-    "FirebaseAppCheck",
-    "GoogleSignIn",
-    "RevenueCat",
-    "GoogleService-Info.plist",
-    "RevenueCat-Info.plist",
-    "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)",
-    "OPENLARP_RELEASE_CHANNEL: internal-beta",
-    "OPENLARP_RELEASE_CHANNEL: app-store"
-  ].join("\n")],
-  ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", [
-    "static let appStoreMVP",
-    "accessMode: .free",
-    "enabledCapabilities: []",
-    "return .appStoreMVP"
-  ].join("\n")],
+  ["project.yml", projectFixture],
+  ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", releaseConfigurationFixture],
   ["OpenLARP/AppRootView.swift", "releaseConfiguration.isEnabled(.agent)"],
   ["OpenLARP/Views/TodayView.swift", [
     "releaseConfiguration.isEnabled(.subscriptions)",
@@ -74,6 +144,16 @@ function evaluatorFor(files) {
     (path) => files.has(path)
   );
 }
+
+function expectBlocker(files, message) {
+  const gate = evaluatorFor(files);
+  expect(gate.ok).toBe(false);
+  expect(gate.results).toContainEqual({ level: "blocker", message });
+}
+
+const releaseConfigurationPath = "OpenLARP/Models/OpenLARPReleaseConfiguration.swift";
+const releaseConfigurationBlocker = "App Store release configuration is missing or not fail-safe.";
+const releaseChannelBlocker = "Debug or Release build channel configuration is missing.";
 
 describe("beta release gate", () => {
   it("passes repo-controlled beta gates while warning about external setup", () => {
@@ -134,38 +214,54 @@ describe("beta release gate", () => {
     });
   });
 
-  it("blocks a paid App Store release profile", () => {
+  it.each([
+    ["paid App Store profile with a separate free-profile decoy", addingSafeProfileDecoy(
+      releaseConfigurationFixture.replace("accessMode: .free", "accessMode: .subscription")
+    )],
+    ["non-empty App Store capabilities with an empty-profile decoy", addingSafeProfileDecoy(
+      releaseConfigurationFixture.replace("enabledCapabilities: []", "enabledCapabilities: [.subscriptions]")
+    )],
+    ["internal App Store channel with an App Store-profile decoy", addingSafeProfileDecoy(
+      releaseConfigurationFixture.replace("channel: .appStore", "channel: .internalBeta")
+    )],
+    ["internal-beta fallback with a later App Store switch case", releaseConfigurationFixture.replace(
+      "            return .appStoreMVP",
+      "            return .internalBeta"
+    )],
+    ["missing guard with matching comments and an unrelated else", replacingResolver(
+      releaseConfigurationFixture,
+      [
+        "    static func current(infoDictionary: [String: Any]) -> OpenLARPReleaseConfiguration {",
+        "        let rawChannel = infoDictionary[infoDictionaryKey] as? String ?? \"\"",
+        "        if rawChannel.isEmpty { return .internalBeta }",
+        "        // guard let rawChannel = infoDictionary[infoDictionaryKey] as? String,",
+        "        // OpenLARPReleaseChannel(rawValue: rawChannel)",
+        "        if rawChannel == \"internal-beta\" { return .internalBeta } else {",
+        "            return .appStoreMVP",
+        "        }",
+        "    }"
+      ]
+    )],
+    ["unvalidated unknown channel with guard-condition comment decoys", replacingResolver(
+      releaseConfigurationFixture,
+      [
+        "    static func current(infoDictionary: [String: Any]) -> OpenLARPReleaseConfiguration {",
+        "        guard !infoDictionary.isEmpty,",
+        "              // infoDictionary[infoDictionaryKey] as? String",
+        "              // OpenLARPReleaseChannel(rawValue: rawChannel)",
+        "              true else { return .appStoreMVP }",
+        "        let channel = OpenLARPReleaseChannel.internalBeta",
+        "        switch channel {",
+        "        case .appStore: return .appStoreMVP",
+        "        case .internalBeta: return .internalBeta",
+        "        }",
+        "    }"
+      ]
+    )]
+  ])("blocks %s", (_scenario, unsafeSource) => {
     const files = new Map(completeFiles);
-    files.set(
-      "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
-      files.get("OpenLARP/Models/OpenLARPReleaseConfiguration.swift")
-        .replace("accessMode: .free", "accessMode: .subscriptionRequired")
-    );
-
-    const gate = evaluatorFor(files);
-
-    expect(gate.ok).toBe(false);
-    expect(gate.results).toContainEqual({
-      level: "blocker",
-      message: "App Store release configuration is missing or not fail-safe."
-    });
-  });
-
-  it("blocks an App Store release profile with enabled capabilities", () => {
-    const files = new Map(completeFiles);
-    files.set(
-      "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
-      files.get("OpenLARP/Models/OpenLARPReleaseConfiguration.swift")
-        .replace("enabledCapabilities: []", "enabledCapabilities: [.subscriptions]")
-    );
-
-    const gate = evaluatorFor(files);
-
-    expect(gate.ok).toBe(false);
-    expect(gate.results).toContainEqual({
-      level: "blocker",
-      message: "App Store release configuration is missing or not fail-safe."
-    });
+    files.set(releaseConfigurationPath, unsafeSource);
+    expectBlocker(files, releaseConfigurationBlocker);
   });
 
   it.each([
@@ -175,14 +271,40 @@ describe("beta release gate", () => {
   ])("blocks a missing %s release channel marker", (_name, marker) => {
     const files = new Map(completeFiles);
     files.set("project.yml", files.get("project.yml").replace(marker, ""));
+    expectBlocker(files, releaseChannelBlocker);
+  });
 
-    const gate = evaluatorFor(files);
-
-    expect(gate.ok).toBe(false);
-    expect(gate.results).toContainEqual({
-      level: "blocker",
-      message: "Debug or Release build channel configuration is missing."
-    });
+  it.each([
+    ["swapped Debug and Release values", projectFixture
+      .replace("OPENLARP_RELEASE_CHANNEL: internal-beta", "OPENLARP_RELEASE_CHANNEL: swapped")
+      .replace("OPENLARP_RELEASE_CHANNEL: app-store", "OPENLARP_RELEASE_CHANNEL: internal-beta")
+      .replace("OPENLARP_RELEASE_CHANNEL: swapped", "OPENLARP_RELEASE_CHANNEL: app-store")],
+    ["incorrect Debug value with a valid marker in another target",
+      addingExternalChannelDecoy("Debug", "internal-beta")],
+    ["incorrect Release value with a valid marker in another target",
+      addingExternalChannelDecoy("Release", "app-store")],
+    ["Info marker outside the OpenLARP target", [
+      projectFixture.replace(
+        "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)",
+        "LegacyReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)"
+      ),
+      "  DecoyTarget:",
+      "    info:",
+      "      properties:",
+      "        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)"
+    ].join("\n")],
+    ["nested Debug marker decoy", projectFixture.replace(
+      "          OPENLARP_RELEASE_CHANNEL: internal-beta",
+      [
+        "          OPENLARP_RELEASE_CHANNEL: preview",
+        "          metadata:",
+        "            OPENLARP_RELEASE_CHANNEL: internal-beta"
+      ].join("\n")
+    )]
+  ])("blocks %s", (_scenario, unsafeProject) => {
+    const files = new Map(completeFiles);
+    files.set("project.yml", unsafeProject);
+    expectBlocker(files, releaseChannelBlocker);
   });
 
   it("blocks public views that do not consume release capabilities", () => {
