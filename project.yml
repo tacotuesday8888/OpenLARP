@@ -81,6 +81,7 @@ targets:
         CFBundleName: $(PRODUCT_NAME)
         CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
         CFBundleShortVersionString: $(MARKETING_VERSION)
+        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLName: Google Sign-In
@@ -102,6 +103,11 @@ targets:
         GOOGLE_REVERSED_CLIENT_ID: "com.googleusercontent.apps.795318771575-cqqtek2m323brvdfi62tvbmbv2oel6fq"
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Debug:
+          OPENLARP_RELEASE_CHANNEL: internal-beta
+        Release:
+          OPENLARP_RELEASE_CHANNEL: app-store
   OpenLARPTests:
     type: bundle.unit-test
     platform: iOS
