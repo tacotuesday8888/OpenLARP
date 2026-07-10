@@ -42,7 +42,27 @@ const completeFiles = new Map([
     "GoogleSignIn",
     "RevenueCat",
     "GoogleService-Info.plist",
-    "RevenueCat-Info.plist"
+    "RevenueCat-Info.plist",
+    "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)",
+    "OPENLARP_RELEASE_CHANNEL: internal-beta",
+    "OPENLARP_RELEASE_CHANNEL: app-store"
+  ].join("\n")],
+  ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", [
+    "static let appStoreMVP",
+    "accessMode: .free",
+    "enabledCapabilities: []",
+    "return .appStoreMVP"
+  ].join("\n")],
+  ["OpenLARP/AppRootView.swift", "releaseConfiguration.isEnabled(.agent)"],
+  ["OpenLARP/Views/TodayView.swift", [
+    "releaseConfiguration.isEnabled(.subscriptions)",
+    "releaseConfiguration.isEnabled(.agent)"
+  ].join("\n")],
+  ["OpenLARP/Views/ProfileView.swift", [
+    "releaseConfiguration.isEnabled(.account)",
+    "releaseConfiguration.isEnabled(.cloudSync)",
+    "releaseConfiguration.isEnabled(.subscriptions)",
+    "releaseConfiguration.isEnabled(.developerTools)"
   ].join("\n")],
   ["firestore.rules", "rules_version = '2';"],
   ["storage.rules", "rules_version = '2';"]
@@ -98,6 +118,104 @@ describe("beta release gate", () => {
     expect(gate.results).toContainEqual({
       level: "blocker",
       message: "CI workflow is missing one or more beta gate checks."
+    });
+  });
+
+  it("blocks a missing fail-safe App Store release profile", () => {
+    const files = new Map(completeFiles);
+    files.delete("OpenLARP/Models/OpenLARPReleaseConfiguration.swift");
+
+    const gate = evaluatorFor(files);
+
+    expect(gate.ok).toBe(false);
+    expect(gate.results).toContainEqual({
+      level: "blocker",
+      message: "App Store release configuration is missing or not fail-safe."
+    });
+  });
+
+  it("blocks a paid App Store release profile", () => {
+    const files = new Map(completeFiles);
+    files.set(
+      "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
+      files.get("OpenLARP/Models/OpenLARPReleaseConfiguration.swift")
+        .replace("accessMode: .free", "accessMode: .subscriptionRequired")
+    );
+
+    const gate = evaluatorFor(files);
+
+    expect(gate.ok).toBe(false);
+    expect(gate.results).toContainEqual({
+      level: "blocker",
+      message: "App Store release configuration is missing or not fail-safe."
+    });
+  });
+
+  it("blocks an App Store release profile with enabled capabilities", () => {
+    const files = new Map(completeFiles);
+    files.set(
+      "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
+      files.get("OpenLARP/Models/OpenLARPReleaseConfiguration.swift")
+        .replace("enabledCapabilities: []", "enabledCapabilities: [.subscriptions]")
+    );
+
+    const gate = evaluatorFor(files);
+
+    expect(gate.ok).toBe(false);
+    expect(gate.results).toContainEqual({
+      level: "blocker",
+      message: "App Store release configuration is missing or not fail-safe."
+    });
+  });
+
+  it.each([
+    ["Info key", "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)"],
+    ["Debug channel", "OPENLARP_RELEASE_CHANNEL: internal-beta"],
+    ["Release channel", "OPENLARP_RELEASE_CHANNEL: app-store"]
+  ])("blocks a missing %s release channel marker", (_name, marker) => {
+    const files = new Map(completeFiles);
+    files.set("project.yml", files.get("project.yml").replace(marker, ""));
+
+    const gate = evaluatorFor(files);
+
+    expect(gate.ok).toBe(false);
+    expect(gate.results).toContainEqual({
+      level: "blocker",
+      message: "Debug or Release build channel configuration is missing."
+    });
+  });
+
+  it("blocks public views that do not consume release capabilities", () => {
+    const files = new Map(completeFiles);
+    files.set("OpenLARP/Views/TodayView.swift", "Today without release gates");
+
+    const gate = evaluatorFor(files);
+
+    expect(gate.ok).toBe(false);
+    expect(gate.results).toContainEqual({
+      level: "blocker",
+      message: "Public SwiftUI surfaces do not consistently gate unfinished capabilities."
+    });
+  });
+
+  it.each([
+    ["OpenLARP/AppRootView.swift", "releaseConfiguration.isEnabled(.agent)"],
+    ["OpenLARP/Views/TodayView.swift", "releaseConfiguration.isEnabled(.subscriptions)"],
+    ["OpenLARP/Views/TodayView.swift", "releaseConfiguration.isEnabled(.agent)"],
+    ["OpenLARP/Views/ProfileView.swift", "releaseConfiguration.isEnabled(.account)"],
+    ["OpenLARP/Views/ProfileView.swift", "releaseConfiguration.isEnabled(.cloudSync)"],
+    ["OpenLARP/Views/ProfileView.swift", "releaseConfiguration.isEnabled(.subscriptions)"],
+    ["OpenLARP/Views/ProfileView.swift", "releaseConfiguration.isEnabled(.developerTools)"]
+  ])("blocks %s when it is missing %s", (path, marker) => {
+    const files = new Map(completeFiles);
+    files.set(path, files.get(path).replace(marker, ""));
+
+    const gate = evaluatorFor(files);
+
+    expect(gate.ok).toBe(false);
+    expect(gate.results).toContainEqual({
+      level: "blocker",
+      message: "Public SwiftUI surfaces do not consistently gate unfinished capabilities."
     });
   });
 });

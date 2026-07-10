@@ -14,6 +14,7 @@ const REQUIRED_PRIVACY_DATA_TYPES = [
 const REQUIRED_FILES = [
   "OpenLARP/PrivacyInfo.xcprivacy",
   "OpenLARP/OpenLARP.entitlements",
+  "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
   "docs/APP_STORE_TESTFLIGHT_READINESS.md",
   "docs/BETA_TESTFLIGHT_PATH.md",
   "docs/FIREBASE_BACKEND_SETUP.md",
@@ -85,6 +86,49 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
     } else {
       addResult(results, "blocker", "Local Firebase and RevenueCat plist copy hooks are missing from project.yml.");
     }
+
+    if (textIncludesAll(project, [
+      "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)",
+      "OPENLARP_RELEASE_CHANNEL: internal-beta",
+      "OPENLARP_RELEASE_CHANNEL: app-store"
+    ])) {
+      addResult(results, "pass", "Debug and Release builds declare explicit release channels.");
+    } else {
+      addResult(results, "blocker", "Debug or Release build channel configuration is missing.");
+    }
+  }
+
+  const releaseConfiguration = readText("OpenLARP/Models/OpenLARPReleaseConfiguration.swift");
+  if (textIncludesAll(releaseConfiguration, [
+    "static let appStoreMVP",
+    "accessMode: .free",
+    "enabledCapabilities: []",
+    "return .appStoreMVP"
+  ])) {
+    addResult(results, "pass", "App Store release configuration is free and fail-safe.");
+  } else {
+    addResult(results, "blocker", "App Store release configuration is missing or not fail-safe.");
+  }
+
+  const rootView = readText("OpenLARP/AppRootView.swift");
+  const todayView = readText("OpenLARP/Views/TodayView.swift");
+  const profileView = readText("OpenLARP/Views/ProfileView.swift");
+  if (
+    rootView.includes("releaseConfiguration.isEnabled(.agent)") &&
+    textIncludesAll(todayView, [
+      "releaseConfiguration.isEnabled(.subscriptions)",
+      "releaseConfiguration.isEnabled(.agent)"
+    ]) &&
+    textIncludesAll(profileView, [
+      "releaseConfiguration.isEnabled(.account)",
+      "releaseConfiguration.isEnabled(.cloudSync)",
+      "releaseConfiguration.isEnabled(.subscriptions)",
+      "releaseConfiguration.isEnabled(.developerTools)"
+    ])
+  ) {
+    addResult(results, "pass", "Public SwiftUI surfaces gate unfinished capabilities.");
+  } else {
+    addResult(results, "blocker", "Public SwiftUI surfaces do not consistently gate unfinished capabilities.");
   }
 
   const entitlements = readText("OpenLARP/OpenLARP.entitlements");
