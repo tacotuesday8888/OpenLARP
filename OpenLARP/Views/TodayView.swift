@@ -20,18 +20,21 @@ struct TodayView: View {
                     }
                 } else {
                     header
-                    subscriptionAccessCard
+                    if store.releaseConfiguration.isEnabled(.subscriptions) {
+                        subscriptionAccessCard
+                    }
                     questCard
                     diagnosticCard
                     progressStrip
-                    dailyAgentBrief
-                    Button {
-                        showingAgent = true
-                    } label: {
-                        Label("Ask Agent about this quest", systemImage: "sparkles")
+                    if store.releaseConfiguration.isEnabled(.agent) {
+                        dailyAgentBrief
+                        Button {
+                            showingAgent = true
+                        } label: {
+                            Label("Ask Agent about this quest", systemImage: "sparkles")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
                     }
-                    .buttonStyle(SecondaryButtonStyle())
-
                     logOutcomeAction
                 }
             }

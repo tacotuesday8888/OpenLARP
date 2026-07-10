@@ -5,6 +5,7 @@ struct OpenLARPApp: App {
     @State private var store: OpenLARPStore
 
     init() {
+        let releaseConfiguration = OpenLARPReleaseConfiguration.current()
         OpenLARPFirebaseBootstrap.configureIfAvailable()
         let attachmentStore = OpenLARPAttachmentStore.live
         let authenticationService = FirebaseOpenLARPAuthenticationService()
@@ -27,7 +28,8 @@ struct OpenLARPApp: App {
                 privateEvidenceCloudSyncConsentService: FirebaseCallablePrivateEvidenceCloudSyncConsentService(),
                 privateEvidenceBackupCleanupService: FirebaseCallablePrivateEvidenceBackupCleanupService(),
                 accountDeletionService: FirebaseCallableAccountDeletionService(),
-                subscriptionService: OpenLARPRevenueCatSubscriptionService.live()
+                subscriptionService: OpenLARPRevenueCatSubscriptionService.live(),
+                releaseConfiguration: releaseConfiguration
             )
         )
     }

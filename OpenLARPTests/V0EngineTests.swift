@@ -4009,9 +4009,19 @@ final class V0EngineTests: XCTestCase {
         XCTAssertTrue(reloaded.backendEvents.allSatisfy { $0.ownerUserID == originalOwnerID })
     }
 
-    func testAppTabsMatchProductSurfaces() {
-        XCTAssertEqual(AppTab.allCases.map(\.title), ["Today", "Map", "Progress", "Agent", "Profile"])
-        XCTAssertEqual(AppTab.allCases.map(\.systemImage), ["bolt.fill", "map.fill", "chart.line.uptrend.xyaxis", "sparkles", "person.crop.circle"])
+    func testAppTabsMatchInternalAndPublicProductSurfaces() {
+        XCTAssertEqual(
+            AppTab.allCases.map(\.title),
+            ["Today", "Map", "Progress", "Agent", "Profile"]
+        )
+        XCTAssertEqual(
+            AppTab.visibleTabs(for: .appStoreMVP).map(\.title),
+            ["Today", "Map", "Progress", "Profile"]
+        )
+        XCTAssertEqual(
+            AppTab.visibleTabs(for: .internalBeta).map(\.title),
+            ["Today", "Map", "Progress", "Agent", "Profile"]
+        )
     }
 
     private func proofRecord(

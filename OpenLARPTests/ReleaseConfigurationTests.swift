@@ -56,4 +56,31 @@ final class ReleaseConfigurationTests: XCTestCase {
             .appStoreMVP
         )
     }
+
+    func testAppStoreActivationDoesNotRunHiddenServiceLifecycles() {
+        let configuration = OpenLARPReleaseConfiguration.appStoreMVP
+
+        XCTAssertFalse(configuration.runsAuthenticationLifecycle)
+        XCTAssertFalse(configuration.runsSubscriptionLifecycle)
+        XCTAssertFalse(configuration.runsBackendEventSync)
+    }
+
+    func testPublicRootAndTodayConsumeReleaseGates() throws {
+        let rootView = try source("OpenLARP/AppRootView.swift")
+        let todayView = try source("OpenLARP/Views/TodayView.swift")
+
+        XCTAssertTrue(rootView.contains("releaseConfiguration.isEnabled(.agent)"))
+        XCTAssertTrue(todayView.contains("releaseConfiguration.isEnabled(.subscriptions)"))
+        XCTAssertTrue(todayView.contains("releaseConfiguration.isEnabled(.agent)"))
+    }
+
+    private func source(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
+    }
 }

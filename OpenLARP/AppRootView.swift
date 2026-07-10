@@ -9,6 +9,14 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static func visibleTabs(
+        for configuration: OpenLARPReleaseConfiguration
+    ) -> [AppTab] {
+        allCases.filter { tab in
+            tab != .agent || configuration.isEnabled(.agent)
+        }
+    }
+
     var title: String {
         switch self {
         case .today: "Today"
@@ -102,13 +110,15 @@ struct AppRootView: View {
             }
             .tag(AppTab.progress)
 
-            NavigationStack {
-                AgentDashboardView(store: store)
+            if store.releaseConfiguration.isEnabled(.agent) {
+                NavigationStack {
+                    AgentDashboardView(store: store)
+                }
+                .tabItem {
+                    Label(AppTab.agent.title, systemImage: AppTab.agent.systemImage)
+                }
+                .tag(AppTab.agent)
             }
-            .tabItem {
-                Label(AppTab.agent.title, systemImage: AppTab.agent.systemImage)
-            }
-            .tag(AppTab.agent)
 
             NavigationStack {
                 ProfileView(store: store)
@@ -120,28 +130,36 @@ struct AppRootView: View {
         }
         .tint(.openLARPBlue)
         .onAppear {
-            store.refreshDailyAvailability()
-            Task {
-                await store.restorePreviousAuthenticationSession()
-                await store.refreshSubscriptionStatus()
-                await store.syncBackendEvents()
-            }
+            refreshForActiveState()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            store.refreshDailyAvailability()
-            Task {
-                await store.restorePreviousAuthenticationSession()
-                await store.refreshSubscriptionStatus()
-                await store.syncBackendEvents()
-            }
+            refreshForActiveState()
         }
         .onChange(of: selectedTab) {
             store.refreshDailyAvailability()
+            guard store.releaseConfiguration.runsBackendEventSync else { return }
             Task { await store.syncBackendEvents() }
         }
         .onOpenURL { url in
             _ = store.handleOpenURL(url)
+        }
+    }
+
+    private func refreshForActiveState() {
+        store.refreshDailyAvailability()
+        let configuration = store.releaseConfiguration
+
+        Task {
+            if configuration.runsAuthenticationLifecycle {
+                await store.restorePreviousAuthenticationSession()
+            }
+            if configuration.runsSubscriptionLifecycle {
+                await store.refreshSubscriptionStatus()
+            }
+            if configuration.runsBackendEventSync {
+                await store.syncBackendEvents()
+            }
         }
     }
 }
