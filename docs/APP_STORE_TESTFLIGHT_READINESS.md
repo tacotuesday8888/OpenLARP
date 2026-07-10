@@ -9,6 +9,15 @@ This is a working launch packet for a small TestFlight beta. It is not final leg
 - Primary beta promise: help students, new graduates, career switchers, and early-career professionals complete one useful career action per day, save proof, and understand readiness gaps
 - Not ready to claim: production AI agent, autonomous opportunity monitoring, live paid subscription, final privacy policy, App Store public launch
 
+## App Store MVP Release Profile
+
+- Release builds resolve to the fail-safe `app-store` profile.
+- The public profile is free and non-expiring.
+- Public navigation contains Today, Map, Progress, and Profile.
+- Agent, account, cloud-sync, subscription, and developer infrastructure remains internal-only.
+- Debug builds retain the `internal-beta` profile for continued development and verification.
+- Live AI remains disabled pending provider, safety, evaluation, observability, and audience-terms approval.
+
 ## App Store Connect Draft
 
 - App name: OpenLARP
