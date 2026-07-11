@@ -49,6 +49,13 @@ function normalizedShell(script) {
     .trim();
 }
 
+function hasSuccessfulShellExit(script) {
+  return script.split(/\r?\n/).some((line) => {
+    const code = line.trim().replace(/\s+#.*$/, "");
+    return /(?:^|;\s*|\bthen\s+)(?:exit|return)(?:\s+0)?(?=\s*(?:;|&&|\|\||$))/.test(code);
+  });
+}
+
 function hasCanonicalShellContract(script, firstExecutableLinePattern) {
   if (typeof script !== "string") {
     return false;
@@ -62,10 +69,7 @@ function hasCanonicalShellContract(script, firstExecutableLinePattern) {
     return false;
   }
 
-  return !executableLines.some((line) => {
-    const code = line.replace(/\s+#.*$/, "");
-    return /(?:^|;\s*|\bthen\s+)(?:exit|return)(?:\s+0)?(?=\s*(?:;|&&|\|\||$))/.test(code);
-  });
+  return !hasSuccessfulShellExit(executableLines.join("\n"));
 }
 
 function readTrackedText(path) {
@@ -121,6 +125,8 @@ function hasInternalOnlyCopyScript(scriptDefinition, fileName) {
   const removesBeforePublicExit = staleRemovalOffsets.some((offset) =>
     offset > guardIndex && offset < exitIndex
   );
+  const hasNoEarlySuccessfulExit = exitIndex >= 0 &&
+    !hasSuccessfulShellExit(script.slice(0, exitIndex));
 
   return scriptDefinition.name === `Copy Local ${fileName === "GoogleService-Info.plist" ? "Firebase" : "RevenueCat"} Configuration` &&
     script.includes(`/OpenLARP/${fileName}`) &&
@@ -129,7 +135,8 @@ function hasInternalOnlyCopyScript(scriptDefinition, fileName) {
     exitIndex > guardIndex &&
     copyIndex > exitIndex &&
     staleRemovalOffsets.length >= 2 &&
-    removesBeforePublicExit;
+    removesBeforePublicExit &&
+    hasNoEarlySuccessfulExit;
 }
 
 function validateProjectDefinition(project) {

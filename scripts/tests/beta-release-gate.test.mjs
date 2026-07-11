@@ -316,6 +316,23 @@ describe("beta release gate", () => {
     expectBlocker(replacing("project.yml", from, to), serviceCopyBlocker);
   });
 
+  it.each([
+    ["unconditional", "          exit 0\n"],
+    ["conditional", "          if true; then exit 0; fi\n"]
+  ])("blocks a successful exit (%s) before public-build cleanup", (_name, earlyExit) => {
+    const firstConfigurationLine =
+      '          CONFIG_FILE="${SRCROOT}/OpenLARP/GoogleService-Info.plist"';
+
+    expectBlocker(
+      replacing(
+        "project.yml",
+        firstConfigurationLine,
+        `${earlyExit}${firstConfigurationLine}`
+      ),
+      serviceCopyBlocker
+    );
+  });
+
   it("blocks service copy cleanup that occurs only after the public-build exit", () => {
     const before = [
       '          if [ "${OPENLARP_RELEASE_CHANNEL}" != "internal-beta" ]; then',
