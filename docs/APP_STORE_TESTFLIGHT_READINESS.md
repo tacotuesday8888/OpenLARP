@@ -9,6 +9,7 @@ This is a working launch packet for the free, local-first App Store build. It is
 - Public navigation: Today, Map, Progress, and Profile
 - Primary promise: help students, new graduates, career switchers, and early-career professionals complete one useful career action per day, save honest proof locally, and understand readiness gaps
 - No account or purchase is needed. Account, cloud sync, subscriptions, and Agent are not included in this App Store build.
+- Repository work still required before submission: identity-safe local persistence and complete erase, proof-draft ownership and truthful review limits, sprint history and day-seven continuation, and final accessibility/release-UI verification
 - External work still required: final hosted URLs, metadata and screenshots, signed-device QA, signed archive upload, and App Store Connect completion
 
 ## App Store MVP Release Profile
@@ -165,6 +166,9 @@ Do not submit the public build until all of these are true:
 - the full iOS test suite passes on the supported simulator runtime
 - an unsigned generic Release build succeeds and its built plist resolves exactly to `app-store`
 - the complete local flow is verified on a signed physical device, including goal setup, diagnostic, Today, Map, proof text/link/photo handling, Progress, Profile, relaunch persistence, and offline behavior
+- local state and proof files use owner-specific containers with a tested legacy migration, complete local erase, file protection, and documented backup behavior
+- proof drafts have tested staging, attachment-count/type/size limits, cleanup on every abandonment path, and truthful results that state what was and was not inspected
+- Change Goal preserves completed proof and progress history, while day-seven completion produces a useful summary and tested Start Another Sprint path
 - final App Store metadata and local-only screenshots are complete
 - final hosted privacy and support URLs exist and match the submitted binary
 - App Store Connect privacy answers, age rating, review notes, export compliance, and availability are complete
