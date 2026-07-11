@@ -1,43 +1,5 @@
 import SwiftUI
 
-enum AppTab: String, CaseIterable, Identifiable {
-    case today
-    case map
-    case progress
-    case agent
-    case profile
-
-    var id: String { rawValue }
-
-    static func visibleTabs(
-        for configuration: OpenLARPReleaseConfiguration
-    ) -> [AppTab] {
-        allCases.filter { tab in
-            tab != .agent || configuration.isEnabled(.agent)
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .today: "Today"
-        case .map: "Map"
-        case .progress: "Progress"
-        case .agent: "Agent"
-        case .profile: "Profile"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .today: "bolt.fill"
-        case .map: "map.fill"
-        case .progress: "chart.line.uptrend.xyaxis"
-        case .agent: "sparkles"
-        case .profile: "person.crop.circle"
-        }
-    }
-}
-
 enum AppLifecycleOperation: Equatable, Sendable {
     case refreshDailyAvailability
     case restoreAuthentication
@@ -81,14 +43,46 @@ struct AppRootView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            ForEach(AppTab.visibleTabs(for: store.releaseConfiguration)) { tab in
+                tabContent(for: tab)
+                    .tabItem {
+                        Label(tab.title, systemImage: tab.systemImage)
+                    }
+                    .tag(tab)
+            }
+        }
+        .tint(.openLARPBlue)
+        .onAppear {
+            refreshForActiveState()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            refreshForActiveState()
+        }
+        .onChange(of: selectedTab) {
+            performLifecycleOperations(
+                AppLifecyclePolicy.tabChangeOperations(
+                    for: store.releaseConfiguration
+                )
+            )
+        }
+        .onOpenURL { url in
+            guard store.releaseConfiguration.serviceMode != .localOnly,
+                  store.releaseConfiguration.isEnabled(.account) else {
+                return
+            }
+            _ = store.handleOpenURL(url)
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(for tab: AppTab) -> some View {
+        switch tab {
+        case .today:
             NavigationStack {
                 TodayView(store: store)
             }
-            .tabItem {
-                Label(AppTab.today.title, systemImage: AppTab.today.systemImage)
-            }
-            .tag(AppTab.today)
-
+        case .map:
             NavigationStack {
                 QuestMapView(
                     state: store.state,
@@ -100,11 +94,7 @@ struct AppRootView: View {
                     }
                 )
             }
-            .tabItem {
-                Label(AppTab.map.title, systemImage: AppTab.map.systemImage)
-            }
-            .tag(AppTab.map)
-
+        case .progress:
             NavigationStack {
                 ProgressTabView(
                     state: store.state,
@@ -140,50 +130,14 @@ struct AppRootView: View {
                     }
                 )
             }
-            .tabItem {
-                Label(AppTab.progress.title, systemImage: AppTab.progress.systemImage)
+        case .agent:
+            NavigationStack {
+                AgentDashboardView(store: store)
             }
-            .tag(AppTab.progress)
-
-            if store.releaseConfiguration.isEnabled(.agent) {
-                NavigationStack {
-                    AgentDashboardView(store: store)
-                }
-                .tabItem {
-                    Label(AppTab.agent.title, systemImage: AppTab.agent.systemImage)
-                }
-                .tag(AppTab.agent)
-            }
-
+        case .profile:
             NavigationStack {
                 ProfileView(store: store)
             }
-            .tabItem {
-                Label(AppTab.profile.title, systemImage: AppTab.profile.systemImage)
-            }
-            .tag(AppTab.profile)
-        }
-        .tint(.openLARPBlue)
-        .onAppear {
-            refreshForActiveState()
-        }
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            refreshForActiveState()
-        }
-        .onChange(of: selectedTab) {
-            performLifecycleOperations(
-                AppLifecyclePolicy.tabChangeOperations(
-                    for: store.releaseConfiguration
-                )
-            )
-        }
-        .onOpenURL { url in
-            guard store.releaseConfiguration.serviceMode != .localOnly,
-                  store.releaseConfiguration.isEnabled(.account) else {
-                return
-            }
-            _ = store.handleOpenURL(url)
         }
     }
 

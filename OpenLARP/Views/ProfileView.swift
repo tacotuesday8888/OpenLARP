@@ -25,27 +25,13 @@ struct ProfileView: View {
                     stat: "L\(max(1, store.state.progress.completedQuestCount + 1))"
                 )
 
-                careerSummaryCard
-                if store.releaseConfiguration.isEnabled(.account) {
-                    accountProfileCard
-                    accountDataControlsCard
+                ForEach(
+                    ProfileSection.visibleSections(
+                        for: store.releaseConfiguration
+                    )
+                ) { section in
+                    profileSection(section)
                 }
-                if store.releaseConfiguration.isEnabled(.subscriptions) {
-                    subscriptionStatusCard
-                }
-                if store.releaseConfiguration.isEnabled(.cloudSync) {
-                    careerGraphSetupStatusCard
-                }
-                if store.releaseConfiguration.isEnabled(.developerTools) {
-                    betaMeasurementCard
-                }
-                activeGoalCard
-                recentOutcomesCard
-                streakCard
-                privacyCard
-                badgeCard
-                proofCard
-                rulesCard
             }
             .padding(20)
             .padding(.bottom, 88)
@@ -132,6 +118,38 @@ struct ProfileView: View {
             Text(store.errorMessage ?? "")
         }
         .background(authenticationPresentationAnchorReader)
+    }
+
+    @ViewBuilder
+    private func profileSection(_ section: ProfileSection) -> some View {
+        switch section {
+        case .careerSummary:
+            careerSummaryCard
+        case .accountProfile:
+            accountProfileCard
+        case .accountDataControls:
+            accountDataControlsCard
+        case .subscriptionStatus:
+            subscriptionStatusCard
+        case .careerGraphStatus:
+            careerGraphSetupStatusCard
+        case .betaMeasurement:
+            betaMeasurementCard
+        case .activeGoal:
+            activeGoalCard
+        case .recentOutcomes:
+            recentOutcomesCard
+        case .streak:
+            streakCard
+        case .privacy:
+            privacyCard
+        case .badges:
+            badgeCard
+        case .proof:
+            proofCard
+        case .rules:
+            rulesCard
+        }
     }
 
     private var betaMeasurementCard: some View {
@@ -951,7 +969,10 @@ struct ProfileView: View {
                         detail: "Allow proof wins to be shared later.",
                         isOn: shareWinsBinding
                     )
-                    if store.releaseConfiguration.isEnabled(.cloudSync) {
+                    switch ProfilePrivacyPresentation.mode(
+                        for: store.releaseConfiguration
+                    ) {
+                    case .cloudControls:
                         PrivacyToggleRow(
                             title: "Private evidence cloud sync",
                             detail: "Allow future proof, files, links, and private notes in account backup.",
@@ -963,7 +984,7 @@ struct ProfileView: View {
                             .font(.caption)
                             .foregroundStyle(Color.openLARPSoftInk)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else {
+                    case .localOnlyNotice:
                         Label("Career context and proof stay on this device in this release.", systemImage: "iphone.and.arrow.forward")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Color.openLARPSoftInk)

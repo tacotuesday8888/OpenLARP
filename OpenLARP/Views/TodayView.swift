@@ -19,23 +19,13 @@ struct TodayView: View {
                         pendingDiagnosticResult = content
                     }
                 } else {
-                    header
-                    if store.releaseConfiguration.isEnabled(.subscriptions) {
-                        subscriptionAccessCard
+                    ForEach(
+                        TodaySection.visibleSections(
+                            for: store.releaseConfiguration
+                        )
+                    ) { section in
+                        todaySection(section)
                     }
-                    questCard
-                    diagnosticCard
-                    progressStrip
-                    if store.releaseConfiguration.isEnabled(.agent) {
-                        dailyAgentBrief
-                        Button {
-                            showingAgent = true
-                        } label: {
-                            Label("Ask Agent about this quest", systemImage: "sparkles")
-                        }
-                        .buttonStyle(SecondaryButtonStyle())
-                    }
-                    logOutcomeAction
                 }
             }
             .padding(20)
@@ -121,6 +111,33 @@ struct TodayView: View {
             }
         } message: {
             Text(store.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private func todaySection(_ section: TodaySection) -> some View {
+        switch section {
+        case .header:
+            header
+        case .subscriptionAccess:
+            subscriptionAccessCard
+        case .quest:
+            questCard
+        case .diagnostic:
+            diagnosticCard
+        case .progress:
+            progressStrip
+        case .agentBrief:
+            dailyAgentBrief
+        case .agentAction:
+            Button {
+                showingAgent = true
+            } label: {
+                Label("Ask Agent about this quest", systemImage: "sparkles")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+        case .outcome:
+            logOutcomeAction
         }
     }
 
