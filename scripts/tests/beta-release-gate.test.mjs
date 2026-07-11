@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parse, stringify } from "yaml";
 import { evaluateBetaReleaseGate } from "../beta-release-gate.mjs";
 
 const projectFixture = `
@@ -237,6 +238,21 @@ function replacing(path, from, to) {
   return files;
 }
 
+function movingWorkflowStepAfter(stepName, predecessorName) {
+  const workflow = parse(workflowFixture);
+  const steps = workflow.jobs["build-and-test"].steps;
+  const stepIndex = steps.findIndex((step) => step.name === stepName);
+  const [step] = steps.splice(stepIndex, 1);
+  const predecessorIndex = steps.findIndex((candidate) =>
+    candidate.name === predecessorName
+  );
+  steps.splice(predecessorIndex + 1, 0, step);
+
+  const files = new Map(completeFiles);
+  files.set(".github/workflows/ios-ci.yml", stringify(workflow));
+  return files;
+}
+
 const projectContractBlocker = "project.yml must define the isolated Release contract target and scheme.";
 const releaseChannelBlocker = "Debug or Release build channel configuration is missing.";
 const serviceCopyBlocker = "Local service configuration copy hooks must be restricted to internal-beta builds.";
@@ -298,6 +314,33 @@ describe("beta release gate", () => {
     ["stale-copy removal", "rm -f \"$TARGET_FILE\"", "true"]
   ])("blocks a weakened %s", (_name, from, to) => {
     expectBlocker(replacing("project.yml", from, to), serviceCopyBlocker);
+  });
+
+  it("blocks service copy cleanup that occurs only after the public-build exit", () => {
+    const before = [
+      '          if [ "${OPENLARP_RELEASE_CHANNEL}" != "internal-beta" ]; then',
+      '            rm -f "$TARGET_FILE"',
+      "            exit 0",
+      "          fi",
+      '          if [ -f "$CONFIG_FILE" ]; then',
+      '            cp "$CONFIG_FILE" "$TARGET_FILE"',
+      "          else",
+      '            rm -f "$TARGET_FILE"',
+      "          fi"
+    ].join("\n");
+    const after = [
+      '          if [ "${OPENLARP_RELEASE_CHANNEL}" != "internal-beta" ]; then',
+      "            exit 0",
+      "          fi",
+      '          if [ -f "$CONFIG_FILE" ]; then',
+      '            cp "$CONFIG_FILE" "$TARGET_FILE"',
+      "          else",
+      '            rm -f "$TARGET_FILE"',
+      '            rm -f "$TARGET_FILE"',
+      "          fi"
+    ].join("\n");
+
+    expectBlocker(replacing("project.yml", before, after), serviceCopyBlocker);
   });
 
   it.each([
@@ -413,6 +456,27 @@ describe("beta release gate", () => {
   ])("blocks an early-success prefix in the %s step", (_name, from, to) => {
     expectBlocker(
       replacing(".github/workflows/ios-ci.yml", from, to),
+      workflowBlocker
+    );
+  });
+
+  it.each([
+    ["unsigned build", "Build unsigned iOS app"],
+    ["Debug tests", "Run Debug simulator tests"],
+    ["Release contract", "Run optimized App Store Release contract"]
+  ])("blocks project generation moved after the %s", (_name, predecessor) => {
+    expectBlocker(
+      movingWorkflowStepAfter("Generate Xcode project", predecessor),
+      workflowBlocker
+    );
+  });
+
+  it.each([
+    ["Debug tests", "Run Debug simulator tests"],
+    ["Release contract", "Run optimized App Store Release contract"]
+  ])("blocks simulator selection moved after the %s", (_name, predecessor) => {
+    expectBlocker(
+      movingWorkflowStepAfter("Select available iPhone simulator", predecessor),
       workflowBlocker
     );
   });

@@ -115,7 +115,12 @@ function hasInternalOnlyCopyScript(scriptDefinition, fileName) {
   const guardIndex = script.indexOf(guard);
   const exitIndex = script.indexOf("exit 0", guardIndex);
   const copyIndex = script.indexOf('cp "$CONFIG_FILE" "$TARGET_FILE"');
-  const staleRemovalCount = [...script.matchAll(/rm -f "\$TARGET_FILE"/g)].length;
+  const staleRemovalOffsets = [
+    ...script.matchAll(/rm -f "\$TARGET_FILE"/g)
+  ].map((match) => match.index);
+  const removesBeforePublicExit = staleRemovalOffsets.some((offset) =>
+    offset > guardIndex && offset < exitIndex
+  );
 
   return scriptDefinition.name === `Copy Local ${fileName === "GoogleService-Info.plist" ? "Firebase" : "RevenueCat"} Configuration` &&
     script.includes(`/OpenLARP/${fileName}`) &&
@@ -123,7 +128,8 @@ function hasInternalOnlyCopyScript(scriptDefinition, fileName) {
     guardIndex >= 0 &&
     exitIndex > guardIndex &&
     copyIndex > exitIndex &&
-    staleRemovalCount >= 2;
+    staleRemovalOffsets.length >= 2 &&
+    removesBeforePublicExit;
 }
 
 function validateProjectDefinition(project) {
@@ -249,6 +255,18 @@ function validateWorkflowDefinition(workflow) {
     return false;
   }
 
+  const projectGenerationIndex = steps.indexOf(projectGeneration);
+  const simulatorIndex = steps.indexOf(simulator);
+  const unsignedBuildIndex = steps.indexOf(unsignedBuild);
+  const debugTestsIndex = steps.indexOf(debugTests);
+  const releaseContractIndex = steps.indexOf(releaseContract);
+  const requiredStepOrderValid =
+    projectGenerationIndex < unsignedBuildIndex &&
+    projectGenerationIndex < debugTestsIndex &&
+    projectGenerationIndex < releaseContractIndex &&
+    simulatorIndex < debugTestsIndex &&
+    simulatorIndex < releaseContractIndex;
+
   const simulatorRun = simulator.run;
   const simulatorFailsClosed =
     hasCanonicalShellContract(simulatorRun, /^DEVICE_ID="\$\(/) &&
@@ -335,7 +353,7 @@ function validateWorkflowDefinition(workflow) {
   );
 
   return requiredCommandsValid && simulatorFailsClosed && unsignedReleaseBuild &&
-    debugSuite && releaseContractVerified && !hasSkipStep;
+    debugSuite && releaseContractVerified && requiredStepOrderValid && !hasSkipStep;
 }
 
 export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists = existsSync) {
