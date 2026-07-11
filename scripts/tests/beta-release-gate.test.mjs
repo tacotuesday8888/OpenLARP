@@ -444,6 +444,25 @@ describe("beta release gate", () => {
     expectBlocker(files, publicSurfaceBlocker);
   });
 
+  it("blocks a multiline unconditional root Agent tab beside a correctly guarded Agent tab", () => {
+    const files = new Map(completeFiles);
+    files.set(
+      "OpenLARP/AppRootView.swift",
+      rootViewFixture.replace(
+        "        }\n    }\n}",
+        [
+          "        }",
+          "        AgentDashboardView(",
+          "            store: store",
+          "        )",
+          "    }",
+          "}"
+        ].join("\n")
+      )
+    );
+    expectBlocker(files, publicSurfaceBlocker);
+  });
+
   it("blocks an unconditional Today subscription card beside the safe subscription gate", () => {
     const files = new Map(completeFiles);
     files.set(
@@ -451,6 +470,18 @@ describe("beta release gate", () => {
       todayViewFixture.replace(
         "            todayCore",
         "            subscriptionAccessCard\n            todayCore"
+      )
+    );
+    expectBlocker(files, publicSurfaceBlocker);
+  });
+
+  it("blocks a chained unconditional Today subscription card beside the safe subscription gate", () => {
+    const files = new Map(completeFiles);
+    files.set(
+      "OpenLARP/Views/TodayView.swift",
+      todayViewFixture.replace(
+        "            todayCore",
+        "            subscriptionAccessCard.padding()\n            todayCore"
       )
     );
     expectBlocker(files, publicSurfaceBlocker);
@@ -471,6 +502,18 @@ describe("beta release gate", () => {
           "            }",
           "            todayCore"
         ].join("\n")
+      )
+    );
+    expectBlocker(files, publicSurfaceBlocker);
+  });
+
+  it("blocks chained unconditional Today Agent content and action beside the safe Agent gate", () => {
+    const files = new Map(completeFiles);
+    files.set(
+      "OpenLARP/Views/TodayView.swift",
+      todayViewFixture.replace(
+        "            todayCore",
+        "            dailyAgentBrief.padding().onTapGesture { self.showingAgent = true }\n            todayCore"
       )
     );
     expectBlocker(files, publicSurfaceBlocker);

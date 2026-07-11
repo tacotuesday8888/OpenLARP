@@ -57,8 +57,19 @@ function exactLineOffsets(text, expectedLine) {
   return offsets;
 }
 
-function exactLineCount(text, expectedLine) {
-  return exactLineOffsets(text, expectedLine).length;
+const PROTECTED_INVOCATION_PATTERNS = new Map([
+  ["AgentDashboardView(store: store)", "\\bAgentDashboardView\\b"],
+  ["subscriptionAccessCard", "\\bsubscriptionAccessCard\\b"],
+  ["dailyAgentBrief", "\\bdailyAgentBrief\\b"],
+  ["showingAgent = true", "\\bshowingAgent\\s*=\\s*true\\b"]
+]);
+
+function protectedInvocationCount(text, invocation) {
+  const pattern = PROTECTED_INVOCATION_PATTERNS.get(invocation);
+  if (!pattern) {
+    return 0;
+  }
+  return [...text.matchAll(new RegExp(pattern, "g"))].length;
 }
 
 function codeLineOffset(text, expectedPrefix) {
@@ -163,8 +174,8 @@ function hasGatedStandaloneInvocations(
   }
   return protectedInvocations.every(
     (invocation) =>
-      exactLineCount(viewBody, invocation) === 1 &&
-      exactLineCount(capabilityBlock, invocation) === 1
+      protectedInvocationCount(viewBody, invocation) === 1 &&
+      protectedInvocationCount(capabilityBlock, invocation) === 1
   );
 }
 

@@ -187,6 +187,71 @@ final class ReleaseConfigurationTests: XCTestCase {
         ))
     }
 
+    func testPublicSurfaceMatcherRejectsReformattedUnconditionalDuplicates() {
+        let rootFixture = """
+        struct AppRootView: View {
+            var body: some View {
+                TabView {
+                    if store.releaseConfiguration.isEnabled(.agent) {
+                        AgentDashboardView(store: store)
+                    }
+                    AgentDashboardView(
+                        store: store
+                    )
+                }
+            }
+        }
+        """
+        let subscriptionFixture = """
+        struct TodayView: View {
+            var body: some View {
+                VStack {
+                    if store.releaseConfiguration.isEnabled(.subscriptions) {
+                        subscriptionAccessCard
+                    }
+                    subscriptionAccessCard.padding()
+                }
+            }
+        }
+        """
+        let agentFixture = """
+        struct TodayView: View {
+            var body: some View {
+                VStack {
+                    if store.releaseConfiguration.isEnabled(.agent) {
+                        dailyAgentBrief
+                        Button {
+                            showingAgent = true
+                        } label: {
+                            Text("Safe")
+                        }
+                    }
+                    dailyAgentBrief.padding().onTapGesture { self.showingAgent = true }
+                }
+            }
+        }
+        """
+
+        XCTAssertFalse(containsGatedStandaloneInvocations(
+            rootFixture,
+            typeDeclaration: "struct AppRootView: View {",
+            capabilityGuard: "if store.releaseConfiguration.isEnabled(.agent) {",
+            protectedInvocations: ["AgentDashboardView(store: store)"]
+        ))
+        XCTAssertFalse(containsGatedStandaloneInvocations(
+            subscriptionFixture,
+            typeDeclaration: "struct TodayView: View {",
+            capabilityGuard: "if store.releaseConfiguration.isEnabled(.subscriptions) {",
+            protectedInvocations: ["subscriptionAccessCard"]
+        ))
+        XCTAssertFalse(containsGatedStandaloneInvocations(
+            agentFixture,
+            typeDeclaration: "struct TodayView: View {",
+            capabilityGuard: "if store.releaseConfiguration.isEnabled(.agent) {",
+            protectedInvocations: ["dailyAgentBrief", "showingAgent = true"]
+        ))
+    }
+
     func testPublicProfileConsumesEveryInfrastructureGate() throws {
         let profileView = try source("OpenLARP/Views/ProfileView.swift")
         let normalizedProfileView = profileView
@@ -272,9 +337,26 @@ final class ReleaseConfigurationTests: XCTestCase {
         }
 
         return protectedInvocations.allSatisfy { invocation in
-            exactLineCount(invocation, in: viewBody) == 1 &&
-                exactLineCount(invocation, in: capabilityBlock) == 1
+            protectedInvocationCount(invocation, in: viewBody) == 1 &&
+                protectedInvocationCount(invocation, in: capabilityBlock) == 1
         }
+    }
+
+    private func protectedInvocationCount(_ invocation: String, in source: String) -> Int {
+        let patterns = [
+            "AgentDashboardView(store: store)": #"\bAgentDashboardView\b"#,
+            "subscriptionAccessCard": #"\bsubscriptionAccessCard\b"#,
+            "dailyAgentBrief": #"\bdailyAgentBrief\b"#,
+            "showingAgent = true": #"\bshowingAgent\s*=\s*true\b"#
+        ]
+        guard let pattern = patterns[invocation],
+              let expression = try? NSRegularExpression(pattern: pattern) else {
+            return 0
+        }
+        return expression.numberOfMatches(
+            in: source,
+            range: NSRange(source.startIndex..<source.endIndex, in: source)
+        )
     }
 
     private func balancedBlock(
@@ -317,10 +399,6 @@ final class ReleaseConfigurationTests: XCTestCase {
             offset += string.count + 1
         }
         return offsets
-    }
-
-    private func exactLineCount(_ expectedLine: String, in source: String) -> Int {
-        exactLineOffsets(expectedLine, in: source).count
     }
 
     private func containsGatedPrivateEvidenceCloudControl(_ profileView: String) -> Bool {
