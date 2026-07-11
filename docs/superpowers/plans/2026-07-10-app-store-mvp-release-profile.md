@@ -1163,3 +1163,117 @@ Regenerate the Xcode project for the two new files. Run:
 - diff, scope, and secret-signature checks.
 
 Commit the remediation in small reviewable commits and return it to the whole-branch reviewer. Do not proceed to PR/merge while any Critical or Important finding remains.
+
+---
+
+### Task 8: Replace Swift-source parsing with a compiled Release contract
+
+**Why this task was added:** Independent review proved that the repository gate's hand-written Swift parser can be satisfied by legal Swift decoys, conditional-compilation branches, nested declarations, and shadowed symbols. The runtime local-only service boundary remains valid, but a Node script must not pretend to compile Swift. The replacement makes the real SwiftUI composition consume typed presentation policies and verifies the optimized App Store build through a dedicated compiled XCTest target.
+
+**Files:**
+- Create: `OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift`
+- Create: `OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift`
+- Create: `OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift`
+- Modify: `OpenLARP/AppRootView.swift`
+- Modify: `OpenLARP/Views/TodayView.swift`
+- Modify: `OpenLARP/Views/ProfileView.swift`
+- Modify: `OpenLARPTests/ReleaseConfigurationTests.swift`
+- Modify: `project.yml`
+- Regenerate: `OpenLARP.xcodeproj/project.pbxproj`
+- Modify: `.github/workflows/ios-ci.yml`
+- Modify: `scripts/beta-release-gate.mjs`
+- Modify: `scripts/tests/beta-release-gate.test.mjs`
+- Modify: `docs/APP_STORE_TESTFLIGHT_READINESS.md`
+
+**Interfaces:**
+- Produces: typed, ordered Root/Today/Profile presentation policies consumed directly by the shipping SwiftUI bodies.
+- Produces: an explicit privacy presentation mode for local-only notice versus internal cloud controls.
+- Produces: a minimal public, read-only `OpenLARPReleaseContractSnapshot` derived from the bundled release channel and production-used policies.
+- Produces: an `OpenLARPReleaseContractTests` target and `OpenLARPReleaseContract` scheme whose test action uses the Release configuration without `@testable` access.
+- Simplifies: the Node gate to validate structured project/workflow wiring and non-Swift readiness facts, not Swift semantics.
+
+- [ ] **Step 1: Add failing typed-policy tests**
+
+Replace the source-reading Root/Today/Profile assertions and their custom matchers in `ReleaseConfigurationTests` with exact policy assertions. Prove that:
+
+- App Store tabs are exactly Today, Map, Progress, and Profile; internal beta also includes Agent in the intended order.
+- App Store Today sections exclude subscription and both Agent sections while preserving the complete core sprint order; internal beta includes them.
+- App Store Profile sections exclude account, account-data, subscription, career-graph, and beta/developer cards while preserving the complete local profile order; internal beta includes them.
+- App Store privacy mode is the local-only notice; internal beta privacy mode is the cloud-control presentation.
+
+Run the focused suite and record RED because the policy types do not exist.
+
+- [ ] **Step 2: Implement policies and make the real SwiftUI composition consume them**
+
+Add simple `CaseIterable`/`Identifiable` section enums and pure visibility functions. Refactor:
+
+- `AppRootView` to build every tab from `AppTab.visibleTabs(for:)` through one `ForEach` and one exhaustive `@ViewBuilder` switch.
+- `TodayView` to build the post-goal sections from the typed Today policy and an exhaustive `@ViewBuilder` switch.
+- `ProfileView` to build all ordered cards from the typed Profile policy and an exhaustive `@ViewBuilder` switch.
+- `ProfileView.privacyCard` to switch on the typed privacy presentation mode for local notice versus cloud controls.
+
+Do not add view-introspection dependencies, type erasure, duplicate UI trees, or source-text tests. Preserve existing behavior, state bindings, sheets, actions, and order.
+
+- [ ] **Step 3: Add the failing compiled Release-contract target**
+
+Add `OpenLARPReleaseContractTests` as a separate unit-test target depending on the app. It must use ordinary `import OpenLARP`, not `@testable import`, so the App Store Release configuration keeps `ENABLE_TESTABILITY=NO`.
+
+Add a dedicated shared `OpenLARPReleaseContract` scheme whose build and test actions include only the app and contract target and whose test action uses `Release`. The contract must assert the bundled app resolves to:
+
+- `app-store` channel;
+- free access and local-only services;
+- no enabled unfinished capabilities or live AI;
+- the exact public tab, Today, Profile, privacy, and lifecycle policies.
+
+Expose only a minimal public, immutable snapshot needed by this target. Derive it from `OpenLARPReleaseConfiguration.current()` and the same policies consumed by the views. Run the Release scheme before implementing the snapshot and record RED.
+
+- [ ] **Step 4: Implement the Release snapshot and turn the compiled contract GREEN**
+
+Implement the read-only snapshot without exposing service objects, mutable configuration, user state, or test seams. Regenerate the project and run:
+
+```bash
+xcodebuild \
+  -project OpenLARP.xcodeproj \
+  -scheme OpenLARPReleaseContract \
+  -configuration Release \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath /private/tmp/OpenLARPReleaseContractTests \
+  test
+```
+
+Expected: the dedicated target compiles against a normal optimized app module and all contract assertions pass with `ENABLE_TESTABILITY=NO`.
+
+- [ ] **Step 5: Make CI fail closed on the compiled contract**
+
+Update the simulator-selection step so timeout, tool failure, or no available iPhone exits nonzero instead of silently skipping iOS tests. Remove conditional simulator-test skipping and its warning-only reporting.
+
+Run the normal Debug simulator suite and then the dedicated `OpenLARPReleaseContract` scheme under `-configuration Release`. Give the contract step its own explicit name and derived-data path so the repository gate can verify that CI invokes the authoritative contract.
+
+- [ ] **Step 6: Remove the fake Swift parser and retain the right repository checks**
+
+Delete all Swift block extraction, token counting, sanitizer, and source-surface validation from `beta-release-gate.mjs` and delete their adversarial fixture tests. Retain:
+
+- required files, privacy manifest, entitlements, package/local-plist hooks, launch-packet, and external-setup warnings;
+- structured `project.yml` validation for Debug/internal-beta and Release/app-store channel values;
+- structured validation that the separate contract target/scheme exists and uses Release;
+- structured workflow validation that simulator discovery fails closed and both Debug tests and the Release-contract scheme run.
+
+Parse YAML with the repository's installed YAML library rather than inventing another YAML parser. Add focused tests that remove or weaken each target, scheme, configuration, simulator failure, or CI command and confirm the gate blocks it.
+
+- [ ] **Step 7: Reconcile documentation and independently review**
+
+Document that the repository now verifies the public contract by compiling and executing the Release app configuration, and that signed-device visual QA remains an external pre-submission gate. Run a fresh independent review focused on policy consumption, Release-module integrity, test-count enforcement, CI fail-closed behavior, and removal of parser remnants. Fix every Critical or Important finding.
+
+- [ ] **Step 8: Run fresh whole-workstream verification**
+
+After review fixes, run from a clean tree candidate:
+
+- focused policy/configuration tests;
+- dedicated optimized Release-contract tests;
+- the full Debug iOS simulator suite;
+- unsigned generic Release build;
+- built Release plist inspection for exact `app-store`;
+- `npm run public:safety`, `npm run test:scripts`, and `npm run beta:gate`;
+- diff check, scope review, secret-signature scan, and whole-branch review.
+
+Do not claim App Store readiness or proceed to PR/merge while any repository-controlled contract fails. Hosted policy/support URLs, signed-device visual QA, archive/signing, App Store Connect metadata, and reviewer submission remain explicit owner/external gates.
