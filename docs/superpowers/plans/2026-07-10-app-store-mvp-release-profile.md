@@ -1059,3 +1059,107 @@ git commit -m "Document App Store release profile"
 - [ ] **Step 8: Record the next workstream**
 
 Update the active task plan so the next implementation plan covers identity-safe persistence, guest/account containers, legacy-state migration, and complete local erase. Do not enable public account controls until that workstream passes its tests and signed-device verification.
+
+---
+
+### Task 7: Close the public service boundary and final-review gaps
+
+**Why this task was added:** The final whole-branch review found that the public UI was gated, but `OpenLARPApp` still configured Firebase and injected Firebase authentication plus a remote-first callable workflow service. A persisted internal Firebase session could therefore rebind local state or send career/proof content remotely despite the public on-device promise. The same review found two static-gate bypasses and outward-facing launch copy that still described internal-only features.
+
+**Files:**
+- Create: `OpenLARP/Models/OpenLARPAppStoreFactory.swift`
+- Create: `OpenLARPTests/ReleaseServiceBoundaryTests.swift`
+- Modify: `OpenLARP/Models/OpenLARPReleaseConfiguration.swift`
+- Modify: `OpenLARP/Models/OpenLARPStore.swift`
+- Modify: `OpenLARP/OpenLARPApp.swift`
+- Modify: `OpenLARP/AppRootView.swift`
+- Modify: `OpenLARPTests/ReleaseConfigurationTests.swift`
+- Modify: `scripts/beta-release-gate.mjs`
+- Modify: `scripts/tests/beta-release-gate.test.mjs`
+- Modify: `docs/APP_STORE_TESTFLIGHT_READINESS.md`
+- Regenerate: `OpenLARP.xcodeproj/project.pbxproj`
+
+**Interfaces:**
+- Produces: explicit `OpenLARPReleaseServiceMode.localOnly` and `.firebaseBeta` profiles.
+- Produces: a production-used `OpenLARPAppStoreFactory` that does not bootstrap Firebase or construct the internal service graph in public mode.
+- Produces: Store-level local-only dependency normalization and local session/URL defenses.
+- Strengthens: bounded resolver and SwiftUI release-gate checks with adversarial fixtures.
+
+- [ ] **Step 1: Add failing service-boundary tests**
+
+Create `ReleaseServiceBoundaryTests` with real spies/counters and temporary persistence. Prove before implementation that:
+
+- App Store and internal beta expose distinct service modes.
+- Building the App Store Store does not invoke the Firebase bootstrap closure or internal Store builder.
+- Building the internal Store does invoke both in order while allowing a lightweight injected builder in tests.
+- An App Store Store given successful remote workflow, authenticated session, and authentication spies does not invoke them during goal confirmation, proof review, session lookup, or URL handling.
+- App Store goal/proof workflow runs are local, account ID/email remain nil, and recorded event ownership remains local.
+- Internal beta retains injected workflow/auth/session behavior.
+
+Run the focused test target and record RED for missing service-mode/factory APIs and for the existing remote/auth calls.
+
+- [ ] **Step 2: Add an explicit service mode and production Store factory**
+
+Add `OpenLARPReleaseServiceMode` with `.localOnly` and `.firebaseBeta`. The App Store profile must use `.localOnly`; internal beta must use `.firebaseBeta`. Do not reuse `.agent` or `.liveAI`: Agent UI visibility, production live-model approval, and remote deterministic beta workflow routing are separate concerns.
+
+Create a small `@MainActor` app Store factory. In local-only mode it must return a Store using local persistence/attachments and local dependencies without calling Firebase bootstrap or the internal builder. In Firebase-beta mode it must configure Firebase and build the existing Firebase/RevenueCat dependency graph. Expose bootstrap and internal-builder closures only as narrow test seams.
+
+Update `OpenLARPApp` to resolve one release configuration and delegate Store construction to the factory. It must not directly configure Firebase or instantiate remote services.
+
+- [ ] **Step 3: Enforce local-only dependencies inside the Store**
+
+In `OpenLARPStore.init`, when service mode is `.localOnly`, replace every externally capable supplied dependency with its existing local/mock implementation: workflow, Agent, career graph, authentication, backend event sync, private-evidence consent/cleanup, account deletion, backend session, and subscriptions. Firebase-beta mode must preserve the supplied dependencies and current internal default behavior.
+
+Add defense in depth:
+
+- `currentBackendSession()` returns a local-only session whenever account capability is disabled or service mode is local-only.
+- `handleOpenURL(_:)` returns `false` without calling the authentication adapter whenever account capability is disabled.
+- `AppRootView.onOpenURL` does not forward URLs when account capability is disabled.
+
+Do not change the public core workflow contract: diagnostic, plan, and proof review continue through `V0AIWorkflowServicing`, but the public implementation is deterministic/local.
+
+- [ ] **Step 4: Run focused service-boundary tests to GREEN**
+
+Run all new service-boundary tests plus authentication, backend-session, AI contract, subscription-readiness, and release-configuration regression suites. Confirm internal beta behavior remains intact.
+
+- [ ] **Step 5: Add failing bounded release-gate tests**
+
+Before changing the evaluator, add adversarial tests that keep safe decoys while making the real behavior unsafe:
+
+- `.appStore` returns `.internalBeta` in the real resolver switch.
+- `.internalBeta` returns `.appStoreMVP` in the real resolver switch.
+- a correctly guarded root Agent block coexists with a second unconditional Agent tab.
+- a correctly guarded Today subscription card coexists with an unconditional subscription card.
+- a correctly guarded Today Agent block coexists with unconditional Agent brief/action content.
+
+Replace marker-only root/Today XCTest assertions with bounded guard-to-surface matchers and synthetic negative cases. Protected standalone invocations must occur exactly once inside their expected guard block; declarations and safe decoys must not satisfy the matcher.
+
+- [ ] **Step 6: Harden the release gate**
+
+Within the already bounded `current` resolver, require the direct `switch channel` body to map exactly:
+
+```text
+case .appStore: return .appStoreMVP
+case .internalBeta: return .internalBeta
+```
+
+Require the App Store initializer to declare `.localOnly` service mode. For root and Today, extract the real view body and expected capability blocks, require the protected standalone invocations inside those blocks, and reject duplicates outside them. Keep the existing stable blocker messages unless a separate local-service-graph blocker makes failures materially clearer.
+
+- [ ] **Step 7: Reconcile outward-facing public copy**
+
+Update `APP_STORE_TESTFLIGHT_READINESS.md` so public App Store description, TestFlight notes, review notes, privacy/support checklists, screenshots, and pre-submission gates describe only the free local-first four-tab profile. Remove account/backend-sync foundations from public features and remove account/sync feedback requests. State that no account or purchase is required and that account, cloud sync, subscriptions, and Agent are not included.
+
+Move Firebase/Auth/App Check/RevenueCat/remote workflow checks under an explicit internal/service-enabled section that must not be pasted into App Store Connect. Keep final hosted URLs, metadata/screenshots, signed device QA, archive upload, and App Store Connect completion as public external gates.
+
+- [ ] **Step 8: Regenerate and verify**
+
+Regenerate the Xcode project for the two new files. Run:
+
+- focused service-boundary and release-configuration tests;
+- full iOS tests;
+- unsigned generic Release build;
+- built Release plist inspection (`app-store`);
+- script tests, real beta gate, and public safety;
+- diff, scope, and secret-signature checks.
+
+Commit the remediation in small reviewable commits and return it to the whole-branch reviewer. Do not proceed to PR/merge while any Critical or Important finding remains.
