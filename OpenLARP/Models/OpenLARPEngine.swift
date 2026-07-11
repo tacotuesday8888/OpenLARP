@@ -104,46 +104,56 @@ enum OpenLARPEngine {
         let trimmedText = proof.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLink = proof.link.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasAttachment = !proof.attachments.isEmpty
-        guard !trimmedText.isEmpty || !trimmedLink.isEmpty || hasAttachment else {
+        guard !trimmedText.isEmpty else {
             throw OpenLARPError.emptyProof
         }
+
+        let inspectionScope = ProofInspectionScope(
+            didInspectWrittenText: !trimmedText.isEmpty,
+            didInspectLinkFormat: !trimmedLink.isEmpty,
+            didInspectLinkedDestination: false,
+            didInspectAttachmentMetadata: hasAttachment,
+            didInspectAttachmentContents: false
+        )
 
         if proof.kind == .selfReport {
             return QualityCheckResult(
                 isAccepted: false,
                 qualityScore: 48,
-                label: "Needs stronger proof",
-                reason: "This keeps the streak alive, but it is still mostly your word. Useful, not definitive.",
-                improvement: "Add a screenshot, link, notes, or artifact next time so this becomes evidence.",
+                label: "Needs more context",
+                reason: "Your written reflection records progress, but it is a self-report rather than inspected evidence.",
+                improvement: "Describe what changed and connect it to a concrete result or role requirement.",
                 xpEarned: max(25, Int(Double(quest.xpReward) * 0.375)),
-                readinessDelta: 2
+                readinessDelta: 2,
+                inspectionScope: inspectionScope
             )
         }
 
         let wordCount = trimmedText.split { $0.isWhitespace || $0.isNewline }.count
-        let hasUsefulLink = trimmedLink.hasPrefix("http://") || trimmedLink.hasPrefix("https://")
-        let accepted = wordCount >= 18 || hasUsefulLink || hasAttachment
+        let accepted = wordCount >= 18
 
         if accepted {
             return QualityCheckResult(
                 isAccepted: true,
-                qualityScore: hasAttachment ? 88 : hasUsefulLink ? 86 : 78,
-                label: "Strong proof",
-                reason: hasAttachment ? "This includes a saved screenshot or photo, so it is more than a claim." : "This gives OpenLARP something concrete to count: a real artifact, action, or trace of work.",
-                improvement: "Next time, connect the artifact to one target-role requirement so the proof becomes easier to reuse.",
+                qualityScore: 78,
+                label: "Well-documented submission",
+                reason: "Your written description includes enough specific context to document meaningful progress.",
+                improvement: "Connect the written account to one target-role requirement so it becomes easier to reuse.",
                 xpEarned: quest.xpReward,
-                readinessDelta: 7
+                readinessDelta: 7,
+                inspectionScope: inspectionScope
             )
         }
 
         return QualityCheckResult(
             isAccepted: false,
             qualityScore: 55,
-            label: "Needs stronger proof",
-            reason: "This is a start, but it does not yet show enough detail to prove meaningful progress.",
-            improvement: "Add what you made, who it helps, or a link/screenshot that shows the work exists.",
+            label: "Needs more context",
+            reason: "The written description does not yet include enough detail to document meaningful progress.",
+            improvement: "Add what you did, what changed, and how it connects to the quest.",
             xpEarned: max(30, quest.xpReward / 2),
-            readinessDelta: 3
+            readinessDelta: 3,
+            inspectionScope: inspectionScope
         )
     }
 
@@ -727,7 +737,9 @@ enum OpenLARPEngine {
         if !progress.badges.contains(.firstProof) {
             progress.badges.append(.firstProof)
         }
-        if result.isAccepted, !progress.badges.contains(.strongProof) {
+        if result.isAccepted,
+           result.inspectionScope.didInspectSubmittedEvidence,
+           !progress.badges.contains(.strongProof) {
             progress.badges.append(.strongProof)
         }
         if progress.streakCount >= 3, !progress.badges.contains(.threeDayStreak) {

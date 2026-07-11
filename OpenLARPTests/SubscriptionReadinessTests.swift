@@ -1242,8 +1242,7 @@ final class SubscriptionReadinessTests: XCTestCase {
         await store.checkProof(
             kind: .proof,
             text: "I shipped a small feature and saved the pull request.",
-            link: "",
-            attachments: []
+            link: ""
         )
 
         XCTAssertNil(store.pendingProof)

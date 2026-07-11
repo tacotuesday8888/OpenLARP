@@ -9,7 +9,8 @@ This is a working launch packet for the free, local-first App Store build. It is
 - Public navigation: Today, Map, Progress, and Profile
 - Primary promise: help students, new graduates, career switchers, and early-career professionals complete one useful career action per day, save honest proof locally, and understand readiness gaps
 - No account or purchase is needed. Account, cloud sync, subscriptions, and Agent are not included in this App Store build.
-- Repository work still required before submission: identity-safe local persistence and complete erase, proof-draft ownership and truthful review limits, sprint history and day-seven continuation, and final accessibility/release-UI verification
+- Repository work still required before submission: identity-safe local persistence and complete erase, sprint history and day-seven continuation, and final accessibility/release-UI verification
+- Proof integrity status: implemented and regression-tested. Draft images are validated and staged under one quest-owned draft, limited to four and 8 MiB each after processing, promoted transactionally on claim, reconciled on recovery, and removed on discard/reset/skip/swap. A written note is required before review or claim, and uninspected links or images cannot increase local score, XP, readiness, or badge eligibility.
 - External work still required: final hosted URLs, metadata and screenshots, signed-device QA, signed archive upload, and App Store Connect completion
 
 ## App Store MVP Release Profile
@@ -29,6 +30,15 @@ This is a working launch packet for the free, local-first App Store build. It is
 - The contract verifies the hosted app bundle identifier, literal `app-store` plist value, free/local-only service posture, empty unfinished-capability set, no live AI, exact public tabs and ordered sections, local-only privacy presentation, local-only lifecycle, and absence of Firebase/RevenueCat local configuration plists.
 - CI fails when simulator discovery fails, when the optimized contract test is skipped or does not run exactly once, when the Release app enables testability, or when the unsigned generic build is not Release.
 - The JavaScript repository gate validates the structured XcodeGen and GitHub Actions wiring plus non-Swift readiness files. Swift behavior is proven by compiled XCTest rather than source-text parsing.
+
+Latest repository-controlled proof-integrity verification on July 11, 2026:
+
+- the complete internal iOS suite passed 339 tests with zero failures or skips
+- script verification passed 121 tests, plus the public repository safety check and beta release gate
+- the optimized public Release contract passed exactly one test with zero failures or skips
+- a fresh unsigned generic Release build and archive succeeded
+- the archived public app contained only the executable, `Info.plist`, `PkgInfo`, and the privacy manifest; it contained no vendor frameworks, service configuration plists, URL schemes, or embedded provisioning profile
+- the archived privacy manifest declared no tracking or collected data, matching the local-only runtime profile
 
 These automated checks do not replace signed-device visual and interaction QA. The final local flow, accessibility, layout, offline behavior, signing, archive, and uploaded build still require the external checks below.
 
@@ -61,7 +71,7 @@ Features in this build include:
 - target-role setup and an on-device career readiness diagnostic
 - a Today tab with one focused career quest
 - a seven-day Map that shows the near-term plan
-- proof submission with text, links, photos, and screenshots
+- proof submission with a required written note plus optional links, photos, and screenshots
 - proof receipts, proof history, XP, streaks, badges, and readiness movement
 - a Progress tab for local milestones and readiness
 - a Profile tab for goal details and local privacy information
@@ -81,7 +91,7 @@ Thank you for testing OpenLARP. This free, local-first build is focused on the c
 1. Set a realistic target role.
 2. Review the on-device readiness diagnostic.
 3. Start today&apos;s quest.
-4. Submit honest proof using text, links, screenshots, or photos.
+4. Add an honest written proof note, with an optional link, screenshot, or photo.
 5. Check how local readiness, streak, and proof history change.
 
 Please report:
@@ -105,7 +115,7 @@ Suggested review path:
 1. Complete target-role setup.
 2. Review the diagnostic and seven-day map.
 3. Start the available Today quest.
-4. Add text or link proof, or attach a non-sensitive test image.
+4. Add a written proof note and optionally add a link or non-sensitive test image.
 5. Run the local proof check and review the resulting progress.
 
 The app does not auto-apply to jobs, send messages, publish content, or take external actions. OpenLARP does not upload or sync career data in this release. iOS device backups may include app data according to the reviewer's device backup settings. Exported items leave the app only when the reviewer explicitly uses an iOS share action.

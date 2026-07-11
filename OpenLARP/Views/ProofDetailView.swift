@@ -151,7 +151,7 @@ struct ProofDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Quality check")
+                        Text("Submission review")
                             .font(.headline)
                             .foregroundStyle(Color.openLARPInk)
 
@@ -171,8 +171,10 @@ struct ProofDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
 
-                ProofDetailTextBlock(title: "Why it counted", bodyText: content.reason)
+                ProofDetailTextBlock(title: "Assessment", bodyText: content.reason)
                 ProofDetailTextBlock(title: "Next improvement", bodyText: content.improvement)
+                ProofDetailTextBlock(title: "Reviewed", bodyText: content.reviewedText)
+                ProofDetailTextBlock(title: "Not inspected", bodyText: content.notInspectedText)
             }
         }
     }

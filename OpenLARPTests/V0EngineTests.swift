@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import OpenLARP
 
@@ -286,7 +287,7 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.currentQuest?.status, .inProgress)
     }
 
-    func testStrongProofAwardsFullXPStreakReadinessAndBadges() throws {
+    func testDetailedWrittenSubmissionAwardsFullXPStreakAndReadiness() throws {
         var state = OpenLARPEngine.confirmGoal(goal)
         state = try OpenLARPEngine.startCurrentQuest(in: state)
 
@@ -301,6 +302,7 @@ final class V0EngineTests: XCTestCase {
         state = try OpenLARPEngine.claim(result, proof: proof, in: state)
 
         XCTAssertTrue(result.isAccepted)
+        XCTAssertEqual(result.label, "Well-documented submission")
         XCTAssertEqual(result.xpEarned, 120)
         XCTAssertEqual(state.progress.xp, 120)
         XCTAssertEqual(state.progress.streakCount, 1)
@@ -308,6 +310,7 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.progress.completedQuestCount, 1)
         XCTAssertEqual(state.progress.readiness.proofStrength, 49)
         XCTAssertTrue(state.progress.badges.contains(.firstProof))
+        XCTAssertFalse(state.progress.badges.contains(.strongProof))
         XCTAssertEqual(state.plan[0].status, .completed)
         XCTAssertEqual(state.plan[1].status, .locked)
         XCTAssertEqual(state.dailyCadence.nextQuestID, state.plan[1].id)
@@ -501,17 +504,19 @@ final class V0EngineTests: XCTestCase {
 
         await store.confirmGoal(goal)
         store.startCurrentQuest()
-        let attachment = try store.saveProofImage(
-            data: Data([0x89, 0x50, 0x4E, 0x47]),
-            contentType: "image/png",
-            originalFileName: "proof.png"
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        let attachment = try await store.stageProofImage(
+            data: testPNGData(),
+            declaredContentType: "image/png",
+            originalFileName: "proof.png",
+            draftID: draftID
         )
-        await store.checkProof(
-            kind: .proof,
-            text: "I mapped repeated iOS internship requirements, chose one proof-building path, and saved notes that connect the work to a target role.",
-            link: "https://example.com/requirements",
-            attachments: [attachment]
+        try store.updateProofDraftText(
+            "I mapped repeated iOS internship requirements, chose one proof-building path, and saved notes that connect the work to a target role.",
+            draftID: draftID
         )
+        try store.updateProofDraftLink("https://example.com/requirements", draftID: draftID)
+        await store.checkPendingProof(draftID: draftID)
 
         XCTAssertNotNil(store.pendingProof)
         XCTAssertNotNil(store.pendingQualityResult)
@@ -695,7 +700,7 @@ final class V0EngineTests: XCTestCase {
         ))
 
         XCTAssertEqual(content.completedQuestTitle, state.plan[0].title)
-        XCTAssertEqual(content.resultSummary, "Strong proof")
+        XCTAssertEqual(content.resultSummary, "Well-documented submission")
         XCTAssertEqual(content.xpText, "+120 XP")
         XCTAssertEqual(content.streakText, "1-day streak")
         XCTAssertEqual(content.proofRecord?.questID, state.plan[0].id)
@@ -770,10 +775,10 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(state.progress.streakCount, 1)
         XCTAssertEqual(state.progress.proofCount, 1)
         XCTAssertEqual(state.progress.readiness.proofStrength, 44)
-        XCTAssertEqual(state.progress.recentProof.first?.quality?.label, "Needs stronger proof")
+        XCTAssertEqual(state.progress.recentProof.first?.quality?.label, "Needs more context")
     }
 
-    func testImageAttachmentProofAwardsFullCreditWithoutTextOrLink() throws {
+    func testImageAttachmentMetadataWithoutTextCannotEarnProgress() throws {
         var state = OpenLARPEngine.confirmGoal(goal)
         state = try OpenLARPEngine.startCurrentQuest(in: state)
 
@@ -792,15 +797,12 @@ final class V0EngineTests: XCTestCase {
             submittedAt: Date(timeIntervalSince1970: 2_900)
         )
 
-        let result = try OpenLARPEngine.checkProof(proof, in: state)
-        state = try OpenLARPEngine.claim(result, proof: proof, in: state)
-
-        XCTAssertTrue(result.isAccepted)
-        XCTAssertEqual(result.xpEarned, 120)
-        XCTAssertEqual(result.label, "Strong proof")
-        XCTAssertEqual(state.progress.xp, 120)
-        XCTAssertEqual(state.progress.proofCount, 1)
-        XCTAssertEqual(state.progress.recentProof.first?.attachments, [attachment])
+        XCTAssertThrowsError(try OpenLARPEngine.checkProof(proof, in: state)) { error in
+            XCTAssertEqual(error as? OpenLARPError, .emptyProof)
+        }
+        XCTAssertEqual(state.progress.xp, 0)
+        XCTAssertEqual(state.progress.proofCount, 0)
+        XCTAssertTrue(state.progress.recentProof.isEmpty)
     }
 
     func testPersistenceRoundTripKeepsProofAttachmentMetadata() throws {
@@ -912,13 +914,19 @@ final class V0EngineTests: XCTestCase {
 
         await store.confirmGoal(goal)
         store.startCurrentQuest()
-        let attachment = try store.saveProofImage(
-            data: Data([0x89, 0x50, 0x4E, 0x47]),
-            contentType: "image/png",
-            originalFileName: "draft-proof.png"
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        let attachment = try await store.stageProofImage(
+            data: testPNGData(),
+            declaredContentType: "image/png",
+            originalFileName: "draft-proof.png",
+            draftID: draftID
+        )
+        try store.updateProofDraftText(
+            "I documented what I changed and why this screenshot supports today's career step.",
+            draftID: draftID
         )
 
-        await store.checkProof(kind: .proof, text: "", link: "", attachments: [attachment])
+        await store.checkPendingProof(draftID: draftID)
 
         XCTAssertNotNil(store.pendingProof)
         XCTAssertNotNil(store.pendingQualityResult)
@@ -952,14 +960,21 @@ final class V0EngineTests: XCTestCase {
 
         await store.confirmGoal(goal)
         store.startCurrentQuest()
-        let attachment = try store.saveProofImage(
-            data: Data([0x89, 0x50, 0x4E, 0x47]),
-            contentType: "image/png",
-            originalFileName: "same-draft-proof.png"
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        let attachment = try await store.stageProofImage(
+            data: testPNGData(),
+            declaredContentType: "image/png",
+            originalFileName: "same-draft-proof.png",
+            draftID: draftID
+        )
+        try store.updateProofDraftText(
+            "I documented the first version of this work before checking the draft.",
+            draftID: draftID
         )
 
-        await store.checkProof(kind: .proof, text: "", link: "", attachments: [attachment])
-        await store.checkProof(kind: .proof, text: "Adding a short note before checking again.", link: "", attachments: [attachment])
+        await store.checkPendingProof(draftID: draftID)
+        try store.updateProofDraftText("Adding a short note before checking again.", draftID: draftID)
+        await store.checkPendingProof(draftID: draftID)
 
         XCTAssertNotNil(store.pendingProof)
         XCTAssertNotNil(store.pendingQualityResult)
@@ -992,7 +1007,7 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(content.questTitle, "Build a target-role proof map")
         XCTAssertEqual(content.proofType, "Proof")
         XCTAssertEqual(content.submittedAt, Date(timeIntervalSince1970: 4_200))
-        XCTAssertEqual(content.qualityLabel, "Strong proof")
+        XCTAssertEqual(content.qualityLabel, "Earlier accepted submission")
         XCTAssertEqual(content.xpText, "120 XP")
         XCTAssertEqual(content.reason, "This includes a concrete artifact.")
         XCTAssertEqual(content.improvement, "Tie the artifact to one target-role requirement.")
@@ -1732,7 +1747,7 @@ final class V0EngineTests: XCTestCase {
 
         let decoded = try decoder.decode(OpenLARPState.self, from: oldData)
 
-        XCTAssertEqual(decoded.schemaVersion, 9)
+        XCTAssertEqual(decoded.schemaVersion, 10)
         XCTAssertTrue(decoded.outcomeLog.isEmpty)
     }
 
@@ -3170,6 +3185,17 @@ final class V0EngineTests: XCTestCase {
         await store.confirmGoal(goal)
         store.startCurrentQuest()
         let auditCountBeforeProof = store.state.aiWorkflowRuns.count
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        try store.updateProofDraftText(
+            "This stale response should not attach proof to the new quest.",
+            draftID: draftID
+        )
+        try store.updateProofDraftLink("https://example.com/stale-proof", draftID: draftID)
+        let attachment = try await store.stageProofImage(
+            data: testPNGData(),
+            declaredContentType: "image/png",
+            draftID: draftID
+        )
         service.onReviewProof = {
             var replacementState = OpenLARPEngine.confirmGoal(
                 self.goal,
@@ -3179,19 +3205,147 @@ final class V0EngineTests: XCTestCase {
             store.state = replacementState
         }
 
-        await store.checkProof(
-            kind: .proof,
-            text: "This stale response should not attach proof to the new quest.",
-            link: "https://example.com/stale-proof"
-        )
+        await store.checkPendingProof(draftID: draftID)
 
         XCTAssertEqual(store.state.aiWorkflowRuns.count, auditCountBeforeProof + 1)
         XCTAssertEqual(store.state.aiWorkflowRuns.last?.kind, .proofQualityCheck)
         XCTAssertNil(store.pendingProof)
         XCTAssertNil(store.pendingQualityResult)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
 
         let reloaded = try persistence.load()
         XCTAssertEqual(reloaded.aiWorkflowRuns, store.state.aiWorkflowRuns)
+    }
+
+    @MainActor
+    func testProofReviewCompletionDoesNotOverwriteEditsMadeWhileAwaitingResponse() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let service = StateChangingProofReviewService()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: service
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        try store.updateProofDraftText(
+            "I documented the first version of this artifact before requesting a review response.",
+            draftID: draftID
+        )
+        let attachment = try await store.stageProofImage(
+            data: testPNGData(),
+            declaredContentType: "image/png",
+            draftID: draftID
+        )
+        let updatedText = "I edited this note while review was running, removed the image, and need the newer draft preserved."
+        service.onReviewProof = {
+            try? store.updateProofDraftText(updatedText, draftID: draftID)
+            try? store.removeProofDraftAttachment(attachment.id, draftID: draftID)
+        }
+
+        await store.checkPendingProof(draftID: draftID)
+
+        XCTAssertEqual(store.pendingProof?.text, updatedText)
+        XCTAssertEqual(store.pendingProof?.attachments, [])
+        XCTAssertNil(store.pendingQualityResult)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
+        XCTAssertEqual(store.state.proofDraft?.text, updatedText)
+        XCTAssertEqual(store.state.aiWorkflowRuns.last?.kind, .proofQualityCheck)
+
+        let reloaded = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+        XCTAssertEqual(reloaded.pendingProof?.text, updatedText)
+        XCTAssertEqual(reloaded.pendingProof?.attachments, [])
+        XCTAssertNil(reloaded.pendingQualityResult)
+    }
+
+    @MainActor
+    func testProofReviewPersistenceFailureRestoresEditableDraftWithoutResultOrEvents() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let service = StateChangingProofReviewService()
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: service
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        try store.updateProofDraftText(
+            "I documented a concrete artifact, the decisions I made, and the target-role requirement it supports.",
+            draftID: draftID
+        )
+        let auditCountBeforeReview = store.state.aiWorkflowRuns.count
+        let backendEventsBeforeReview = store.state.backendEvents
+        service.onReviewProof = {
+            try? FileManager.default.removeItem(at: persistence.fileURL)
+            try? FileManager.default.createDirectory(
+                at: persistence.fileURL,
+                withIntermediateDirectories: true
+            )
+        }
+
+        await store.checkPendingProof(draftID: draftID)
+
+        XCTAssertEqual(store.pendingProof?.id, draftID)
+        XCTAssertNil(store.pendingQualityResult)
+        XCTAssertEqual(store.state.aiWorkflowRuns.count, auditCountBeforeReview)
+        XCTAssertEqual(store.state.backendEvents, backendEventsBeforeReview)
+        XCTAssertEqual(store.state.proofDraft?.id, draftID)
+        XCTAssertEqual(
+            store.errorMessage,
+            OpenLARPProofDraftError.persistenceFailed.localizedDescription
+        )
+    }
+
+    @MainActor
+    func testStoreDoesNotTrustUnsupportedRemoteInspectionClaims() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: UnsupportedInspectionProofReviewService()
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        try store.updateProofDraftText(
+            "I compared three role descriptions, mapped repeated requirements, built one concrete artifact, and documented what changed after testing it.",
+            draftID: draftID
+        )
+        try store.updateProofDraftLink("https://example.com/uninspected", draftID: draftID)
+        _ = try await store.stageProofImage(
+            data: testPNGData(),
+            declaredContentType: "image/png",
+            draftID: draftID
+        )
+
+        await store.checkPendingProof(draftID: draftID)
+
+        let result = try XCTUnwrap(store.pendingQualityResult)
+        XCTAssertFalse(result.inspectionScope.didInspectLinkedDestination)
+        XCTAssertFalse(result.inspectionScope.didInspectAttachmentContents)
+        XCTAssertTrue(result.isAccepted)
+        XCTAssertEqual(result.qualityScore, 78)
+        XCTAssertEqual(result.xpEarned, store.state.currentQuest?.xpReward)
+        XCTAssertEqual(result.readinessDelta, 7)
+        XCTAssertEqual(result.label, "Well-documented submission")
+        XCTAssertFalse(result.reason.localizedCaseInsensitiveContains("inspected the linked page and image"))
+
+        store.claimPendingQualityResult()
+
+        XCTAssertFalse(store.state.progress.badges.contains(.strongProof))
     }
 
     func testBackendEventRecordCreatesPrivacySafeOutboxReceipt() throws {
@@ -3240,15 +3394,6 @@ final class V0EngineTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let persistence = OpenLARPPersistence(directory: directory)
         let syncService = RecordingCareerGraphSyncService()
-        let attachment = ProofAttachment(
-            id: UUID(uuidString: "CDCDCDCD-CDCD-CDCD-CDCD-CDCDCDCDCDCD")!,
-            fileName: "local-private-proof.png",
-            originalFileName: "secret-screenshot.png",
-            contentType: "image/png",
-            byteCount: 40_000,
-            createdAt: Date(timeIntervalSince1970: 15_650),
-            localRelativePath: "ProofAttachments/private-device-path.png"
-        )
         let store = OpenLARPStore(
             persistence: persistence,
             attachmentStore: OpenLARPAttachmentStore(directory: directory),
@@ -3258,12 +3403,19 @@ final class V0EngineTests: XCTestCase {
 
         await store.confirmGoal(goal)
         store.startCurrentQuest()
-        await store.checkProof(
-            kind: .proof,
-            text: "Private proof text with langqi@example.com and sk-test-secret details.",
-            link: "https://private.example.com/proof",
-            attachments: [attachment]
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        _ = try await store.stageProofImage(
+            data: testPNGData(),
+            declaredContentType: "image/png",
+            originalFileName: "secret-screenshot.png",
+            draftID: draftID
         )
+        try store.updateProofDraftText(
+            "Private proof text with langqi@example.com and sk-test-secret details.",
+            draftID: draftID
+        )
+        try store.updateProofDraftLink("https://private.example.com/proof", draftID: draftID)
+        await store.checkPendingProof(draftID: draftID)
         store.claimPendingQualityResult()
         store.logOutcome(
             kind: .interview,
@@ -3860,7 +4012,7 @@ final class V0EngineTests: XCTestCase {
             link: "notaurl"
         )
 
-        XCTAssertEqual(store.pendingQualityResult?.label, "Needs stronger proof")
+        XCTAssertEqual(store.pendingQualityResult?.label, "Needs more context")
         store.improvePendingProofDraft()
 
         XCTAssertEqual(store.pendingProof?.kind, .proof)
@@ -3894,17 +4046,18 @@ final class V0EngineTests: XCTestCase {
 
         await store.confirmGoal(goal)
         store.startCurrentQuest()
-        let attachment = try store.saveProofImage(
-            data: Data([0x89, 0x50, 0x4E, 0x47]),
-            contentType: "image/png",
-            originalFileName: "weak-self-report.png"
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        let attachment = try await store.stageProofImage(
+            data: testPNGData(),
+            declaredContentType: "image/png",
+            originalFileName: "weak-proof.png",
+            draftID: draftID
         )
-        await store.checkProof(
-            kind: .selfReport,
-            text: "I did something but need to make the evidence stronger.",
-            link: "",
-            attachments: [attachment]
+        try store.updateProofDraftText(
+            "I did something but need to make the evidence stronger.",
+            draftID: draftID
         )
+        await store.checkPendingProof(draftID: draftID)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.localURL(for: attachment).path))
         store.improvePendingProofDraft()
@@ -4156,6 +4309,15 @@ final class V0EngineTests: XCTestCase {
             hour: hour
         ))!
     }
+
+    @MainActor
+    private func testPNGData() -> Data {
+        let size = CGSize(width: 16, height: 16)
+        return UIGraphicsImageRenderer(size: size).pngData { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
 }
 
 private struct LegacyCloudCareerGraphSnapshotPayload: Codable {
@@ -4269,6 +4431,32 @@ private final class StateChangingProofReviewService: V0AIWorkflowServicing {
     func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
         let response = try await LocalMockV0AIWorkflowService().reviewProof(request)
         onReviewProof?()
+        return response
+    }
+
+    func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse {
+        try await LocalMockV0AIWorkflowService().summarizeProgress(request)
+    }
+}
+
+private struct UnsupportedInspectionProofReviewService: V0AIWorkflowServicing {
+    func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
+        try await LocalMockV0AIWorkflowService().generateDiagnostic(request)
+    }
+
+    func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
+        try await LocalMockV0AIWorkflowService().generateQuestPlan(request)
+    }
+
+    func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
+        var response = try await LocalMockV0AIWorkflowService().reviewProof(request)
+        response.result.isAccepted = false
+        response.result.qualityScore = 100
+        response.result.xpEarned = 999
+        response.result.readinessDelta = 99
+        response.result.label = "Verified artifact"
+        response.result.reason = "The model inspected the linked page and image contents."
+        response.result.inspectionScope = .notDocumented
         return response
     }
 
