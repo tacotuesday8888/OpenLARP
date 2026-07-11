@@ -1,22 +1,24 @@
 # App Store And TestFlight Readiness
 
-This is a working launch packet for a small TestFlight beta. It is not final legal copy, not a public marketing page, and not permission to submit a paid product before Apple Developer, RevenueCat, privacy, support, and review details are finalized.
+This is a working launch packet for the free, local-first App Store build. It is not final legal copy, not a public marketing page, and not permission to submit before the hosted privacy policy, support page, signed-device QA, screenshots, archive, and App Store Connect details are complete.
 
 ## Current Release Position
 
-- Release type: private or small public TestFlight beta
-- Product state: local-first SwiftUI V0 with Firebase-ready backend, deterministic callable AI fallback, RevenueCat-ready subscription boundaries, and live dev Firebase smoke coverage
-- Primary beta promise: help students, new graduates, career switchers, and early-career professionals complete one useful career action per day, save proof, and understand readiness gaps
-- Not ready to claim: production AI agent, autonomous opportunity monitoring, live paid subscription, final privacy policy, App Store public launch
+- Release type: free public TestFlight and App Store validation build
+- Product state: local-first SwiftUI V0 with deterministic on-device diagnostic, quest-plan, and proof-review workflows
+- Public navigation: Today, Map, Progress, and Profile
+- Primary promise: help students, new graduates, career switchers, and early-career professionals complete one useful career action per day, save honest proof locally, and understand readiness gaps
+- No account or purchase is needed. Account, cloud sync, subscriptions, and Agent are not included in this App Store build.
+- External work still required: final hosted URLs, metadata and screenshots, signed-device QA, signed archive upload, and App Store Connect completion
 
 ## App Store MVP Release Profile
 
-- Release builds resolve to the fail-safe `app-store` profile.
+- Release builds resolve to the fail-safe `app-store` profile and explicit local-only service mode.
 - The public profile is free and non-expiring.
+- Career goals, progress, proof text, links, and private proof attachments stay on the device in this release.
 - Public navigation contains Today, Map, Progress, and Profile.
-- Agent, account, cloud-sync, subscription, and developer infrastructure remains internal-only.
-- Debug builds retain the `internal-beta` profile for continued development and verification.
-- Live AI remains disabled pending provider, safety, evaluation, observability, and audience-terms approval.
+- No sign-in, cloud backup, cross-device sync, subscription, purchase, or Agent surface is present.
+- Debug builds retain the separate `internal-beta` profile for service-enabled development and verification.
 
 ## App Store Connect Draft
 
@@ -24,128 +26,147 @@ This is a working launch packet for a small TestFlight beta. It is not final leg
 - Subtitle: Daily proof for career readiness
 - Category: Productivity
 - Secondary category: Education
-- Age rating intent: 4+, assuming no user-generated public feed, no unrestricted web browsing, and no mature content
+- Age rating intent: 4+, assuming no public user-generated feed, unrestricted web browsing, or mature content
 - Copyright: OpenLARP project owner
 - Support URL: `https://openlarp.app/support` or another owner-controlled page before submission
 - Privacy policy URL: `https://openlarp.app/privacy` or another owner-controlled page before submission
+- Price: Free
+- Account requirement: None
+- In-app purchase requirement: None
 
 ## Short Description Draft
 
-OpenLARP helps job seekers build real career proof through focused daily quests, private evidence, and readiness tracking.
+OpenLARP helps job seekers build real career proof through focused daily quests, private on-device evidence, and readiness tracking.
 
 ## Full Description Draft
 
-OpenLARP is a career action app for students, new graduates, career switchers, and early-career professionals preparing for a job search.
+OpenLARP is a local-first career action app for students, new graduates, career switchers, and early-career professionals preparing for a job search.
 
-Instead of starting with a resume editor or a generic chatbot, OpenLARP helps you choose a target role, understand your proof gaps, complete one focused career action per day, and save evidence as your readiness improves.
+Instead of starting with a resume editor or generic chatbot, OpenLARP helps you choose a target role, understand your proof gaps, complete one focused career action per day, and save evidence as your readiness improves.
 
-Current beta features include:
+Features in this build include:
 
-- target-role setup
-- career readiness diagnostic
-- daily career quests
+- target-role setup and an on-device career readiness diagnostic
+- a Today tab with one focused career quest
+- a seven-day Map that shows the near-term plan
 - proof submission with text, links, photos, and screenshots
-- proof receipts and proof history
-- XP, streaks, badges, and readiness movement
-- private profile and evidence controls
-- Firebase-ready account and backend sync foundations
+- proof receipts, proof history, XP, streaks, badges, and readiness movement
+- a Progress tab for local milestones and readiness
+- a Profile tab for goal details and local privacy information
 
 OpenLARP is designed around honest career progress. It should help you frame real work better, not invent schools, employers, certificates, dates, titles, projects, or ownership claims.
 
-Some cloud, AI, subscription, and agent features may be limited during beta while backend services are verified.
+No account or purchase is required. Account, cloud sync, subscriptions, and Agent are not included in this App Store build. Career context and proof remain on the device unless the user explicitly shares an exported item through iOS.
 
 ## Keywords Draft
 
-career, jobs, internship, job search, students, graduates, resume, readiness, networking, proof, portfolio, interview
+career, jobs, internship, job search, students, graduates, readiness, networking, proof, portfolio, progress
 
 ## TestFlight Beta Notes Draft
 
-Thank you for testing OpenLARP. This beta is focused on the core career action loop:
+Thank you for testing OpenLARP. This free, local-first build is focused on the core career action loop:
 
 1. Set a realistic target role.
-2. Review the readiness diagnostic.
+2. Review the on-device readiness diagnostic.
 3. Start today&apos;s quest.
 4. Submit honest proof using text, links, screenshots, or photos.
-5. Check how your readiness, streak, and proof history change.
+5. Check how local readiness, streak, and proof history change.
 
 Please report:
 
 - confusing goal setup or quest wording
-- proof submission bugs
+- proof submission or local attachment bugs
 - readiness changes that feel wrong
-- account sign-in or sync issues
+- problems returning to Today, Map, Progress, or Profile
 - places where the app seems to encourage exaggeration instead of honest proof
 
-Known beta limitations:
-
-- live AI model calls may stay disabled while backend safety and dependency checks are completed
-- RevenueCat/App Store subscription products may not be live
-- App Check enforcement, signed archive, and broad TestFlight distribution still require final setup
-- designer-led visual polish may change the interface after backend readiness is complete
+No account or purchase is needed for this test. Account, cloud sync, subscriptions, and Agent are not included. Progress is stored locally, so deleting the app can remove on-device data.
 
 ## App Review Notes Draft
 
-OpenLARP is an iOS-first career readiness beta. The app helps users complete daily career-building quests and save private proof. It does not auto-apply to jobs, send messages, publish content, or take external actions without explicit user approval.
+OpenLARP is a free, local-first iPhone career readiness app. It helps users set a target role, receive a deterministic on-device diagnostic and seven-day plan, complete daily career-building quests, save private proof on the device, and review progress across Today, Map, Progress, and Profile.
 
-For review, provide a test account only after Firebase Auth and TestFlight account flows are finalized. If subscriptions are enabled, provide sandbox subscription details and RevenueCat product IDs in App Store Connect, not in this repository.
+No review account is required. No purchase or subscription is required. Account, cloud sync, subscriptions, and Agent are not included in this App Store build.
+
+Suggested review path:
+
+1. Complete target-role setup.
+2. Review the diagnostic and seven-day map.
+3. Start the available Today quest.
+4. Add text or link proof, or attach a non-sensitive test image.
+5. Run the local proof check and review the resulting progress.
+
+The app does not auto-apply to jobs, send messages, publish content, or take external actions. Career context and proof remain on the device unless the reviewer explicitly uses an iOS share action.
 
 ## Privacy Policy Checklist
 
-The app target includes `OpenLARP/PrivacyInfo.xcprivacy` as a conservative privacy manifest draft. Keep it aligned with the hosted privacy policy and App Store privacy nutrition labels before submission.
+The public privacy policy and App Store privacy answers must describe the shipped local-only build, not internal service-enabled development paths.
 
-A final hosted privacy policy must cover:
+Before submission, confirm and document:
 
-- account identifiers from Firebase Auth
-- target-role, profile, readiness, quest, proof, and progress data
-- optional private evidence cloud sync consent
-- proof attachments such as screenshots, photos, PDFs, and plain-text files
-- Firebase Firestore, Storage, Functions, App Check, and Authentication usage
-- RevenueCat subscription status if live subscriptions are enabled
-- analytics or beta measurement events
-- AI workflow routing through backend services, including no direct provider calls from the iOS app
-- account deletion behavior, including local on-device progress versus cloud account deletion
-- support contact and retention policy for account deletion markers, billing records, and operational logs
+- target-role, profile, readiness, quest, proof, progress, and outcome data are stored on the device
+- proof attachments can include user-selected screenshots and photos stored in app-private local storage
+- users should avoid adding secrets or unnecessary personal information to proof
+- no account identifier, email address, cloud-sync record, or purchase is required by the public build
+- no career context or proof is sent to a remote workflow by the public build
+- exported or shared items leave the app only after an explicit iOS share action
+- local-data deletion and app-uninstall behavior are explained accurately
+- camera/photo-library wording, privacy nutrition labels, and `OpenLARP/PrivacyInfo.xcprivacy` match the final submitted binary
+- the hosted policy includes a privacy contact and an effective date
 
-Do not submit broad TestFlight or App Store review until the hosted privacy policy matches the live backend and subscription behavior.
+Do not submit until the hosted policy and App Store privacy answers match the final local-only binary.
 
 ## Support Page Checklist
 
-A support page or support email must cover:
+The public support page or support email must cover:
 
-- how to report beta bugs
-- how to request account help
-- how to request cloud account deletion support if an in-app deletion returns partial or unknown status
-- how to get purchase/subscription support after RevenueCat products are live
+- how to report TestFlight or App Store bugs
+- how to reset a goal or remove local proof and attachments
+- how to troubleshoot photo or screenshot attachment permissions
+- how local progress behaves after app deletion or reinstall
 - how to contact the owner for privacy questions
+- a clear statement that the public build has no account, cloud sync, subscription, purchase, or Agent feature
 
 ## Screenshot Plan
 
-Capture final screenshots after designer-led UI is integrated. Avoid showing real private user data.
+Capture final screenshots after the public UI is locked. Use fictional, non-sensitive examples and avoid real private user data.
 
 Suggested App Store screenshot story:
 
-1. Target role and readiness diagnostic
+1. Target role and on-device readiness diagnostic
 2. Today quest and proof requirement
-3. Proof submission with text/link/screenshot/photo options
-4. Readiness and streak progress
-5. Proof timeline or receipt detail
-6. AI career agent or brief screen, if enabled for beta
-7. Account privacy controls
+3. Seven-day Map
+4. Proof submission with text, link, screenshot, or photo options
+5. Readiness, streak, and proof progress
+6. Local-first Profile and privacy explanation
+
+Do not include account, cloud-sync, subscription, purchase, developer-tool, or Agent screens.
 
 ## Pre-Submission Gates
 
-Do not submit a build until these are true:
+Do not submit the public build until all of these are true:
 
 - `npm run public:safety` passes
 - `npm run test:scripts` passes
-- `npm run test:backend` passes
-- `npm run build:backend` passes
-- `npm run test:rules:emulators` passes
-- `npm run firebase:live-readiness` passes, with App Check warnings understood
-- `npm run firebase:signed-in-smoke` passes against the dev project
-- Xcode build/test passes locally or in CI
-- signed simulator/device Google and Apple sign-in flows are verified
-- App Check enforcement rollout plan is confirmed
-- RevenueCat products are either disabled for beta or fully configured and sandbox-tested
-- final hosted privacy/support URLs exist
-- signed archive uploads successfully to App Store Connect
+- `npm run beta:gate` passes
+- the full iOS test suite passes on the supported simulator runtime
+- an unsigned generic Release build succeeds and its built plist resolves exactly to `app-store`
+- the complete local flow is verified on a signed physical device, including goal setup, diagnostic, Today, Map, proof text/link/photo handling, Progress, Profile, relaunch persistence, and offline behavior
+- final App Store metadata and local-only screenshots are complete
+- final hosted privacy and support URLs exist and match the submitted binary
+- App Store Connect privacy answers, age rating, review notes, export compliance, and availability are complete
+- a signed archive validates and uploads successfully to App Store Connect
+- the uploaded build completes TestFlight processing and final review smoke testing
+
+## Internal / Service-Enabled Verification — Do Not Paste Into App Store Connect
+
+This section applies only to the separate internal beta/service-enabled profile. It is not a feature list, limitation list, review note, privacy statement, or support promise for the App Store build.
+
+- `npm run test:backend`, `npm run build:backend`, and `npm run test:rules:emulators` pass
+- Firebase configuration, Firestore, Storage, Functions, Authentication, and App Check readiness are verified with ignored local configuration
+- `npm run firebase:live-readiness` and `npm run firebase:signed-in-smoke` pass against the intended development project without exposing credentials or user data
+- Google and Apple sign-in, persisted session restore, backend event sync, private-evidence consent/cleanup, and account deletion are verified on simulator and signed device
+- App Check debug/device registration, metrics, enforcement rollout, and incident recovery are confirmed
+- RevenueCat offerings, subscriber identity, restore, purchase, product IDs, and sandbox behavior are verified before any future service-enabled distribution
+- remote deterministic workflow routing, fallback behavior, quotas, safety rules, observability, and provider-disabled behavior are verified
+- live-model use remains separately approval-gated and is not implied by Agent UI or deterministic remote workflow availability

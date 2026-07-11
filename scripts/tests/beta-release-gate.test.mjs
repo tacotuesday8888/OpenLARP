@@ -31,16 +31,20 @@ const releaseConfigurationFixture = [
   "    static let appStoreMVP = OpenLARPReleaseConfiguration(",
   "        channel: .appStore,",
   "        accessMode: .free,",
+  "        serviceMode: .localOnly,",
   "        enabledCapabilities: []",
   "    )",
   "",
   "    static let internalBeta = OpenLARPReleaseConfiguration(",
   "        channel: .internalBeta,",
   "        accessMode: .subscription,",
+  "        serviceMode: .firebaseBeta,",
   "        enabledCapabilities: [.subscriptions]",
   "    )",
   "",
-  "    static func current(infoDictionary: [String: Any]) -> OpenLARPReleaseConfiguration {",
+  "    static func current(",
+  "        infoDictionary: [String: Any]",
+  "    ) -> OpenLARPReleaseConfiguration {",
   "        guard let rawChannel = infoDictionary[infoDictionaryKey] as? String,",
   "              let channel = OpenLARPReleaseChannel(rawValue: rawChannel) else {",
   "            return .appStoreMVP",
@@ -63,8 +67,24 @@ function addingSafeProfileDecoy(source) {
     "let legacyFreePreview = OpenLARPReleaseConfiguration(",
     "    channel: .appStore,",
     "    accessMode: .free,",
+    "    serviceMode: .localOnly,",
     "    enabledCapabilities: []",
     ")"
+  ].join("\n");
+}
+
+function addingSafeResolverSwitchDecoy(source) {
+  return [
+    source,
+    "",
+    "func safeResolverDecoy(channel: OpenLARPReleaseChannel) -> OpenLARPReleaseConfiguration {",
+    "    switch channel {",
+    "    case .appStore:",
+    "        return .appStoreMVP",
+    "    case .internalBeta:",
+    "        return .internalBeta",
+    "    }",
+    "}"
   ].join("\n");
 }
 
@@ -85,6 +105,46 @@ function addingExternalChannelDecoy(configuration, value) {
     expectedLine
   ].join("\n");
 }
+
+const rootViewFixture = [
+  "struct AppRootView: View {",
+  "    var body: some View {",
+  "        TabView {",
+  "            TodayView(store: store)",
+  "            if store.releaseConfiguration.isEnabled(.agent) {",
+  "                AgentDashboardView(store: store)",
+  "            }",
+  "        }",
+  "    }",
+  "}",
+  "",
+  "struct AgentDashboardView: View {}"
+].join("\n");
+
+const todayViewFixture = [
+  "struct TodayView: View {",
+  "    var body: some View {",
+  "        VStack {",
+  "            if store.releaseConfiguration.isEnabled(.subscriptions) {",
+  "                subscriptionAccessCard",
+  "            }",
+  "            if store.releaseConfiguration.isEnabled(.agent) {",
+  "                dailyAgentBrief",
+  "                Button {",
+  "                    showingAgent = true",
+  "                } label: {",
+  "                    Text(\"Ask Agent\")",
+  "                }",
+  "            }",
+  "            todayCore",
+  "        }",
+  "    }",
+  "",
+  "    private var subscriptionAccessCard: some View { EmptyView() }",
+  "    private var dailyAgentBrief: some View { EmptyView() }",
+  "    private var todayCore: some View { EmptyView() }",
+  "}"
+].join("\n");
 
 const completeFiles = new Map([
   ["OpenLARP/PrivacyInfo.xcprivacy", [
@@ -123,11 +183,8 @@ const completeFiles = new Map([
   ].join("\n")],
   ["project.yml", projectFixture],
   ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", releaseConfigurationFixture],
-  ["OpenLARP/AppRootView.swift", "releaseConfiguration.isEnabled(.agent)"],
-  ["OpenLARP/Views/TodayView.swift", [
-    "releaseConfiguration.isEnabled(.subscriptions)",
-    "releaseConfiguration.isEnabled(.agent)"
-  ].join("\n")],
+  ["OpenLARP/AppRootView.swift", rootViewFixture],
+  ["OpenLARP/Views/TodayView.swift", todayViewFixture],
   ["OpenLARP/Views/ProfileView.swift", [
     "releaseConfiguration.isEnabled(.account)",
     "releaseConfiguration.isEnabled(.cloudSync)",
@@ -154,6 +211,7 @@ function expectBlocker(files, message) {
 const releaseConfigurationPath = "OpenLARP/Models/OpenLARPReleaseConfiguration.swift";
 const releaseConfigurationBlocker = "App Store release configuration is missing or not fail-safe.";
 const releaseChannelBlocker = "Debug or Release build channel configuration is missing.";
+const publicSurfaceBlocker = "Public SwiftUI surfaces do not consistently gate unfinished capabilities.";
 
 describe("beta release gate", () => {
   it("passes repo-controlled beta gates while warning about external setup", () => {
@@ -224,6 +282,9 @@ describe("beta release gate", () => {
     ["internal App Store channel with an App Store-profile decoy", addingSafeProfileDecoy(
       releaseConfigurationFixture.replace("channel: .appStore", "channel: .internalBeta")
     )],
+    ["Firebase App Store service mode with a local-only profile decoy", addingSafeProfileDecoy(
+      releaseConfigurationFixture.replace("serviceMode: .localOnly", "serviceMode: .firebaseBeta")
+    )],
     ["internal-beta fallback with a later App Store switch case", releaseConfigurationFixture.replace(
       "            return .appStoreMVP",
       "            return .internalBeta"
@@ -265,6 +326,35 @@ describe("beta release gate", () => {
         "    }"
       ]
     )]
+  ])("blocks %s", (_scenario, unsafeSource) => {
+    const files = new Map(completeFiles);
+    files.set(releaseConfigurationPath, unsafeSource);
+    expectBlocker(files, releaseConfigurationBlocker);
+  });
+
+  it.each([
+    ["App Store switch remapped to internal beta with a safe resolver decoy",
+      addingSafeResolverSwitchDecoy(releaseConfigurationFixture.replace(
+        [
+          "        case .appStore:",
+          "            return .appStoreMVP"
+        ].join("\n"),
+        [
+          "        case .appStore:",
+          "            return .internalBeta"
+        ].join("\n")
+      ))],
+    ["internal-beta switch remapped to App Store with a safe resolver decoy",
+      addingSafeResolverSwitchDecoy(releaseConfigurationFixture.replace(
+        [
+          "        case .internalBeta:",
+          "            return .internalBeta"
+        ].join("\n"),
+        [
+          "        case .internalBeta:",
+          "            return .appStoreMVP"
+        ].join("\n")
+      ))]
   ])("blocks %s", (_scenario, unsafeSource) => {
     const files = new Map(completeFiles);
     files.set(releaseConfigurationPath, unsafeSource);
@@ -338,8 +428,52 @@ describe("beta release gate", () => {
     expect(gate.ok).toBe(false);
     expect(gate.results).toContainEqual({
       level: "blocker",
-      message: "Public SwiftUI surfaces do not consistently gate unfinished capabilities."
+      message: publicSurfaceBlocker
     });
+  });
+
+  it("blocks an unconditional root Agent tab beside a correctly guarded Agent tab", () => {
+    const files = new Map(completeFiles);
+    files.set(
+      "OpenLARP/AppRootView.swift",
+      rootViewFixture.replace(
+        "        }\n    }\n}",
+        "        }\n        AgentDashboardView(store: store)\n    }\n}"
+      )
+    );
+    expectBlocker(files, publicSurfaceBlocker);
+  });
+
+  it("blocks an unconditional Today subscription card beside the safe subscription gate", () => {
+    const files = new Map(completeFiles);
+    files.set(
+      "OpenLARP/Views/TodayView.swift",
+      todayViewFixture.replace(
+        "            todayCore",
+        "            subscriptionAccessCard\n            todayCore"
+      )
+    );
+    expectBlocker(files, publicSurfaceBlocker);
+  });
+
+  it("blocks unconditional Today Agent content beside the safe Agent gate", () => {
+    const files = new Map(completeFiles);
+    files.set(
+      "OpenLARP/Views/TodayView.swift",
+      todayViewFixture.replace(
+        "            todayCore",
+        [
+          "            dailyAgentBrief",
+          "            Button {",
+          "                showingAgent = true",
+          "            } label: {",
+          "                Text(\"Unsafe Agent\")",
+          "            }",
+          "            todayCore"
+        ].join("\n")
+      )
+    );
+    expectBlocker(files, publicSurfaceBlocker);
   });
 
   it.each([
@@ -359,7 +493,7 @@ describe("beta release gate", () => {
     expect(gate.ok).toBe(false);
     expect(gate.results).toContainEqual({
       level: "blocker",
-      message: "Public SwiftUI surfaces do not consistently gate unfinished capabilities."
+      message: publicSurfaceBlocker
     });
   });
 });

@@ -44,6 +44,23 @@ function textHasTopLevelLine(text, expectedLine) {
   );
 }
 
+function exactLineOffsets(text, expectedLine) {
+  const offsets = [];
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    if (line.trim() === expectedLine) {
+      const firstCodeCharacter = line.search(/\S/);
+      offsets.push(offset + Math.max(0, firstCodeCharacter));
+    }
+    offset += line.length + 1;
+  }
+  return offsets;
+}
+
+function exactLineCount(text, expectedLine) {
+  return exactLineOffsets(text, expectedLine).length;
+}
+
 function codeLineOffset(text, expectedPrefix) {
   let offset = 0;
   for (const line of text.split("\n")) {
@@ -77,12 +94,77 @@ function extractBalancedBlockAfter(text, startIndex, openingCharacter, closingCh
   return "";
 }
 
-function extractCodeBlock(text, expectedPrefix, openingCharacter, closingCharacter) {
+function extractCodeBlockAfterUniqueExactLine(
+  text,
+  expectedLine,
+  openingCharacter,
+  closingCharacter
+) {
+  const offsets = exactLineOffsets(text, expectedLine);
+  if (offsets.length !== 1) {
+    return "";
+  }
   return extractBalancedBlockAfter(
     text,
-    codeLineOffset(text, expectedPrefix),
+    offsets[0],
     openingCharacter,
     closingCharacter
+  );
+}
+
+function normalizedCodeLines(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function hasExpectedReleaseResolverSwitch(currentResolver) {
+  const switchBody = extractCodeBlockAfterUniqueExactLine(
+    currentResolver,
+    "switch channel {",
+    "{",
+    "}"
+  );
+  return JSON.stringify(normalizedCodeLines(switchBody)) === JSON.stringify([
+    "case .appStore:",
+    "return .appStoreMVP",
+    "case .internalBeta:",
+    "return .internalBeta"
+  ]);
+}
+
+function hasGatedStandaloneInvocations(
+  source,
+  typeDeclaration,
+  capabilityGuard,
+  protectedInvocations
+) {
+  const typeBody = extractCodeBlockAfterUniqueExactLine(
+    source,
+    typeDeclaration,
+    "{",
+    "}"
+  );
+  const viewBody = extractCodeBlockAfterUniqueExactLine(
+    typeBody,
+    "var body: some View {",
+    "{",
+    "}"
+  );
+  const capabilityBlock = extractCodeBlockAfterUniqueExactLine(
+    viewBody,
+    capabilityGuard,
+    "{",
+    "}"
+  );
+  if (!typeBody || !viewBody || !capabilityBlock) {
+    return false;
+  }
+  return protectedInvocations.every(
+    (invocation) =>
+      exactLineCount(viewBody, invocation) === 1 &&
+      exactLineCount(capabilityBlock, invocation) === 1
   );
 }
 
@@ -196,13 +278,13 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   }
 
   const releaseConfiguration = readText("OpenLARP/Models/OpenLARPReleaseConfiguration.swift");
-  const appStoreProfile = extractCodeBlock(
+  const appStoreProfile = extractCodeBlockAfterUniqueExactLine(
     releaseConfiguration,
-    "static let appStoreMVP = OpenLARPReleaseConfiguration",
+    "static let appStoreMVP = OpenLARPReleaseConfiguration(",
     "(",
     ")"
   );
-  const currentResolver = extractCodeBlock(
+  const currentResolver = extractCodeBlockAfterUniqueExactLine(
     releaseConfiguration,
     "static func current(",
     "{",
@@ -215,6 +297,7 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   if (
     textHasTopLevelLine(appStoreProfile, "channel: .appStore,") &&
     textHasTopLevelLine(appStoreProfile, "accessMode: .free,") &&
+    textHasTopLevelLine(appStoreProfile, "serviceMode: .localOnly,") &&
     textHasTopLevelLine(appStoreProfile, "enabledCapabilities: []") &&
     textHasLine(
       guardCondition,
@@ -224,7 +307,8 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
       guardCondition,
       "let channel = OpenLARPReleaseChannel(rawValue: rawChannel)"
     ) &&
-    guardFallback.trim() === "return .appStoreMVP"
+    guardFallback.trim() === "return .appStoreMVP" &&
+    hasExpectedReleaseResolverSwitch(currentResolver)
   ) {
     addResult(results, "pass", "App Store release configuration is free and fail-safe.");
   } else {
@@ -235,11 +319,24 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   const todayView = readText("OpenLARP/Views/TodayView.swift");
   const profileView = readText("OpenLARP/Views/ProfileView.swift");
   if (
-    rootView.includes("releaseConfiguration.isEnabled(.agent)") &&
-    textIncludesAll(todayView, [
-      "releaseConfiguration.isEnabled(.subscriptions)",
-      "releaseConfiguration.isEnabled(.agent)"
-    ]) &&
+    hasGatedStandaloneInvocations(
+      rootView,
+      "struct AppRootView: View {",
+      "if store.releaseConfiguration.isEnabled(.agent) {",
+      ["AgentDashboardView(store: store)"]
+    ) &&
+    hasGatedStandaloneInvocations(
+      todayView,
+      "struct TodayView: View {",
+      "if store.releaseConfiguration.isEnabled(.subscriptions) {",
+      ["subscriptionAccessCard"]
+    ) &&
+    hasGatedStandaloneInvocations(
+      todayView,
+      "struct TodayView: View {",
+      "if store.releaseConfiguration.isEnabled(.agent) {",
+      ["dailyAgentBrief", "showingAgent = true"]
+    ) &&
     textIncludesAll(profileView, [
       "releaseConfiguration.isEnabled(.account)",
       "releaseConfiguration.isEnabled(.cloudSync)",
