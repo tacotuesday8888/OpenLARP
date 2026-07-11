@@ -49,6 +49,25 @@ function normalizedShell(script) {
     .trim();
 }
 
+function hasCanonicalShellContract(script, firstExecutableLinePattern) {
+  if (typeof script !== "string") {
+    return false;
+  }
+  const executableLines = script
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  if (!executableLines.length ||
+      !firstExecutableLinePattern.test(executableLines[0])) {
+    return false;
+  }
+
+  return !executableLines.some((line) => {
+    const code = line.replace(/\s+#.*$/, "");
+    return /(?:^|;\s*|\bthen\s+)(?:exit|return)(?:\s+0)?(?=\s*(?:;|&&|\|\||$))/.test(code);
+  });
+}
+
 function readTrackedText(path) {
   try {
     return readFileSync(path, "utf8");
@@ -232,6 +251,7 @@ function validateWorkflowDefinition(workflow) {
 
   const simulatorRun = simulator.run;
   const simulatorFailsClosed =
+    hasCanonicalShellContract(simulatorRun, /^DEVICE_ID="\$\(/) &&
     simulator.id === "simulator" &&
     simulatorRun.includes("subprocess.TimeoutExpired") &&
     simulatorRun.includes("sys.exit(1)") &&
@@ -242,18 +262,24 @@ function validateWorkflowDefinition(workflow) {
     !simulatorRun.includes("has_simulator") &&
     !simulatorRun.includes("will be skipped");
 
-  const unsignedBuildRun = normalizedShell(unsignedBuild.run);
-  const unsignedReleaseBuild = textIncludesAll(unsignedBuildRun, [
+  const unsignedBuildScript = unsignedBuild.run;
+  const unsignedBuildRun = normalizedShell(unsignedBuildScript);
+  const unsignedReleaseBuild =
+    hasCanonicalShellContract(unsignedBuildScript, /^xcodebuild(?:\s|$)/) &&
+    textIncludesAll(unsignedBuildRun, [
     "-project OpenLARP.xcodeproj",
     "-scheme OpenLARP",
     "-configuration Release",
     "-destination generic/platform=iOS",
     "CODE_SIGNING_ALLOWED=NO",
     "build"
-  ]);
+    ]);
 
-  const debugRun = normalizedShell(debugTests.run);
-  const debugSuite = textIncludesAll(debugRun, [
+  const debugScript = debugTests.run;
+  const debugRun = normalizedShell(debugScript);
+  const debugSuite =
+    hasCanonicalShellContract(debugScript, /^set -euo pipefail$/) &&
+    textIncludesAll(debugRun, [
     "set -euo pipefail",
     "-project OpenLARP.xcodeproj",
     "-scheme OpenLARP",
@@ -272,11 +298,13 @@ function validateWorkflowDefinition(workflow) {
     "skipped != 0",
     "sys.exit(1)",
     "test"
-  ]);
+    ]);
 
   const contractRun = releaseContract.run;
   const normalizedContractRun = normalizedShell(contractRun);
-  const releaseContractVerified = textIncludesAll(normalizedContractRun, [
+  const releaseContractVerified =
+    hasCanonicalShellContract(contractRun, /^set -euo pipefail$/) &&
+    textIncludesAll(normalizedContractRun, [
     "set -euo pipefail",
     "-target OpenLARP -configuration Release -showBuildSettings",
     '[ "$ENABLE_TESTABILITY" != "NO" ]',
@@ -292,7 +320,7 @@ function validateWorkflowDefinition(workflow) {
     '"skippedTests": 0',
     "actual != expected",
     "sys.exit(1)"
-  ]) && !contractRun.includes("rm -rf");
+    ]) && !contractRun.includes("rm -rf");
 
   const requiredCommandsValid =
     publicSafety.run.trim() === "npm run public:safety" &&

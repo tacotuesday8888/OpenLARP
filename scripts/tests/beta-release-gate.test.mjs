@@ -368,4 +368,52 @@ describe("beta release gate", () => {
       workflowBlocker
     );
   });
+
+  it.each([
+    [
+      "simulator selection",
+      "        run: |\n          DEVICE_ID=",
+      "        run: |\n          exit 0\n          DEVICE_ID="
+    ],
+    [
+      "unsigned Release build",
+      "      - name: Build unsigned iOS app\n        run: |\n          xcodebuild",
+      "      - name: Build unsigned iOS app\n        run: |\n          exit 0\n          xcodebuild"
+    ],
+    [
+      "Debug test suite",
+      "      - name: Run Debug simulator tests\n        run: |\n          set -euo pipefail",
+      "      - name: Run Debug simulator tests\n        run: |\n          exit 0\n          set -euo pipefail"
+    ],
+    [
+      "Release contract",
+      "      - name: Run optimized App Store Release contract\n        run: |\n          set -euo pipefail",
+      "      - name: Run optimized App Store Release contract\n        run: |\n          exit 0\n          set -euo pipefail"
+    ],
+    [
+      "conditional simulator selection",
+      "        run: |\n          DEVICE_ID=",
+      "        run: |\n          if true; then exit 0; fi\n          DEVICE_ID="
+    ],
+    [
+      "conditional unsigned Release build",
+      "      - name: Build unsigned iOS app\n        run: |\n          xcodebuild",
+      "      - name: Build unsigned iOS app\n        run: |\n          if true; then exit 0; fi\n          xcodebuild"
+    ],
+    [
+      "conditional Debug test suite",
+      "      - name: Run Debug simulator tests\n        run: |\n          set -euo pipefail",
+      "      - name: Run Debug simulator tests\n        run: |\n          if true; then exit 0; fi\n          set -euo pipefail"
+    ],
+    [
+      "conditional Release contract",
+      "      - name: Run optimized App Store Release contract\n        run: |\n          set -euo pipefail",
+      "      - name: Run optimized App Store Release contract\n        run: |\n          if true; then exit 0; fi\n          set -euo pipefail"
+    ]
+  ])("blocks an early-success prefix in the %s step", (_name, from, to) => {
+    expectBlocker(
+      replacing(".github/workflows/ios-ci.yml", from, to),
+      workflowBlocker
+    );
+  });
 });
