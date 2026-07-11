@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
-const REQUIRED_PRIVACY_DATA_TYPES = [
+const REQUIRED_INTERNAL_PRIVACY_DATA_TYPES = [
   "NSPrivacyCollectedDataTypeUserID",
   "NSPrivacyCollectedDataTypeEmailAddress",
   "NSPrivacyCollectedDataTypeOtherUserContent",
@@ -14,11 +14,13 @@ const REQUIRED_PRIVACY_DATA_TYPES = [
 
 const REQUIRED_FILES = [
   "OpenLARP/PrivacyInfo.xcprivacy",
-  "OpenLARP/OpenLARP.entitlements",
+  "OpenLARPInternal/PrivacyInfo.xcprivacy",
+  "OpenLARPInternal/OpenLARPInternal.entitlements",
   "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
   "OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift",
   "OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift",
   "OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift",
+  "OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme",
   "docs/APP_STORE_TESTFLIGHT_READINESS.md",
   "docs/BETA_TESTFLIGHT_PATH.md",
   "docs/FIREBASE_BACKEND_SETUP.md",
@@ -35,6 +37,12 @@ const RELEASE_CHANNEL_BLOCKER =
   "Debug or Release build channel configuration is missing.";
 const SERVICE_COPY_BLOCKER =
   "Local service configuration copy hooks must be restricted to internal-beta builds.";
+const PUBLIC_TARGET_BOUNDARY_BLOCKER =
+  "The App Store target must be isolated from internal service SDKs, auth metadata, and entitlements.";
+const PUBLIC_PRIVACY_BLOCKER =
+  "The App Store privacy manifest must declare no tracking and no collected data.";
+const PUBLIC_SCHEME_BLOCKER =
+  "The shared OpenLARP scheme must build only the App Store target.";
 const WORKFLOW_BLOCKER =
   "CI workflow must fail closed and execute Debug tests plus the verified Release contract.";
 
@@ -99,11 +107,59 @@ function isExactArray(value, expected) {
     value.every((item, index) => item === expected[index]);
 }
 
+function hasXmlAttribute(text, name, value) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escapedName}\\s*=\\s*"${escapedValue}"`).test(text);
+}
+
+function validateGeneratedPublicScheme(text) {
+  if (typeof text !== "string" || !text) {
+    return false;
+  }
+
+  const entries = text.match(/<BuildActionEntry\b[\s\S]*?<\/BuildActionEntry>/g) ?? [];
+  if (entries.length !== 1 ||
+      !hasXmlAttribute(text, "buildImplicitDependencies", "NO")) {
+    return false;
+  }
+
+  const entry = entries[0];
+  return hasXmlAttribute(entry, "buildForTesting", "YES") &&
+    hasXmlAttribute(entry, "buildForRunning", "YES") &&
+    hasXmlAttribute(entry, "buildForProfiling", "YES") &&
+    hasXmlAttribute(entry, "buildForArchiving", "YES") &&
+    hasXmlAttribute(entry, "buildForAnalyzing", "YES") &&
+    hasXmlAttribute(entry, "BuildableName", "OpenLARP.app") &&
+    hasXmlAttribute(entry, "BlueprintName", "OpenLARP");
+}
+
 function dependenciesInclude(dependencies, expected) {
   return Array.isArray(dependencies) && dependencies.some((dependency) =>
     dependency && typeof dependency === "object" &&
     Object.entries(expected).every(([key, value]) => dependency[key] === value)
   );
+}
+
+function sourceDefinition(target, path) {
+  return Array.isArray(target?.sources)
+    ? target.sources.find((source) => source?.path === path)
+    : null;
+}
+
+function sourceExcludes(target, path, excludedPath) {
+  const source = sourceDefinition(target, path);
+  return Array.isArray(source?.excludes) && source.excludes.includes(excludedPath);
+}
+
+function hasEmptyPlistArray(text, key) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`<key>\\s*${escapedKey}\\s*</key>\\s*<array\\s*/>`, "m").test(text);
+}
+
+function hasFalsePlistBoolean(text, key) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`<key>\\s*${escapedKey}\\s*</key>\\s*<false\\s*/>`, "m").test(text);
 }
 
 function hasInternalOnlyCopyScript(scriptDefinition, fileName) {
@@ -141,32 +197,89 @@ function hasInternalOnlyCopyScript(scriptDefinition, fileName) {
 
 function validateProjectDefinition(project) {
   const appTarget = project?.targets?.OpenLARP;
+  const internalTarget = project?.targets?.OpenLARPInternal;
   const appSettings = appTarget?.settings;
+  const internalSettings = internalTarget?.settings;
+
+  const expectedInternalDependencies = [
+    ["Firebase", "FirebaseCore"],
+    ["Firebase", "FirebaseAuth"],
+    ["Firebase", "FirebaseFirestore"],
+    ["Firebase", "FirebaseStorage"],
+    ["Firebase", "FirebaseFunctions"],
+    ["Firebase", "FirebaseAppCheck"],
+    ["GoogleSignIn", "GoogleSignIn"],
+    ["GoogleSignIn", "GoogleSignInSwift"],
+    ["RevenueCat", "RevenueCat"]
+  ];
 
   const baseConfigurationValid =
-    appSettings?.base?.PRODUCT_BUNDLE_IDENTIFIER === "com.openlarp.app" &&
     project?.packages?.Firebase &&
     project?.packages?.GoogleSignIn &&
     project?.packages?.RevenueCat &&
-    dependenciesInclude(appTarget?.dependencies, {
-      package: "Firebase",
-      product: "FirebaseAppCheck"
-    }) &&
-    dependenciesInclude(appTarget?.dependencies, {
-      package: "GoogleSignIn",
-      product: "GoogleSignIn"
-    }) &&
-    dependenciesInclude(appTarget?.dependencies, {
-      package: "RevenueCat",
-      product: "RevenueCat"
-    });
+    internalTarget?.type === "application" &&
+    expectedInternalDependencies.every(([packageName, product]) =>
+      dependenciesInclude(internalTarget?.dependencies, {
+        package: packageName,
+        product
+      })
+    );
+
+  const publicInfoProperties = appTarget?.info?.properties;
+  const publicBaseSettings = appSettings?.base;
+  const publicConditions = publicBaseSettings?.SWIFT_ACTIVE_COMPILATION_CONDITIONS;
+  const internalInfoProperties = internalTarget?.info?.properties;
+  const internalBaseSettings = internalSettings?.base;
+  const internalConditions = internalBaseSettings?.SWIFT_ACTIVE_COMPILATION_CONDITIONS;
+  const internalURLTypes = internalInfoProperties?.CFBundleURLTypes;
+  const internalConfigurationValid =
+    internalBaseSettings?.PRODUCT_BUNDLE_IDENTIFIER === "com.openlarp.app.internal" &&
+    internalBaseSettings?.PRODUCT_NAME === "OpenLARPInternal" &&
+    internalBaseSettings?.PRODUCT_MODULE_NAME === "OpenLARP" &&
+    internalBaseSettings?.CODE_SIGN_ENTITLEMENTS ===
+      "OpenLARPInternal/OpenLARPInternal.entitlements" &&
+    typeof internalConditions === "string" &&
+    internalConditions.includes("OPENLARP_INTERNAL_SERVICES") &&
+    sourceDefinition(internalTarget, "OpenLARPInternal") !== null &&
+    sourceExcludes(internalTarget, "OpenLARP", "PrivacyInfo.xcprivacy") &&
+    sourceExcludes(internalTarget, "OpenLARP", "Info.plist") &&
+    Array.isArray(internalURLTypes) &&
+    internalURLTypes.length === 1 &&
+    internalURLTypes[0]?.CFBundleURLName === "Google Sign-In" &&
+    isExactArray(
+      internalURLTypes[0]?.CFBundleURLSchemes,
+      ["$(GOOGLE_REVERSED_CLIENT_ID)"]
+    );
+  const publicTargetBoundaryValid =
+    appTarget?.type === "application" &&
+    appSettings?.base?.PRODUCT_BUNDLE_IDENTIFIER === "com.openlarp.app" &&
+    appSettings?.base?.PRODUCT_NAME === "OpenLARP" &&
+    appSettings?.base?.PRODUCT_MODULE_NAME === "OpenLARP" &&
+    Array.isArray(appTarget?.dependencies) &&
+    appTarget.dependencies.length === 0 &&
+    sourceDefinition(appTarget, "OpenLARP") !== null &&
+    sourceExcludes(appTarget, "OpenLARP", "GoogleService-Info.plist") &&
+    sourceExcludes(appTarget, "OpenLARP", "RevenueCat-Info.plist") &&
+    sourceExcludes(
+      appTarget,
+      "OpenLARP",
+      "Models/OpenLARPRevenueCatSubscriptionService.swift"
+    ) &&
+    !Object.hasOwn(publicInfoProperties ?? {}, "CFBundleURLTypes") &&
+    !Object.hasOwn(publicBaseSettings ?? {}, "CODE_SIGN_ENTITLEMENTS") &&
+    !(typeof publicConditions === "string" &&
+      publicConditions.includes("OPENLARP_INTERNAL_SERVICES")) &&
+    (!Array.isArray(appTarget?.postBuildScripts) || appTarget.postBuildScripts.length === 0);
 
   const channelsValid =
     appTarget?.info?.properties?.OpenLARPReleaseChannel === "$(OPENLARP_RELEASE_CHANNEL)" &&
-    appSettings?.configs?.Debug?.OPENLARP_RELEASE_CHANNEL === "internal-beta" &&
-    appSettings?.configs?.Release?.OPENLARP_RELEASE_CHANNEL === "app-store";
+    appSettings?.configs?.Debug?.OPENLARP_RELEASE_CHANNEL === "app-store" &&
+    appSettings?.configs?.Release?.OPENLARP_RELEASE_CHANNEL === "app-store" &&
+    internalTarget?.info?.properties?.OpenLARPReleaseChannel === "$(OPENLARP_RELEASE_CHANNEL)" &&
+    internalSettings?.configs?.Debug?.OPENLARP_RELEASE_CHANNEL === "internal-beta" &&
+    internalSettings?.configs?.Release?.OPENLARP_RELEASE_CHANNEL === "internal-beta";
 
-  const copyScripts = appTarget?.postBuildScripts;
+  const copyScripts = internalTarget?.postBuildScripts;
   const firebaseScripts = Array.isArray(copyScripts)
     ? copyScripts.filter((script) => script?.name === "Copy Local Firebase Configuration")
     : [];
@@ -180,10 +293,26 @@ function validateProjectDefinition(project) {
     hasInternalOnlyCopyScript(revenueCatScripts[0], "RevenueCat-Info.plist");
 
   const contractTarget = project?.targets?.OpenLARPReleaseContractTests;
+  const publicScheme = project?.schemes?.OpenLARP;
+  const publicSchemeBuildTargets = publicScheme?.build?.targets;
+  const publicSchemeValid =
+    publicScheme?.management?.shared === true &&
+    publicScheme?.build?.buildImplicitDependencies === false &&
+    publicSchemeBuildTargets &&
+    isExactArray(Object.keys(publicSchemeBuildTargets), ["OpenLARP"]) &&
+    publicSchemeBuildTargets.OpenLARP === "all" &&
+    publicScheme?.run?.config === "Debug" &&
+    publicScheme?.profile?.config === "Release" &&
+    publicScheme?.archive?.config === "Release";
   const contractScheme = project?.schemes?.OpenLARPReleaseContract;
   const buildTargets = contractScheme?.build?.targets;
   const contractValid =
-    isExactArray(appTarget?.scheme?.testTargets, ["OpenLARPTests"]) &&
+    isExactArray(internalTarget?.scheme?.testTargets, ["OpenLARPTests"]) &&
+    Array.isArray(project?.targets?.OpenLARPTests?.dependencies) &&
+    project.targets.OpenLARPTests.dependencies.length === 1 &&
+    dependenciesInclude(project.targets.OpenLARPTests.dependencies, {
+      target: "OpenLARPInternal"
+    }) &&
     contractTarget?.type === "bundle.unit-test" &&
     contractTarget?.platform === "iOS" &&
     isExactArray(contractTarget?.sources, ["OpenLARPReleaseContractTests"]) &&
@@ -203,9 +332,11 @@ function validateProjectDefinition(project) {
     isExactArray(contractScheme?.test?.targets, ["OpenLARPReleaseContractTests"]);
 
   return {
-    baseConfigurationValid,
+    baseConfigurationValid: baseConfigurationValid && internalConfigurationValid,
+    publicTargetBoundaryValid,
     channelsValid,
     serviceCopiesValid,
+    publicSchemeValid,
     contractValid
   };
 }
@@ -307,7 +438,7 @@ function validateWorkflowDefinition(workflow) {
     textIncludesAll(debugRun, [
     "set -euo pipefail",
     "-project OpenLARP.xcodeproj",
-    "-scheme OpenLARP",
+    "-scheme OpenLARPInternal",
     "-configuration Debug",
     "steps.simulator.outputs.device_id",
     "OpenLARPDebug-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult",
@@ -365,6 +496,9 @@ function validateWorkflowDefinition(workflow) {
 
 export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists = existsSync) {
   const results = [];
+  const generatedPublicSchemeValid = validateGeneratedPublicScheme(
+    readText("OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme")
+  );
 
   for (const path of REQUIRED_FILES) {
     if (fileExists(path)) {
@@ -374,19 +508,53 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
     }
   }
 
+  const appIconDirectory =
+    "OpenLARP/Resources/Assets.xcassets/AppIcon.appiconset";
+  const appIconContents = readText(`${appIconDirectory}/Contents.json`);
+  let hasReferencedAppStoreIcon = false;
+  try {
+    const catalog = JSON.parse(appIconContents);
+    hasReferencedAppStoreIcon = Array.isArray(catalog?.images) &&
+      catalog.images.some((image) =>
+        image?.size === "1024x1024" &&
+        typeof image?.filename === "string" &&
+        image.filename.trim().length > 0 &&
+        fileExists(`${appIconDirectory}/${image.filename}`)
+      );
+  } catch {
+    hasReferencedAppStoreIcon = false;
+  }
+  if (hasReferencedAppStoreIcon) {
+    addResult(results, "pass", "A referenced 1024x1024 App Store icon file is present.");
+  } else {
+    addResult(
+      results,
+      "warn",
+      "A referenced 1024x1024 App Store icon file is still required before submission."
+    );
+  }
+
   const privacyManifest = readText("OpenLARP/PrivacyInfo.xcprivacy");
   if (privacyManifest) {
-    if (privacyManifest.includes("<key>NSPrivacyTracking</key>") &&
-        privacyManifest.includes("<false/>")) {
-      addResult(results, "pass", "Privacy manifest declares no tracking.");
+    const publicPrivacyValid =
+      hasFalsePlistBoolean(privacyManifest, "NSPrivacyTracking") &&
+      hasEmptyPlistArray(privacyManifest, "NSPrivacyTrackingDomains") &&
+      hasEmptyPlistArray(privacyManifest, "NSPrivacyCollectedDataTypes") &&
+      hasEmptyPlistArray(privacyManifest, "NSPrivacyAccessedAPITypes");
+    if (publicPrivacyValid) {
+      addResult(results, "pass", "The App Store privacy manifest declares no tracking or collected data.");
     } else {
-      addResult(results, "blocker", "Privacy manifest must explicitly declare tracking as false.");
+      addResult(results, "blocker", PUBLIC_PRIVACY_BLOCKER);
     }
+  }
 
-    if (textIncludesAll(privacyManifest, REQUIRED_PRIVACY_DATA_TYPES)) {
-      addResult(results, "pass", "Privacy manifest covers current account, proof, payment, and analytics data categories.");
+  const internalPrivacyManifest = readText("OpenLARPInternal/PrivacyInfo.xcprivacy");
+  if (internalPrivacyManifest) {
+    if (hasFalsePlistBoolean(internalPrivacyManifest, "NSPrivacyTracking") &&
+        textIncludesAll(internalPrivacyManifest, REQUIRED_INTERNAL_PRIVACY_DATA_TYPES)) {
+      addResult(results, "pass", "The internal privacy manifest covers current service data categories without tracking.");
     } else {
-      addResult(results, "blocker", "Privacy manifest is missing one or more required OpenLARP data categories.");
+      addResult(results, "blocker", "Internal privacy manifest is missing one or more required service data categories.");
     }
   }
 
@@ -397,13 +565,20 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
       addResult(results, "blocker", "project.yml is not valid YAML.");
       addResult(results, "blocker", RELEASE_CHANNEL_BLOCKER);
       addResult(results, "blocker", SERVICE_COPY_BLOCKER);
+      addResult(results, "blocker", PUBLIC_SCHEME_BLOCKER);
       addResult(results, "blocker", PROJECT_CONTRACT_BLOCKER);
     } else {
       const validation = validateProjectDefinition(project);
       if (validation.baseConfigurationValid) {
-        addResult(results, "pass", "Bundle ID and service package wiring are declared in project.yml.");
+        addResult(results, "pass", "Internal service package wiring and auth configuration are declared in project.yml.");
       } else {
-        addResult(results, "blocker", "project.yml is missing the app bundle ID or required service package wiring.");
+        addResult(results, "blocker", "project.yml is missing required internal service package or auth wiring.");
+      }
+
+      if (validation.publicTargetBoundaryValid) {
+        addResult(results, "pass", "The App Store target has no service SDK, auth URL, entitlement, or config-copy wiring.");
+      } else {
+        addResult(results, "blocker", PUBLIC_TARGET_BOUNDARY_BLOCKER);
       }
 
       if (validation.channelsValid) {
@@ -418,6 +593,12 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
         addResult(results, "blocker", SERVICE_COPY_BLOCKER);
       }
 
+      if (validation.publicSchemeValid && generatedPublicSchemeValid) {
+        addResult(results, "pass", "The shared OpenLARP scheme builds only the App Store target.");
+      } else {
+        addResult(results, "blocker", PUBLIC_SCHEME_BLOCKER);
+      }
+
       if (validation.contractValid) {
         addResult(results, "pass", "The isolated shared Release contract target and scheme are configured.");
       } else {
@@ -426,14 +607,14 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
     }
   }
 
-  const entitlements = readText("OpenLARP/OpenLARP.entitlements");
+  const entitlements = readText("OpenLARPInternal/OpenLARPInternal.entitlements");
   if (entitlements) {
     if (textIncludesAll(entitlements, [
       "com.apple.developer.applesignin",
       "com.apple.developer.devicecheck.appattest-environment",
       "production"
     ])) {
-      addResult(results, "pass", "Sign in with Apple and production App Attest entitlements are declared.");
+      addResult(results, "pass", "Internal Sign in with Apple and production App Attest entitlements are declared.");
     } else {
       addResult(results, "blocker", "Apple sign-in or production App Attest entitlement is missing.");
     }

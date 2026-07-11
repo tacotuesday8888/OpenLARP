@@ -4,7 +4,7 @@
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
-      buildImplicitDependencies = "NO"
+      buildImplicitDependencies = "YES"
       runPostActionsOnFailure = "NO">
       <BuildActionEntries>
          <BuildActionEntry
@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "235A760FBDE02BB247E02321"
-               BuildableName = "OpenLARP.app"
-               BlueprintName = "OpenLARP"
+               BlueprintIdentifier = "DB4E65A7BD000E790DD485CE"
+               BuildableName = "OpenLARPInternal.app"
+               BlueprintName = "OpenLARPInternal"
                ReferencedContainer = "container:OpenLARP.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -32,14 +32,27 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "235A760FBDE02BB247E02321"
-            BuildableName = "OpenLARP.app"
-            BlueprintName = "OpenLARP"
+            BlueprintIdentifier = "DB4E65A7BD000E790DD485CE"
+            BuildableName = "OpenLARPInternal.app"
+            BlueprintName = "OpenLARPInternal"
             ReferencedContainer = "container:OpenLARP.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A223CB22FA7F9DAFADCF6FCB"
+               BuildableName = "OpenLARPTests.xctest"
+               BlueprintName = "OpenLARPTests"
+               ReferencedContainer = "container:OpenLARP.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -55,9 +68,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "235A760FBDE02BB247E02321"
-            BuildableName = "OpenLARP.app"
-            BlueprintName = "OpenLARP"
+            BlueprintIdentifier = "DB4E65A7BD000E790DD485CE"
+            BuildableName = "OpenLARPInternal.app"
+            BlueprintName = "OpenLARPInternal"
             ReferencedContainer = "container:OpenLARP.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -74,9 +87,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "235A760FBDE02BB247E02321"
-            BuildableName = "OpenLARP.app"
-            BlueprintName = "OpenLARP"
+            BlueprintIdentifier = "DB4E65A7BD000E790DD485CE"
+            BuildableName = "OpenLARPInternal.app"
+            BlueprintName = "OpenLARPInternal"
             ReferencedContainer = "container:OpenLARP.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

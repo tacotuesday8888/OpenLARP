@@ -14,11 +14,53 @@ packages:
 targets:
   OpenLARP:
     type: application
+    sources:
+      - path: OpenLARP
+        excludes:
+          - GoogleService-Info.plist
+          - RevenueCat-Info.plist
+          - Models/OpenLARPRevenueCatSubscriptionService.swift
+    dependencies: []
+    info:
+      properties:
+        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app
+        PRODUCT_NAME: OpenLARP
+        PRODUCT_MODULE_NAME: OpenLARP
+      configs:
+        Debug:
+          OPENLARP_RELEASE_CHANNEL: app-store
+        Release:
+          OPENLARP_RELEASE_CHANNEL: app-store
+  OpenLARPInternal:
+    type: application
+    sources:
+      - path: OpenLARP
+        excludes:
+          - GoogleService-Info.plist
+          - RevenueCat-Info.plist
+          - PrivacyInfo.xcprivacy
+          - Info.plist
+      - path: OpenLARPInternal
     dependencies:
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: Firebase
+        product: FirebaseStorage
+      - package: Firebase
+        product: FirebaseFunctions
       - package: Firebase
         product: FirebaseAppCheck
       - package: GoogleSignIn
         product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
       - package: RevenueCat
         product: RevenueCat
     postBuildScripts:
@@ -54,18 +96,27 @@ targets:
     info:
       properties:
         OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLName: Google Sign-In
+            CFBundleURLSchemes:
+              - $(GOOGLE_REVERSED_CLIENT_ID)
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app.internal
+        PRODUCT_NAME: OpenLARPInternal
+        PRODUCT_MODULE_NAME: OpenLARP
+        CODE_SIGN_ENTITLEMENTS: OpenLARPInternal/OpenLARPInternal.entitlements
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) OPENLARP_INTERNAL_SERVICES
       configs:
         Debug:
           OPENLARP_RELEASE_CHANNEL: internal-beta
         Release:
-          OPENLARP_RELEASE_CHANNEL: app-store
+          OPENLARP_RELEASE_CHANNEL: internal-beta
   OpenLARPTests:
     type: bundle.unit-test
     dependencies:
-      - target: OpenLARP
+      - target: OpenLARPInternal
   OpenLARPReleaseContractTests:
     type: bundle.unit-test
     platform: iOS
@@ -78,6 +129,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests
         GENERATE_INFOPLIST_FILE: YES
 schemes:
+  OpenLARP:
+    management:
+      shared: true
+    build:
+      buildImplicitDependencies: false
+      targets:
+        OpenLARP: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    archive:
+      config: Release
   OpenLARPReleaseContract:
     management:
       shared: true
@@ -92,6 +156,26 @@ schemes:
       config: Release
       targets:
         - OpenLARPReleaseContractTests
+`.trim();
+
+const publicSchemeFixture = `
+<Scheme>
+  <BuildAction buildImplicitDependencies = "NO">
+    <BuildActionEntries>
+      <BuildActionEntry
+        buildForTesting = "YES"
+        buildForRunning = "YES"
+        buildForProfiling = "YES"
+        buildForArchiving = "YES"
+        buildForAnalyzing = "YES">
+        <BuildableReference
+          BuildableName = "OpenLARP.app"
+          BlueprintName = "OpenLARP">
+        </BuildableReference>
+      </BuildActionEntry>
+    </BuildActionEntries>
+  </BuildAction>
+</Scheme>
 `.trim();
 
 const workflowFixture = `
@@ -139,7 +223,7 @@ jobs:
         run: |
           set -euo pipefail
           DEBUG_RESULT_BUNDLE="\${RUNNER_TEMP}/OpenLARPDebug-\${GITHUB_RUN_ID}-\${GITHUB_RUN_ATTEMPT}.xcresult"
-          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARP -configuration Debug -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPDerivedDataTests -resultBundlePath "$DEBUG_RESULT_BUNDLE" test
+          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARPInternal -configuration Debug -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPDerivedDataTests -resultBundlePath "$DEBUG_RESULT_BUNDLE" test
           export DEBUG_SUMMARY_JSON="$(xcrun xcresulttool get test-results summary --path "$DEBUG_RESULT_BUNDLE" --compact)"
           python3 - <<'PY'
           import json
@@ -187,6 +271,16 @@ const completeFiles = new Map([
   ["OpenLARP/PrivacyInfo.xcprivacy", [
     "<key>NSPrivacyTracking</key>",
     "<false/>",
+    "<key>NSPrivacyTrackingDomains</key>",
+    "<array/>",
+    "<key>NSPrivacyCollectedDataTypes</key>",
+    "<array/>",
+    "<key>NSPrivacyAccessedAPITypes</key>",
+    "<array/>"
+  ].join("\n")],
+  ["OpenLARPInternal/PrivacyInfo.xcprivacy", [
+    "<key>NSPrivacyTracking</key>",
+    "<false/>",
     "NSPrivacyCollectedDataTypeUserID",
     "NSPrivacyCollectedDataTypeEmailAddress",
     "NSPrivacyCollectedDataTypeOtherUserContent",
@@ -194,15 +288,29 @@ const completeFiles = new Map([
     "NSPrivacyCollectedDataTypePurchaseHistory",
     "NSPrivacyCollectedDataTypeProductInteraction"
   ].join("\n")],
-  ["OpenLARP/OpenLARP.entitlements", [
+  ["OpenLARPInternal/OpenLARPInternal.entitlements", [
     "com.apple.developer.applesignin",
     "com.apple.developer.devicecheck.appattest-environment",
     "production"
   ].join("\n")],
+  ["OpenLARP/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json", JSON.stringify({
+    images: [
+      {
+        filename: "AppIcon-1024.png",
+        idiom: "universal",
+        platform: "ios",
+        scale: "1x",
+        size: "1024x1024"
+      }
+    ],
+    info: { author: "xcode", version: 1 }
+  })],
+  ["OpenLARP/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png", "image"],
   ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", "release configuration"],
   ["OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift", "presentation policy"],
   ["OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift", "release snapshot"],
   ["OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift", "ordinary import contract"],
+  ["OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme", publicSchemeFixture],
   ["docs/APP_STORE_TESTFLIGHT_READINESS.md", [
     "TestFlight Beta Notes Draft",
     "Privacy Policy Checklist",
@@ -256,6 +364,10 @@ function movingWorkflowStepAfter(stepName, predecessorName) {
 const projectContractBlocker = "project.yml must define the isolated Release contract target and scheme.";
 const releaseChannelBlocker = "Debug or Release build channel configuration is missing.";
 const serviceCopyBlocker = "Local service configuration copy hooks must be restricted to internal-beta builds.";
+const publicTargetBoundaryBlocker = "The App Store target must be isolated from internal service SDKs, auth metadata, and entitlements.";
+const publicPrivacyBlocker = "The App Store privacy manifest must declare no tracking and no collected data.";
+const publicSchemeBlocker = "The shared OpenLARP scheme must build only the App Store target.";
+const appIconWarning = "A referenced 1024x1024 App Store icon file is still required before submission.";
 const workflowBlocker = "CI workflow must fail closed and execute Debug tests plus the verified Release contract.";
 
 describe("beta release gate", () => {
@@ -271,10 +383,117 @@ describe("beta release gate", () => {
     });
   });
 
-  it("blocks missing privacy data categories", () => {
+  it.each(["missing filename", "missing file"])(
+    "warns when the App Store icon has a %s",
+    (mutation) => {
+      const files = new Map(completeFiles);
+      if (mutation === "missing filename") {
+        files.set(
+          "OpenLARP/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json",
+          JSON.stringify({
+            images: [
+              { idiom: "universal", platform: "ios", scale: "1x", size: "1024x1024" }
+            ],
+            info: { author: "xcode", version: 1 }
+          })
+        );
+      } else {
+        files.delete(
+          "OpenLARP/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+        );
+      }
+
+      expect(evaluatorFor(files).results).toContainEqual({
+        level: "warn",
+        message: appIconWarning
+      });
+    }
+  );
+
+  it("blocks collected data added to the public privacy manifest", () => {
     expectBlocker(
-      replacing("OpenLARP/PrivacyInfo.xcprivacy", "NSPrivacyCollectedDataTypeUserID", ""),
-      "Privacy manifest is missing one or more required OpenLARP data categories."
+      replacing(
+        "OpenLARP/PrivacyInfo.xcprivacy",
+        "<key>NSPrivacyCollectedDataTypes</key>\n<array/>",
+        "<key>NSPrivacyCollectedDataTypes</key>\n<array><dict><key>NSPrivacyCollectedDataType</key><string>NSPrivacyCollectedDataTypeUserID</string></dict></array>"
+      ),
+      publicPrivacyBlocker
+    );
+  });
+
+  it("blocks missing internal privacy data categories", () => {
+    expectBlocker(
+      replacing("OpenLARPInternal/PrivacyInfo.xcprivacy", "NSPrivacyCollectedDataTypeUserID", ""),
+      "Internal privacy manifest is missing one or more required service data categories."
+    );
+  });
+
+  it.each([
+    [
+      "Firebase dependency",
+      "    dependencies: []\n    info:",
+      "    dependencies:\n      - package: Firebase\n        product: FirebaseCore\n    info:"
+    ],
+    [
+      "Google Sign-In URL scheme",
+      "    info:\n      properties:\n        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)\n    settings:",
+      "    info:\n      properties:\n        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)\n        CFBundleURLTypes: []\n    settings:"
+    ],
+    [
+      "signing entitlements",
+      "        PRODUCT_MODULE_NAME: OpenLARP\n",
+      "        PRODUCT_MODULE_NAME: OpenLARP\n        CODE_SIGN_ENTITLEMENTS: OpenLARPInternal/OpenLARPInternal.entitlements\n"
+    ],
+    [
+      "RevenueCat source",
+      "          - Models/OpenLARPRevenueCatSubscriptionService.swift\n",
+      ""
+    ],
+    [
+      "Firebase config resource",
+      "          - GoogleService-Info.plist\n",
+      ""
+    ],
+    [
+      "RevenueCat config resource",
+      "          - RevenueCat-Info.plist\n",
+      ""
+    ]
+  ])("blocks a public-target %s escape", (_name, from, to) => {
+    expectBlocker(
+      replacing("project.yml", from, to),
+      publicTargetBoundaryBlocker
+    );
+  });
+
+  it("blocks the internal target copying the public Info.plist as a resource", () => {
+    expectBlocker(
+      replacing("project.yml", "          - Info.plist\n", ""),
+      "project.yml is missing required internal service package or auth wiring."
+    );
+  });
+
+  it.each([
+    ["missing scheme", "  OpenLARP:\n    management:", "  RenamedPublicScheme:\n    management:"],
+    ["unshared scheme", "      shared: true\n    build:", "      shared: false\n    build:"],
+    ["implicit target escape", "      buildImplicitDependencies: false\n      targets:\n        OpenLARP:", "      buildImplicitDependencies: true\n      targets:\n        OpenLARP:"],
+    ["internal target", "      targets:\n        OpenLARP: all\n    run:", "      targets:\n        OpenLARPInternal: all\n    run:"],
+    ["non-archivable action shape", "        OpenLARP: all", "        OpenLARP:\n          - run"],
+    ["Debug run", "    run:\n      config: Debug", "    run:\n      config: Release"],
+    ["Release profile", "    profile:\n      config: Release", "    profile:\n      config: Debug"],
+    ["Release archive", "    archive:\n      config: Release", "    archive:\n      config: Debug"]
+  ])("blocks a weakened public %s", (_name, from, to) => {
+    expectBlocker(replacing("project.yml", from, to), publicSchemeBlocker);
+  });
+
+  it("blocks a generated public scheme that cannot archive", () => {
+    expectBlocker(
+      replacing(
+        "OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme",
+        'buildForArchiving = "YES"',
+        'buildForArchiving = "NO"'
+      ),
+      publicSchemeBlocker
     );
   });
 
@@ -284,16 +503,18 @@ describe("beta release gate", () => {
     ["contract target platform", "  OpenLARPReleaseContractTests:\n    type: bundle.unit-test\n    platform: iOS", "  OpenLARPReleaseContractTests:\n    type: bundle.unit-test\n    platform: macOS"],
     ["contract target source", "    sources:\n      - OpenLARPReleaseContractTests", "    sources:\n      - OpenLARPTests"],
     ["contract target app dependency", "    dependencies:\n      - target: OpenLARP\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "    dependencies:\n      - target: OpenLARPTests\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests"],
+    ["contract target internal-app dependency", "    dependencies:\n      - target: OpenLARP\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "    dependencies:\n      - target: OpenLARPInternal\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests"],
     ["contract target sole dependency", "    dependencies:\n      - target: OpenLARP\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "    dependencies:\n      - target: OpenLARP\n      - target: OpenLARPTests\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests"],
     ["contract target unique bundle ID", "PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app"],
     ["contract target generated plist", "        GENERATE_INFOPLIST_FILE: YES", "        GENERATE_INFOPLIST_FILE: NO"],
     ["Debug scheme test target", "    scheme:\n      testTargets:\n        - OpenLARPTests", "    scheme:\n      testTargets:\n        - OpenLARPReleaseContractTests"],
     ["contract scheme", "  OpenLARPReleaseContract:\n", "  RenamedReleaseContract:\n"],
-    ["shared scheme marker", "      shared: true", "      shared: false"],
-    ["explicit dependency closure", "      buildImplicitDependencies: false", "      buildImplicitDependencies: true"],
+    ["shared scheme marker", "  OpenLARPReleaseContract:\n    management:\n      shared: true", "  OpenLARPReleaseContract:\n    management:\n      shared: false"],
+    ["explicit dependency closure", "  OpenLARPReleaseContract:\n    management:\n      shared: true\n    build:\n      buildImplicitDependencies: false", "  OpenLARPReleaseContract:\n    management:\n      shared: true\n    build:\n      buildImplicitDependencies: true"],
     ["app build-for-test entry", "        OpenLARP:\n          - test", "        OpenLARP:\n          - all"],
+    ["internal app build-for-test escape", "        OpenLARP:\n          - test", "        OpenLARPInternal:\n          - test"],
     ["contract build entry", "        OpenLARPReleaseContractTests:\n          - test", "        OpenLARPReleaseContractTests:\n          - run"],
-    ["Release test configuration", "      config: Release", "      config: Debug"],
+    ["Release test configuration", "    test:\n      config: Release", "    test:\n      config: Debug"],
     ["contract test target", "      targets:\n        - OpenLARPReleaseContractTests", "      targets:\n        - OpenLARPTests"]
   ])("blocks a missing or weakened %s", (_name, from, to) => {
     expectBlocker(replacing("project.yml", from, to), projectContractBlocker);
@@ -369,6 +590,7 @@ describe("beta release gate", () => {
     ["conditional Debug tests", "      - name: Run Debug simulator tests\n", "      - name: Run Debug simulator tests\n        if: success()\n"],
     ["continue-on-error Debug tests", "      - name: Run Debug simulator tests\n", "      - name: Run Debug simulator tests\n        continue-on-error: true\n"],
     ["missing Debug configuration", "-configuration Debug", ""],
+    ["public scheme used for internal Debug tests", "-scheme OpenLARPInternal -configuration Debug", "-scheme OpenLARP -configuration Debug"],
     ["missing selected simulator in Debug tests", "-configuration Debug -destination \"id=${{ steps.simulator.outputs.device_id }}\"", "-configuration Debug"],
     ["Debug result bundle", "-resultBundlePath \"$DEBUG_RESULT_BUNDLE\"", ""],
     ["Debug xcresult summary", "xcrun xcresulttool get test-results summary --path \"$DEBUG_RESULT_BUNDLE\"", "echo"],

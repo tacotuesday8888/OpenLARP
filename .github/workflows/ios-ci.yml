@@ -124,7 +124,7 @@ jobs:
           DEBUG_RESULT_BUNDLE="${RUNNER_TEMP}/OpenLARPDebug-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult"
           xcodebuild \
             -project OpenLARP.xcodeproj \
-            -scheme OpenLARP \
+            -scheme OpenLARPInternal \
             -configuration Debug \
             -destination "id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath /tmp/OpenLARPDerivedDataTests \

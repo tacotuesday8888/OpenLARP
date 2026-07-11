@@ -27,6 +27,52 @@ targets:
         excludes:
           - GoogleService-Info.plist
           - RevenueCat-Info.plist
+          - Models/OpenLARPRevenueCatSubscriptionService.swift
+    dependencies: []
+    info:
+      path: OpenLARP/Info.plist
+      properties:
+        CFBundleDevelopmentRegion: $(DEVELOPMENT_LANGUAGE)
+        CFBundleDisplayName: OpenLARP
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities:
+          - arm64
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app
+        PRODUCT_NAME: OpenLARP
+        PRODUCT_MODULE_NAME: OpenLARP
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Debug:
+          OPENLARP_RELEASE_CHANNEL: app-store
+        Release:
+          OPENLARP_RELEASE_CHANNEL: app-store
+  OpenLARPInternal:
+    type: application
+    platform: iOS
+    sources:
+      - path: OpenLARP
+        excludes:
+          - GoogleService-Info.plist
+          - RevenueCat-Info.plist
+          - PrivacyInfo.xcprivacy
+          - Info.plist
+      - path: OpenLARPInternal
     dependencies:
       - package: Firebase
         product: FirebaseCore
@@ -83,10 +129,10 @@ targets:
       testTargets:
         - OpenLARPTests
     info:
-      path: OpenLARP/Info.plist
+      path: OpenLARPInternal/Info.plist
       properties:
         CFBundleDevelopmentRegion: $(DEVELOPMENT_LANGUAGE)
-        CFBundleDisplayName: OpenLARP
+        CFBundleDisplayName: OpenLARP Internal
         CFBundleExecutable: $(EXECUTABLE_NAME)
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleInfoDictionaryVersion: "6.0"
@@ -110,23 +156,26 @@ targets:
           - arm64
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app
-        CODE_SIGN_ENTITLEMENTS: OpenLARP/OpenLARP.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app.internal
+        PRODUCT_NAME: OpenLARPInternal
+        PRODUCT_MODULE_NAME: OpenLARP
+        CODE_SIGN_ENTITLEMENTS: OpenLARPInternal/OpenLARPInternal.entitlements
         GOOGLE_REVERSED_CLIENT_ID: "com.googleusercontent.apps.795318771575-cqqtek2m323brvdfi62tvbmbv2oel6fq"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) OPENLARP_INTERNAL_SERVICES"
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
         Debug:
           OPENLARP_RELEASE_CHANNEL: internal-beta
         Release:
-          OPENLARP_RELEASE_CHANNEL: app-store
+          OPENLARP_RELEASE_CHANNEL: internal-beta
   OpenLARPTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - OpenLARPTests
     dependencies:
-      - target: OpenLARP
+      - target: OpenLARPInternal
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.tests
@@ -143,6 +192,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests
         GENERATE_INFOPLIST_FILE: YES
 schemes:
+  OpenLARP:
+    management:
+      shared: true
+    build:
+      buildImplicitDependencies: false
+      targets:
+        OpenLARP: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    archive:
+      config: Release
   OpenLARPReleaseContract:
     management:
       shared: true
