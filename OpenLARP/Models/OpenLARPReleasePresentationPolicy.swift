@@ -125,4 +125,40 @@ enum ProfilePrivacyPresentation: String, Equatable, Sendable {
     ) -> ProfilePrivacyPresentation {
         configuration.isEnabled(.cloudSync) ? .cloudControls : .localOnlyNotice
     }
+
+    var visibleControls: [ProfilePrivacyControl] {
+        switch self {
+        case .localOnlyNotice:
+            []
+        case .cloudControls:
+            [.longTermMemory, .shareableWins, .privateEvidenceCloudSync]
+        }
+    }
+
+    var localOnlyContent: ProfileLocalOnlyPrivacyContent? {
+        switch self {
+        case .localOnlyNotice:
+            .appStoreMVP
+        case .cloudControls:
+            nil
+        }
+    }
+}
+
+enum ProfilePrivacyControl: String, Equatable, Identifiable, Sendable {
+    case longTermMemory
+    case shareableWins
+    case privateEvidenceCloudSync
+
+    var id: String { rawValue }
+}
+
+struct ProfileLocalOnlyPrivacyContent: Equatable, Sendable {
+    let dataHandlingStatement: String
+    let deviceBackupStatement: String
+
+    static let appStoreMVP = ProfileLocalOnlyPrivacyContent(
+        dataHandlingStatement: "OpenLARP does not upload or sync career data in this release.",
+        deviceBackupStatement: "iOS device backups may include app data according to your device backup settings."
+    )
 }

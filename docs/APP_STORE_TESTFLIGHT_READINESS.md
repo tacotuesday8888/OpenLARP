@@ -15,9 +15,9 @@ This is a working launch packet for the free, local-first App Store build. It is
 
 - Release builds resolve to the fail-safe `app-store` profile and explicit local-only service mode.
 - The public profile is free and non-expiring.
-- Career goals, progress, proof text, links, and private proof attachments stay on the device in this release.
+- OpenLARP does not upload or sync career goals, progress, proof text, links, or private proof attachments in this release. iOS device backups may include app data according to the user's device backup settings.
 - Public navigation contains Today, Map, Progress, and Profile.
-- No sign-in, cloud backup, cross-device sync, subscription, purchase, or Agent surface is present.
+- No sign-in, OpenLARP cloud backup, cross-device sync, subscription, purchase, or Agent surface is present.
 - Ignored Firebase and RevenueCat configuration plists are copied only into the separate `internal-beta` build and are absent from the App Store Release bundle.
 - Debug builds retain the separate `internal-beta` profile for service-enabled development and verification.
 
@@ -67,7 +67,7 @@ Features in this build include:
 
 OpenLARP is designed around honest career progress. It should help you frame real work better, not invent schools, employers, certificates, dates, titles, projects, or ownership claims.
 
-No account or purchase is required. Account, cloud sync, subscriptions, and Agent are not included in this App Store build. Career context and proof remain on the device unless the user explicitly shares an exported item through iOS.
+No account or purchase is required. Account, cloud sync, subscriptions, and Agent are not included in this App Store build. OpenLARP does not upload or sync career data in this release. iOS device backups may include app data according to the user's device backup settings. Exported items leave the app only when the user explicitly shares them through iOS.
 
 ## Keywords Draft
 
@@ -91,7 +91,7 @@ Please report:
 - problems returning to Today, Map, Progress, or Profile
 - places where the app seems to encourage exaggeration instead of honest proof
 
-No account or purchase is needed for this test. Account, cloud sync, subscriptions, and Agent are not included. Progress is stored locally, so deleting the app can remove on-device data.
+No account or purchase is needed for this test. Account, cloud sync, subscriptions, and Agent are not included. OpenLARP does not upload or sync career data in this release. iOS device backups may include app data according to the user's device backup settings, and deleting the app can remove local data.
 
 ## App Review Notes Draft
 
@@ -107,7 +107,7 @@ Suggested review path:
 4. Add text or link proof, or attach a non-sensitive test image.
 5. Run the local proof check and review the resulting progress.
 
-The app does not auto-apply to jobs, send messages, publish content, or take external actions. Career context and proof remain on the device unless the reviewer explicitly uses an iOS share action.
+The app does not auto-apply to jobs, send messages, publish content, or take external actions. OpenLARP does not upload or sync career data in this release. iOS device backups may include app data according to the reviewer's device backup settings. Exported items leave the app only when the reviewer explicitly uses an iOS share action.
 
 ## Privacy Policy Checklist
 
@@ -120,6 +120,7 @@ Before submission, confirm and document:
 - users should avoid adding secrets or unnecessary personal information to proof
 - no account identifier, email address, cloud-sync record, or purchase is required by the public build
 - no career context or proof is sent to a remote workflow by the public build
+- iOS device backups may include app data according to the user's device backup settings; the app does not provide its own cloud backup or cross-device sync in this release
 - exported or shared items leave the app only after an explicit iOS share action
 - local-data deletion and app-uninstall behavior are explained accurately
 - camera/photo-library wording, privacy nutrition labels, and `OpenLARP/PrivacyInfo.xcprivacy` match the final submitted binary

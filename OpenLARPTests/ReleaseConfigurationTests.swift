@@ -116,6 +116,17 @@ final class ReleaseConfigurationTests: XCTestCase {
             ProfilePrivacyPresentation.mode(for: .appStoreMVP),
             .localOnlyNotice
         )
+
+        let privacyPresentation = ProfilePrivacyPresentation.mode(for: .appStoreMVP)
+        XCTAssertEqual(privacyPresentation.visibleControls, [])
+        XCTAssertEqual(
+            privacyPresentation.localOnlyContent?.dataHandlingStatement,
+            "OpenLARP does not upload or sync career data in this release."
+        )
+        XCTAssertEqual(
+            privacyPresentation.localOnlyContent?.deviceBackupStatement,
+            "iOS device backups may include app data according to your device backup settings."
+        )
     }
 
     func testInternalBetaPresentationPolicyRetainsInfrastructureContentInOrder() {
@@ -159,5 +170,12 @@ final class ReleaseConfigurationTests: XCTestCase {
             ProfilePrivacyPresentation.mode(for: .internalBeta),
             .cloudControls
         )
+
+        let privacyPresentation = ProfilePrivacyPresentation.mode(for: .internalBeta)
+        XCTAssertEqual(
+            privacyPresentation.visibleControls,
+            [.longTermMemory, .shareableWins, .privateEvidenceCloudSync]
+        )
+        XCTAssertNil(privacyPresentation.localOnlyContent)
     }
 }

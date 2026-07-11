@@ -951,57 +951,80 @@ struct ProfileView: View {
     private var privacyCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 14) {
-                SectionHeader(feature: .privacy, eyebrow: "Private by default", title: "Memory and sharing")
+                let presentation = ProfilePrivacyPresentation.mode(
+                    for: store.releaseConfiguration
+                )
 
-                if store.state.userProfile == nil {
-                    Text("Set a goal first to create local privacy controls for memory and sharing.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    PrivacyToggleRow(
-                        title: "Long-term memory",
-                        detail: "Keep local context on this device.",
-                        isOn: memoryBinding
-                    )
-                    PrivacyToggleRow(
-                        title: "Shareable wins",
-                        detail: "Allow proof wins to be shared later.",
-                        isOn: shareWinsBinding
-                    )
-                    switch ProfilePrivacyPresentation.mode(
-                        for: store.releaseConfiguration
-                    ) {
-                    case .cloudControls:
-                        PrivacyToggleRow(
-                            title: "Private evidence cloud sync",
-                            detail: "Allow future proof, files, links, and private notes in account backup.",
-                            isOn: privateEvidenceCloudSyncBinding
-                        )
-                        .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
+                switch presentation {
+                case .localOnlyNotice:
+                    SectionHeader(feature: .privacy, eyebrow: "Local privacy", title: "Your data in this release")
 
-                        Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
+                    if let content = presentation.localOnlyContent {
+                        Label(content.dataHandlingStatement, systemImage: "iphone.and.arrow.forward")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(content.deviceBackupStatement)
                             .font(.caption)
                             .foregroundStyle(Color.openLARPSoftInk)
                             .fixedSize(horizontal: false, vertical: true)
-                    case .localOnlyNotice:
-                        Label("Career context and proof stay on this device in this release.", systemImage: "iphone.and.arrow.forward")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.openLARPSoftInk)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
-
-                    Text(memoryEnabled
-                        ? "Local career context is available on this device."
-                        : "Local career context is off.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                        .fixedSize(horizontal: false, vertical: true)
 
                     Label("External actions always require approval.", systemImage: "hand.raised.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.openLARPCoral)
                         .fixedSize(horizontal: false, vertical: true)
+                case .cloudControls:
+                    SectionHeader(feature: .privacy, eyebrow: "Private by default", title: "Memory and sharing")
+
+                    if store.state.userProfile == nil {
+                        Text("Set a goal first to create local privacy controls for memory and sharing.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        ForEach(presentation.visibleControls) { control in
+                            switch control {
+                            case .longTermMemory:
+                                PrivacyToggleRow(
+                                    title: "Long-term memory",
+                                    detail: "Keep local context on this device.",
+                                    isOn: memoryBinding
+                                )
+                            case .shareableWins:
+                                PrivacyToggleRow(
+                                    title: "Shareable wins",
+                                    detail: "Allow proof wins to be shared later.",
+                                    isOn: shareWinsBinding
+                                )
+                            case .privateEvidenceCloudSync:
+                                PrivacyToggleRow(
+                                    title: "Private evidence cloud sync",
+                                    detail: "Allow future proof, files, links, and private notes in account backup.",
+                                    isOn: privateEvidenceCloudSyncBinding
+                                )
+                                .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
+                            }
+                        }
+
+                        Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
+                            .font(.caption)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(memoryEnabled
+                            ? "Local career context is available on this device."
+                            : "Local career context is off.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Label("External actions always require approval.", systemImage: "hand.raised.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.openLARPCoral)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
