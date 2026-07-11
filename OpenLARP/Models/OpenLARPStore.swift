@@ -4,8 +4,9 @@ import Observation
 @MainActor
 @Observable
 final class OpenLARPStore {
-    private let persistence: OpenLARPPersistence
-    private let attachmentStore: OpenLARPAttachmentStore
+    private var persistence: OpenLARPPersistence
+    private var attachmentStore: OpenLARPAttachmentStore
+    private let localDataStore: OpenLARPLocalDataStore?
     private let proofImageProcessor: OpenLARPProofImageProcessor
     private let aiWorkflowService: any V0AIWorkflowServicing
     private let agentService: CareerAgentBriefServicing
@@ -22,6 +23,10 @@ final class OpenLARPStore {
     private let calendar: Calendar
     private let backendEventRetryDelay: TimeInterval
     private let staleBackendEventInFlightAge: TimeInterval
+    private var activeLocalOwnerKey = "legacy"
+    private var activeLocalBackendOwnerUserID: String?
+    private var localOwnerRevision = 0
+    private var isLocalDataAccessBlocked = false
 
     var state: OpenLARPState
     var pendingProof: ProofSubmission?
@@ -51,6 +56,11 @@ final class OpenLARPStore {
     private var activePrivateEvidenceBackupCleanupResult: PrivateEvidenceBackupCleanupResult?
     private var activeAccountDeletionResult: AccountDeletionResult?
 
+    private struct LocalOwnerOperationContext: Equatable {
+        let ownerKey: String
+        let revision: Int
+    }
+
     var isAccountDataOperationInFlight: Bool {
         isUpdatingPrivateEvidenceCloudSyncConsent ||
             isCheckingPrivateEvidenceBackups ||
@@ -69,6 +79,7 @@ final class OpenLARPStore {
     init(
         persistence: OpenLARPPersistence = .live,
         attachmentStore: OpenLARPAttachmentStore = .live,
+        localDataStore: OpenLARPLocalDataStore? = nil,
         proofImageProcessor: OpenLARPProofImageProcessor = OpenLARPProofImageProcessor(),
         aiWorkflowService: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService(),
         agentService: CareerAgentBriefServicing = MockCareerAgentService(),
@@ -86,8 +97,29 @@ final class OpenLARPStore {
         backendEventRetryDelay: TimeInterval = 300,
         staleBackendEventInFlightAge: TimeInterval = 900
     ) {
-        self.persistence = persistence
-        self.attachmentStore = attachmentStore
+        self.localDataStore = localDataStore
+        var resolvedPersistence = persistence
+        var resolvedAttachmentStore = attachmentStore
+        var resolvedOwnerKey = "legacy"
+        var resolvedBackendOwnerUserID: String?
+        var localDataStartupError: String?
+        if let localDataStore {
+            do {
+                _ = try localDataStore.migrateLegacyDataIfNeeded()
+                let context = try localDataStore.context(for: .guest)
+                resolvedPersistence = context.persistence
+                resolvedAttachmentStore = context.attachmentStore
+                resolvedOwnerKey = context.metadata.persistenceKey
+                resolvedBackendOwnerUserID = context.metadata.backendOwnerUserID
+            } catch {
+                localDataStartupError = "Protected local progress could not be opened. Existing data was preserved."
+            }
+        }
+        self.persistence = resolvedPersistence
+        self.attachmentStore = resolvedAttachmentStore
+        self.activeLocalOwnerKey = resolvedOwnerKey
+        self.activeLocalBackendOwnerUserID = resolvedBackendOwnerUserID
+        self.isLocalDataAccessBlocked = localDataStartupError != nil
         self.proofImageProcessor = proofImageProcessor
         self.releaseConfiguration = releaseConfiguration
         if releaseConfiguration.serviceMode == .localOnly {
@@ -119,27 +151,32 @@ final class OpenLARPStore {
         self.backendEventRetryDelay = backendEventRetryDelay
         self.staleBackendEventInFlightAge = staleBackendEventInFlightAge
         var shouldReconcileAttachments = false
-        do {
-            let loadedState = try persistence.load()
-            shouldReconcileAttachments = true
-            let refreshedState = OpenLARPEngine.refreshDailyAvailability(
-                in: loadedState,
-                now: now(),
-                calendar: calendar
-            )
-            state = refreshedState
-            recordNextDayReturnIfNeeded(previousState: loadedState, refreshedState: refreshedState, at: now())
-            if state != loadedState {
-                do {
-                    try persistence.save(state)
-                } catch {
-                    errorMessage = "Local progress could not be saved."
-                }
-            }
-        } catch {
+        if localDataStartupError != nil {
             state = .empty
-            errorMessage = "Local progress could not be loaded. A fresh state was started."
+        } else {
+            do {
+                let loadedState = try resolvedPersistence.load()
+                shouldReconcileAttachments = true
+                let refreshedState = OpenLARPEngine.refreshDailyAvailability(
+                    in: loadedState,
+                    now: now(),
+                    calendar: calendar
+                )
+                state = refreshedState
+                recordNextDayReturnIfNeeded(previousState: loadedState, refreshedState: refreshedState, at: now())
+                if state != loadedState {
+                    do {
+                        try resolvedPersistence.save(state)
+                    } catch {
+                        errorMessage = "Local progress could not be saved."
+                    }
+                }
+            } catch {
+                state = .empty
+                errorMessage = "Local progress could not be loaded. Existing data was preserved."
+            }
         }
+        if let localDataStartupError { errorMessage = localDataStartupError }
         restorePersistedProofDraft(reconcileOrphans: shouldReconcileAttachments)
     }
 
@@ -163,6 +200,7 @@ final class OpenLARPStore {
         let previousAccountDeletionResult = state.accountDeletionResult
         var completedAIWorkflowRuns: [V0AIWorkflowRun] = []
         let requestedAt = now()
+        let ownerContext = captureLocalOwnerOperationContext()
         isGoalSetupRunning = true
         defer { isGoalSetupRunning = false }
         guard discardProofDraft() else { return }
@@ -170,6 +208,7 @@ final class OpenLARPStore {
             let diagnosticResponse = try await aiWorkflowService.generateDiagnostic(
                 V0DiagnosticRequest(goal: goal, requestedAt: requestedAt)
             )
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             completedAIWorkflowRuns.append(diagnosticResponse.run)
             let planResponse = try await aiWorkflowService.generateQuestPlan(
                 V0QuestPlanRequest(
@@ -178,6 +217,7 @@ final class OpenLARPStore {
                     requestedAt: requestedAt
                 )
             )
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             completedAIWorkflowRuns.append(planResponse.run)
             guard let plan = OpenLARPEngine.validatedInitialPlan(planResponse.quests) else {
                 throw OpenLARPError.invalidQuestPlan
@@ -190,6 +230,7 @@ final class OpenLARPStore {
             )
             errorMessage = nil
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             state = OpenLARPEngine.confirmGoal(goal, now: requestedAt)
             errorMessage = "OpenLARP built a local plan on this device because the agent service was unavailable."
         }
@@ -417,6 +458,7 @@ final class OpenLARPStore {
             throw OpenLARPProofDraftError.attachmentLimitReached
         }
 
+        let ownerContext = captureLocalOwnerOperationContext()
         let processor = proofImageProcessor
         let processed = try await Task.detached(priority: .userInitiated) {
             try processor.process(
@@ -424,6 +466,9 @@ final class OpenLARPStore {
                 declaredContentType: declaredContentType
             )
         }.value
+        guard isCurrentLocalOwnerOperation(ownerContext) else {
+            throw OpenLARPProofDraftError.staleDraft
+        }
 
         var currentDraft = try activeProofDraft(id: draftID)
         guard currentDraft.kind == .proof else {
@@ -503,6 +548,7 @@ final class OpenLARPStore {
     func checkPendingProof(draftID: UUID) async {
         guard requireSubscriptionAccess(for: .submitProof) else { return }
         guard !isProofChecking else { return }
+        let ownerContext = captureLocalOwnerOperationContext()
         do {
             var proof = try activeProofDraft(id: draftID)
             guard !proof.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -523,6 +569,7 @@ final class OpenLARPStore {
                     requestedAt: requestedAt
                 )
             )
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
 
             // Keep the privacy-safe workflow audit even when the user has moved on,
             // but never publish a result against a changed or abandoned draft.
@@ -573,6 +620,9 @@ final class OpenLARPStore {
                 throw OpenLARPProofDraftError.persistenceFailed
             }
         } catch {
+            // A response from an owner that is no longer active must remain silent.
+            // Its persisted draft stays in that owner's container for later recovery.
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -725,6 +775,7 @@ final class OpenLARPStore {
 
         isUpdatingPrivateEvidenceCloudSyncConsent = true
         defer { isUpdatingPrivateEvidenceCloudSyncConsent = false }
+        let ownerContext = captureLocalOwnerOperationContext()
 
         do {
             let request = PrivateEvidenceCloudSyncConsentRequest(
@@ -733,6 +784,7 @@ final class OpenLARPStore {
                 requestedAt: now()
             )
             let result = try await privateEvidenceCloudSyncConsentService.setConsent(request)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             guard result.status == (isEnabled ? .accepted : .revoked),
                   result.allowsPrivateEvidenceCloudSync == isEnabled,
                   result.externalActionTaken == false
@@ -752,6 +804,7 @@ final class OpenLARPStore {
             applyPrivateEvidenceCloudSyncConsent(isEnabled)
             errorMessage = nil
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             errorMessage = isEnabled
                 ? "Private evidence cloud sync could not be enabled."
                 : "Private evidence cloud sync could not be turned off."
@@ -804,9 +857,11 @@ final class OpenLARPStore {
 
         isCheckingPrivateEvidenceBackups = true
         defer { isCheckingPrivateEvidenceBackups = false }
+        let ownerContext = captureLocalOwnerOperationContext()
 
         do {
             let result = try await privateEvidenceBackupCleanupService.cleanUpBackups(request)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             guard currentBackendSession().ownerUserID == session.ownerUserID else {
                 throw FirebaseBackendServiceError.contractMismatch(
                     "The signed-in account changed before backup cleanup reporting finished."
@@ -818,6 +873,7 @@ final class OpenLARPStore {
             errorMessage = nil
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             errorMessage = "Synced private proof backups could not be checked."
         }
     }
@@ -865,9 +921,11 @@ final class OpenLARPStore {
 
         isDeletingPrivateEvidenceBackups = true
         defer { isDeletingPrivateEvidenceBackups = false }
+        let ownerContext = captureLocalOwnerOperationContext()
 
         do {
             let result = try await privateEvidenceBackupCleanupService.cleanUpBackups(request)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             guard currentBackendSession().ownerUserID == session.ownerUserID else {
                 throw FirebaseBackendServiceError.contractMismatch(
                     "The signed-in account changed before backup cleanup deletion finished."
@@ -890,6 +948,7 @@ final class OpenLARPStore {
                 : nil
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             errorMessage = "Synced private proof backups could not be deleted."
         }
     }
@@ -912,6 +971,7 @@ final class OpenLARPStore {
             errorMessage = "Type \(AccountDeletionRequest.confirmationText) exactly before deleting the cloud account."
             return
         }
+        let ownerContext = captureLocalOwnerOperationContext()
 
         isDeletingAccount = true
         defer { isDeletingAccount = false }
@@ -920,6 +980,7 @@ final class OpenLARPStore {
             presenting: anchor,
             for: state
         )
+        guard isCurrentLocalOwnerOperation(ownerContext) else { return }
         authenticationResult = preparationResult
         guard preparationResult.status == .authenticated else {
             switch preparationResult.status {
@@ -966,6 +1027,7 @@ final class OpenLARPStore {
 
         do {
             let result = try await accountDeletionService.deleteAccount(request)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             guard currentBackendSession().ownerUserID == session.ownerUserID else {
                 throw FirebaseBackendServiceError.contractMismatch(
                     "The signed-in account changed before cloud account deletion finished."
@@ -977,24 +1039,28 @@ final class OpenLARPStore {
                 result.status == .deleted ? .accountDeletionCompleted : .accountDeletionPartial,
                 occurredAt: result.completedAt
             )
+            save()
 
             if result.status == .deleted || result.firebaseAuthUser.status == .deleted || result.firebaseAuthUser.status == .alreadyMissing {
                 let signOutResult = await authenticationService.signOut(for: state)
                 if signOutResult.status == .signedOut {
-                    applyAuthenticationResult(signOutResult, shouldSurfaceMessage: false)
+                    await applyAuthenticationResult(signOutResult, shouldSurfaceMessage: false)
                     await resetSubscriptionIdentityAfterSignOut()
                 } else {
                     clearAuthenticatedAccount()
                     clearCareerGraphSyncPreview()
                     await resetSubscriptionIdentityAfterSignOut()
                 }
-                activeAccountDeletionResult = result
-                state.accountDeletionResult = sanitizedAccountDeletionResult(result)
+                if localDataStore == nil {
+                    activeAccountDeletionResult = result
+                    state.accountDeletionResult = sanitizedAccountDeletionResult(result)
+                }
             }
 
             errorMessage = result.status == .deleted ? nil : partialAccountDeletionMessage(for: result)
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             errorMessage = unknownAccountDeletionMessage()
             save()
         }
@@ -1007,7 +1073,7 @@ final class OpenLARPStore {
         defer { isRestoringAuthenticationSession = false }
 
         let result = await authenticationService.restorePreviousSession(for: state)
-        applyAuthenticationResult(result, shouldSurfaceMessage: false)
+        await applyAuthenticationResult(result, shouldSurfaceMessage: false)
         if result.status == .authenticated {
             await synchronizeSubscriptionIdentity(for: result.session)
         } else if result.status == .signedOut && shouldResetSubscriptionIdentityAfterSignedOutRestore {
@@ -1025,7 +1091,7 @@ final class OpenLARPStore {
         defer { isSigningInWithGoogle = false }
 
         let result = await authenticationService.signInWithGoogle(presenting: anchor, for: state)
-        applyAuthenticationResult(result, shouldSurfaceMessage: true)
+        await applyAuthenticationResult(result, shouldSurfaceMessage: true)
         if result.status == .authenticated {
             await synchronizeSubscriptionIdentity(for: result.session)
             await syncBackendEvents()
@@ -1042,7 +1108,7 @@ final class OpenLARPStore {
         defer { isSigningInWithApple = false }
 
         let result = await authenticationService.signInWithApple(presenting: anchor, for: state)
-        applyAuthenticationResult(result, shouldSurfaceMessage: true)
+        await applyAuthenticationResult(result, shouldSurfaceMessage: true)
         if result.status == .authenticated {
             await synchronizeSubscriptionIdentity(for: result.session)
             await syncBackendEvents()
@@ -1059,7 +1125,7 @@ final class OpenLARPStore {
         defer { isSigningOutOfAccount = false }
 
         let result = await authenticationService.signOut(for: state)
-        applyAuthenticationResult(result, shouldSurfaceMessage: true)
+        await applyAuthenticationResult(result, shouldSurfaceMessage: true)
         if result.status == .signedOut {
             await resetSubscriptionIdentityAfterSignOut()
         }
@@ -1238,6 +1304,7 @@ final class OpenLARPStore {
         let includePrivateEvidence = explicitIncludePrivateEvidence
             ?? (state.userProfile?.privacy.allowsPrivateEvidenceCloudSync ?? false)
         let previewGeneration = careerGraphSyncPreviewGeneration
+        let ownerContext = captureLocalOwnerOperationContext()
         let request = CareerGraphSyncPreparationRequest(
             state: state,
             session: session,
@@ -1250,6 +1317,7 @@ final class OpenLARPStore {
 
         do {
             let result = try await careerGraphSyncService.prepareSync(request)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             guard previewGeneration == careerGraphSyncPreviewGeneration else { return }
             careerGraphSyncPreview = CareerGraphSyncPreview(request: request, result: result)
             recordBackendEvent(
@@ -1268,6 +1336,7 @@ final class OpenLARPStore {
             errorMessage = nil
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             guard previewGeneration == careerGraphSyncPreviewGeneration else { return }
             clearCareerGraphSyncPreview()
             errorMessage = "The local career graph preview could not be prepared."
@@ -1290,6 +1359,7 @@ final class OpenLARPStore {
         let session = currentBackendSession()
         guard session.auth.status != .needsAuthentication else { return }
         guard !shouldHoldBackendEventsPendingForRemoteSetup(session) else { return }
+        let ownerContext = captureLocalOwnerOperationContext()
 
         let eventIDs = Set(events.map(\.id))
         let previousBackendEvents = state.backendEvents
@@ -1316,10 +1386,12 @@ final class OpenLARPStore {
 
         do {
             let result = try await backendEventSyncService.syncEvents(request)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             state.applyBackendEventSyncResult(result)
             errorMessage = nil
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             state.markBackendEventsFailed(ids: eventIDs, at: requestedAt)
             errorMessage = "Backend event sync could not finish. OpenLARP will retry later."
             save()
@@ -1356,6 +1428,7 @@ final class OpenLARPStore {
         guard !isRestoringPurchases else { return }
         guard !isPurchasingSubscriptionPackage else { return }
         let requestedAt = now()
+        let ownerContext = captureLocalOwnerOperationContext()
 
         isLoadingSubscriptionOffering = true
         defer { isLoadingSubscriptionOffering = false }
@@ -1363,6 +1436,7 @@ final class OpenLARPStore {
         do {
             state.subscriptionState.configuration = subscriptionService.subscriptionConfiguration
             let offering = try await subscriptionService.currentOffering()
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             let hasPurchaseOption = offering?.preferredPurchasePackage(
                 for: state.subscriptionState.configuration
             ) != nil
@@ -1378,6 +1452,7 @@ final class OpenLARPStore {
                 : "Configured subscription options are not available yet."
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             currentSubscriptionOffering = nil
             recordBetaEvent(.subscriptionOfferingUnavailable, occurredAt: requestedAt)
             errorMessage = "Subscription options could not be loaded."
@@ -1391,19 +1466,23 @@ final class OpenLARPStore {
         guard !isRestoringPurchases else { return }
         guard !isPurchasingSubscriptionPackage else { return }
         let requestedAt = now()
+        let ownerContext = captureLocalOwnerOperationContext()
 
         isRefreshingSubscriptionStatus = true
         defer { isRefreshingSubscriptionStatus = false }
 
         do {
-            state.subscriptionState = try await subscriptionService.refreshSubscriptionState(
+            let refreshedState = try await subscriptionService.refreshSubscriptionState(
                 currentState: state.subscriptionState,
                 at: requestedAt
             )
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
+            state.subscriptionState = refreshedState
             recordBetaEvent(.subscriptionStatusChecked, occurredAt: requestedAt)
             errorMessage = nil
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             recordBetaEvent(.subscriptionStatusChecked, occurredAt: requestedAt)
             errorMessage = "Subscription status could not be refreshed."
             save()
@@ -1416,6 +1495,7 @@ final class OpenLARPStore {
         guard !isRefreshingSubscriptionStatus else { return }
         guard !isPurchasingSubscriptionPackage else { return }
         let requestedAt = now()
+        let ownerContext = captureLocalOwnerOperationContext()
         state.subscriptionState = state.subscriptionState.restoreRequested(at: requestedAt)
         recordBetaEvent(.subscriptionRestoreRequested, occurredAt: requestedAt)
         save()
@@ -1424,10 +1504,12 @@ final class OpenLARPStore {
         defer { isRestoringPurchases = false }
 
         do {
-            state.subscriptionState = try await subscriptionService.restorePurchases(
+            let restoredState = try await subscriptionService.restorePurchases(
                 currentState: state.subscriptionState,
                 at: requestedAt
             )
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
+            state.subscriptionState = restoredState
             let status = state.subscriptionState.restoreState.status
             recordBetaEvent(
                 status == .restored ? .subscriptionRestoreCompleted : .subscriptionRestoreFailed,
@@ -1436,6 +1518,7 @@ final class OpenLARPStore {
             errorMessage = nil
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             let failedAt = now()
             state.subscriptionState = state.subscriptionState.restoreFailed(at: failedAt)
             recordBetaEvent(.subscriptionRestoreFailed, occurredAt: failedAt)
@@ -1450,6 +1533,7 @@ final class OpenLARPStore {
         guard !isRefreshingSubscriptionStatus else { return }
         guard !isRestoringPurchases else { return }
         let requestedAt = now()
+        let ownerContext = captureLocalOwnerOperationContext()
 
         isPurchasingSubscriptionPackage = true
         recordBetaEvent(.subscriptionPurchaseStarted, occurredAt: requestedAt)
@@ -1464,6 +1548,7 @@ final class OpenLARPStore {
                 currentState: state.subscriptionState,
                 at: requestedAt
             )
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             state.subscriptionState = result.subscriptionState
 
             switch result.outcome {
@@ -1482,6 +1567,7 @@ final class OpenLARPStore {
             }
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             recordBetaEvent(.subscriptionPurchaseFailed, occurredAt: now())
             errorMessage = "Subscription purchase could not be completed."
             save()
@@ -1491,16 +1577,19 @@ final class OpenLARPStore {
     func runAgentScan() async {
         guard !state.needsGoalSetup else { return }
         guard requireSubscriptionAccess(for: .runAgentScan) else { return }
+        let ownerContext = captureLocalOwnerOperationContext()
         isAgentScanning = true
         defer { isAgentScanning = false }
 
         do {
             let brief = try await agentService.generateBrief(for: state)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             state.agentBrief = brief
             state.updatedAt = now()
             errorMessage = nil
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             errorMessage = "The local agent scan could not finish. Try again from the Agent tab."
         }
     }
@@ -1524,6 +1613,76 @@ final class OpenLARPStore {
 
     func currentBackendSessionSnapshot() -> BackendUserSession {
         currentBackendSession()
+    }
+
+    @discardableResult
+    func retryProtectedLocalDataAccess() -> Bool {
+        guard isLocalDataAccessBlocked, let localDataStore else { return !isLocalDataAccessBlocked }
+        do {
+            let context = try localDataStore.context(for: .guest)
+            let result = try context.persistence.loadWithRecovery()
+            persistence = context.persistence
+            attachmentStore = context.attachmentStore
+            activeLocalOwnerKey = context.metadata.persistenceKey
+            activeLocalBackendOwnerUserID = context.metadata.backendOwnerUserID
+            localOwnerRevision += 1
+            state = result.state
+            isLocalDataAccessBlocked = false
+            errorMessage = nil
+            clearOwnerBoundTransientState()
+            restorePersistedProofDraft(reconcileOrphans: result.source != .recoveredPrevious)
+            return true
+        } catch {
+            errorMessage = "Protected local progress is still unavailable. Existing data remains preserved."
+            return false
+        }
+    }
+
+    func makeLocalDataExportDocument() throws -> OpenLARPLocalDataExportDocument {
+        guard !isLocalDataAccessBlocked else {
+            throw OpenLARPLocalDataError.protectedDataUnavailable
+        }
+        let archive = try OpenLARPLocalDataExporter { [attachmentStore] attachment in
+            try attachmentStore.data(for: attachment)
+        }.makeArchive(from: state, exportedAt: now())
+        return try OpenLARPLocalDataExportDocument(archive: archive)
+    }
+
+    @discardableResult
+    func eraseAllOnDeviceData() async -> Bool {
+        guard let localDataStore else {
+            errorMessage = "All on-device data could not be erased because protected storage is unavailable."
+            return false
+        }
+        guard !isAuthenticationOperationInFlight,
+              !isAccountDataOperationInFlight,
+              !isGoalSetupRunning,
+              !isProofChecking else {
+            errorMessage = "Wait for the current operation to finish before erasing on-device data."
+            return false
+        }
+        do {
+            let context = try localDataStore.eraseAllOnDeviceData()
+            persistence = context.persistence
+            attachmentStore = context.attachmentStore
+            activeLocalOwnerKey = context.metadata.persistenceKey
+            activeLocalBackendOwnerUserID = context.metadata.backendOwnerUserID
+            localOwnerRevision += 1
+            isLocalDataAccessBlocked = false
+            state = .empty
+            clearOwnerBoundTransientState()
+            authenticationResult = nil
+            _ = await authenticationService.signOut(for: state)
+            _ = try? await subscriptionService.resetSubscriberIdentity(
+                currentState: .notStarted(),
+                at: now()
+            )
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = "All on-device data could not be completely erased. OpenLARP will retry cleanup next launch."
+            return false
+        }
     }
 
     private func mutate(_ change: () throws -> OpenLARPState) {
@@ -1588,12 +1747,18 @@ final class OpenLARPStore {
     private func applyAuthenticationResult(
         _ result: OpenLARPAuthenticationResult,
         shouldSurfaceMessage: Bool
-    ) {
-        authenticationResult = result
+    ) async {
         let previousAccountID = state.userProfile?.accountID
 
         switch result.status {
         case .authenticated:
+            guard switchLocalOwner(to: .firebaseAccount(userID: result.session.ownerUserID)) else {
+                if shouldSurfaceMessage {
+                    errorMessage = "This account's protected local data could not be opened. Your current data was not changed."
+                }
+                return
+            }
+            authenticationResult = result
             applyAuthenticatedAccount(result.session)
             let currentAccountID = result.session.accountID ?? result.session.ownerUserID
             if result.operation == .restorePreviousSession && previousAccountID != currentAccountID {
@@ -1605,6 +1770,18 @@ final class OpenLARPStore {
             errorMessage = nil
             save()
         case .signedOut:
+            guard switchLocalOwner(to: .guest) else {
+                if shouldSurfaceMessage {
+                    errorMessage = "Guest data could not be reopened. Your signed-in data was preserved."
+                }
+                return
+            }
+            authenticationResult = result
+            if localDataStore != nil {
+                clearCareerGraphSyncPreview()
+                errorMessage = nil
+                return
+            }
             if result.operation == .signOut || state.userProfile?.accountID != nil || state.userProfile?.email != nil {
                 clearAuthenticatedAccount()
                 if result.operation == .signOut {
@@ -1615,10 +1792,12 @@ final class OpenLARPStore {
                 save()
             }
         case .cancelled:
+            authenticationResult = result
             if shouldSurfaceMessage {
                 errorMessage = nil
             }
         case .configurationMissing, .sdkUnavailable, .providerSetupRequired, .presentationRequired, .failed:
+            authenticationResult = result
             if isInteractiveSignIn(result.operation) {
                 recordBetaEvent(.accountSignInFailed, occurredAt: now())
                 save()
@@ -1632,12 +1811,14 @@ final class OpenLARPStore {
     private func synchronizeSubscriptionIdentity(for session: BackendUserSession) async {
         guard session.isAuthenticated else { return }
         let requestedAt = now()
+        let ownerContext = captureLocalOwnerOperationContext()
         do {
             let syncedState = try await subscriptionService.synchronizeSubscriberIdentity(
                 session: session,
                 currentState: state.subscriptionState,
                 at: requestedAt
             )
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             state.subscriptionState = syncedState
             recordBetaEvent(
                 syncedState.connectionStatus == .failed
@@ -1647,6 +1828,7 @@ final class OpenLARPStore {
             )
             save()
         } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             recordBetaEvent(.subscriptionIdentityCheckFailed, occurredAt: requestedAt)
             save()
         }
@@ -1655,10 +1837,19 @@ final class OpenLARPStore {
     private func resetSubscriptionIdentityAfterSignOut() async {
         currentSubscriptionOffering = nil
         let requestedAt = now()
+        let ownerContext = captureLocalOwnerOperationContext()
+        if localDataStore != nil {
+            _ = try? await subscriptionService.resetSubscriberIdentity(
+                currentState: .notStarted(),
+                at: requestedAt
+            )
+            return
+        }
         let resetState = try? await subscriptionService.resetSubscriberIdentity(
             currentState: state.subscriptionState,
             at: requestedAt
         )
+        guard isCurrentLocalOwnerOperation(ownerContext) else { return }
         guard let resetState else {
             state.subscriptionState.customerInfo = nil
             state.subscriptionState.connectionStatus = .notConfigured
@@ -1822,9 +2013,55 @@ final class OpenLARPStore {
     private func currentBackendSession() -> BackendUserSession {
         guard releaseConfiguration.serviceMode != .localOnly,
               releaseConfiguration.isEnabled(.account) else {
-            return BackendUserSession.localOnly(for: state)
+            return BackendUserSession.localOnly(
+                ownerUserID: activeLocalBackendOwnerUserID ?? BackendUserSession.localOnly(for: state).ownerUserID,
+                for: state
+            )
         }
-        return backendSessionProvider.currentSession(for: state)
+        let session = backendSessionProvider.currentSession(for: state)
+        if let activeLocalBackendOwnerUserID {
+            if !session.isAuthenticated || session.ownerUserID != activeLocalBackendOwnerUserID {
+                return BackendUserSession.localOnly(ownerUserID: activeLocalBackendOwnerUserID, for: state)
+            }
+        }
+        return session
+    }
+
+    @discardableResult
+    private func switchLocalOwner(to owner: OpenLARPLocalOwner) -> Bool {
+        guard let localDataStore else { return true }
+        guard !isLocalDataAccessBlocked else { return false }
+        guard save() else { return false }
+        do {
+            let context = try localDataStore.context(for: owner)
+            let loadResult = try context.persistence.loadWithRecovery()
+            let refreshed = OpenLARPEngine.refreshDailyAvailability(
+                in: loadResult.state,
+                now: now(),
+                calendar: calendar
+            )
+            persistence = context.persistence
+            attachmentStore = context.attachmentStore
+            activeLocalOwnerKey = context.metadata.persistenceKey
+            activeLocalBackendOwnerUserID = context.metadata.backendOwnerUserID
+            localOwnerRevision += 1
+            state = refreshed
+            clearOwnerBoundTransientState()
+            restorePersistedProofDraft(reconcileOrphans: loadResult.source == .primary || loadResult.source == .empty)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func clearOwnerBoundTransientState() {
+        pendingProof = nil
+        pendingQualityResult = nil
+        careerGraphSyncPreview = nil
+        careerGraphSyncPreviewGeneration += 1
+        currentSubscriptionOffering = nil
+        activePrivateEvidenceBackupCleanupResult = nil
+        activeAccountDeletionResult = nil
     }
 
     private func recordNextDayReturnIfNeeded(
@@ -1843,8 +2080,25 @@ final class OpenLARPStore {
         recordBetaEvent(.nextDayReturn, occurredAt: timestamp, day: refreshedState.currentQuest?.day)
     }
 
+    private func captureLocalOwnerOperationContext() -> LocalOwnerOperationContext {
+        LocalOwnerOperationContext(
+            ownerKey: activeLocalOwnerKey,
+            revision: localOwnerRevision
+        )
+    }
+
+    private func isCurrentLocalOwnerOperation(
+        _ context: LocalOwnerOperationContext
+    ) -> Bool {
+        context.ownerKey == activeLocalOwnerKey && context.revision == localOwnerRevision
+    }
+
     @discardableResult
     private func save() -> Bool {
+        guard !isLocalDataAccessBlocked else {
+            errorMessage = "Protected local progress is unavailable. Existing data was not changed."
+            return false
+        }
         do {
             try persistence.save(state)
             return true

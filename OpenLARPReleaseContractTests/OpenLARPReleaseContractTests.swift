@@ -30,6 +30,7 @@ final class OpenLARPReleaseContractTests: XCTestCase {
                 "recentOutcomes",
                 "streak",
                 "privacy",
+                "localData",
                 "badges",
                 "proof",
                 "rules"

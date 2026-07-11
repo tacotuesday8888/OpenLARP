@@ -511,10 +511,17 @@ struct BackendUserSession: Codable, Equatable {
 
     static func localOnly(for state: OpenLARPState) -> BackendUserSession {
         let localID = state.userProfile?.id.uuidString ?? "device"
+        return localOnly(ownerUserID: "local_\(localID)", for: state)
+    }
+
+    static func localOnly(
+        ownerUserID: String,
+        for state: OpenLARPState
+    ) -> BackendUserSession {
         let privacy = state.userProfile?.privacy ?? .localDefault
 
         return BackendUserSession(
-            ownerUserID: "local_\(localID)",
+            ownerUserID: ownerUserID,
             isAuthenticated: false,
             authProvider: .localMock,
             accountID: nil,

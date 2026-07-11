@@ -13,6 +13,9 @@ struct ProfileView: View {
     @State private var showingBackupCleanupConfirmation = false
     @State private var showingAccountDeletionConfirmation = false
     @State private var accountDeletionConfirmationText = ""
+    @State private var exportDocument: OpenLARPLocalDataExportDocument?
+    @State private var showingDataExporter = false
+    @State private var showingEraseAllConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -55,6 +58,29 @@ struct ProfileView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This clears the local diagnostic and questline so you can set a new target.")
+        }
+        .confirmationDialog(
+            "Erase all on-device data?",
+            isPresented: $showingEraseAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Erase All On-Device Data", role: .destructive) {
+                Task { await store.eraseAllOnDeviceData() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes every OpenLARP goal, sprint, proof receipt, proof image, outcome, draft, and setting from this iPhone. It does not remove data from an existing iPhone/iCloud backup or delete cloud data. This can’t be undone.")
+        }
+        .fileExporter(
+            isPresented: $showingDataExporter,
+            document: exportDocument,
+            contentType: .json,
+            defaultFilename: "OpenLARP-Data-Export"
+        ) { result in
+            if case .failure = result {
+                store.errorMessage = "Your OpenLARP data export could not be saved. No partial export was created."
+            }
+            exportDocument = nil
         }
         .confirmationDialog(
             "Delete synced private proof backups?",
@@ -143,6 +169,8 @@ struct ProfileView: View {
             streakCard
         case .privacy:
             privacyCard
+        case .localData:
+            localDataCard
         case .badges:
             badgeCard
         case .proof:
@@ -1026,6 +1054,38 @@ struct ProfileView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            }
+        }
+    }
+
+    private var localDataCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(feature: .privacy, eyebrow: "On this iPhone", title: "Your local data")
+
+                Text("Export the active local profile and its referenced proof images, or permanently erase every OpenLARP profile stored on this iPhone.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    do {
+                        exportDocument = try store.makeLocalDataExportDocument()
+                        showingDataExporter = true
+                    } catch {
+                        store.errorMessage = "Your OpenLARP data export could not be prepared because local data or a referenced proof image could not be read."
+                    }
+                } label: {
+                    Label("Export My Data", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+
+                Button(role: .destructive) {
+                    showingEraseAllConfirmation = true
+                } label: {
+                    Label("Erase All On-Device Data", systemImage: "trash")
+                }
+                .buttonStyle(SecondaryButtonStyle())
             }
         }
     }

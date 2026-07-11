@@ -61,6 +61,26 @@ final class ProofAttachmentStoreLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.url(for: committed).path))
     }
 
+    func testDraftAndCommittedFilesReceiveDifferentBackupPolicies() throws {
+        let store = OpenLARPAttachmentStore(directory: temporaryDirectory())
+        let draftID = UUID(uuidString: "ABABABAB-ABAB-ABAB-ABAB-ABABABABABAB")!
+        let staged = try store.stageImage(
+            ProcessedProofImage(
+                data: Data("backup-policy".utf8),
+                contentType: "image/png",
+                fileExtension: "png"
+            ),
+            draftID: draftID
+        )
+
+        XCTAssertTrue(try isExcludedFromBackup(store.url(for: staged)))
+
+        let promotion = try store.preparePromotion([staged], draftID: draftID)
+        let committed = try XCTUnwrap(promotion.committedAttachments.first)
+
+        XCTAssertFalse(try isExcludedFromBackup(store.url(for: committed)))
+    }
+
     func testRollbackPromotionDeletesCommittedCopyAndKeepsDraft() throws {
         let store = OpenLARPAttachmentStore(directory: temporaryDirectory())
         let draftID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
@@ -341,5 +361,9 @@ final class ProofAttachmentStoreLifecycleTests: XCTestCase {
     private func temporaryDirectory() -> URL {
         URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    }
+
+    private func isExcludedFromBackup(_ url: URL) throws -> Bool {
+        try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup ?? false
     }
 }

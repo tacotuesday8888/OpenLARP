@@ -81,6 +81,7 @@ enum ProfileSection: String, CaseIterable, Identifiable, Sendable {
     case recentOutcomes
     case streak
     case privacy
+    case localData
     case badges
     case proof
     case rules
@@ -108,6 +109,7 @@ enum ProfileSection: String, CaseIterable, Identifiable, Sendable {
             .recentOutcomes,
             .streak,
             .privacy,
+            .localData,
             .badges,
             .proof,
             .rules
@@ -131,7 +133,7 @@ enum ProfilePrivacyPresentation: String, Equatable, Sendable {
         case .localOnlyNotice:
             []
         case .cloudControls:
-            [.longTermMemory, .shareableWins, .privateEvidenceCloudSync]
+            [.privateEvidenceCloudSync]
         }
     }
 
@@ -155,10 +157,16 @@ enum ProfilePrivacyControl: String, Equatable, Identifiable, Sendable {
 
 struct ProfileLocalOnlyPrivacyContent: Equatable, Sendable {
     let dataHandlingStatement: String
-    let deviceBackupStatement: String
+    let committedDataBackupStatement: String
+    let temporaryDataBackupStatement: String
+
+    var deviceBackupStatement: String {
+        "\(committedDataBackupStatement)\n\n\(temporaryDataBackupStatement)"
+    }
 
     static let appStoreMVP = ProfileLocalOnlyPrivacyContent(
         dataHandlingStatement: "OpenLARP does not upload or sync career data in this release.",
-        deviceBackupStatement: "iOS device backups may include app data according to your device backup settings."
+        committedDataBackupStatement: "Committed OpenLARP data follows your iOS device backup settings.",
+        temporaryDataBackupStatement: "Proof drafts and temporary files are marked for exclusion from iOS device backups."
     )
 }

@@ -33,6 +33,7 @@ struct OpenLARPAttachmentPromotion: Equatable {
 
 struct OpenLARPAttachmentStore: CareerGraphProofAttachmentDataProviding, Sendable {
     let directory: URL
+    private let filePolicy: OpenLARPFilePolicy
 
     private var attachmentsDirectory: URL {
         directory.appendingPathComponent("ProofAttachments", isDirectory: true)
@@ -42,8 +43,9 @@ struct OpenLARPAttachmentStore: CareerGraphProofAttachmentDataProviding, Sendabl
         directory.appendingPathComponent("ProofAttachmentDrafts", isDirectory: true)
     }
 
-    init(directory: URL) {
+    init(directory: URL, filePolicy: OpenLARPFilePolicy = OpenLARPFilePolicy()) {
         self.directory = directory
+        self.filePolicy = filePolicy
     }
 
     static var live: OpenLARPAttachmentStore {
@@ -70,8 +72,7 @@ struct OpenLARPAttachmentStore: CareerGraphProofAttachmentDataProviding, Sendabl
             relativePath: attachment.localRelativePath,
             allowedRoots: [.committed]
         )
-        try FileManager.default.createDirectory(at: attachmentsDirectory, withIntermediateDirectories: true)
-        try data.write(to: fileURL, options: [.atomic])
+        try filePolicy.write(data, to: fileURL, role: .committedProof)
         return attachment
     }
 
@@ -98,8 +99,8 @@ struct OpenLARPAttachmentStore: CareerGraphProofAttachmentDataProviding, Sendabl
         )
         let draftDirectory = draftAttachmentsDirectory
             .appendingPathComponent(draftID.uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: draftDirectory, withIntermediateDirectories: true)
-        try image.data.write(to: fileURL, options: [.atomic])
+        try filePolicy.createDirectory(at: draftDirectory, role: .proofDraft)
+        try filePolicy.write(image.data, to: fileURL, role: .proofDraft)
         return attachment
     }
 
@@ -116,6 +117,31 @@ struct OpenLARPAttachmentStore: CareerGraphProofAttachmentDataProviding, Sendabl
             throw OpenLARPAttachmentStoreError.byteCountMismatch
         }
         return data
+    }
+
+    func importAttachment(_ attachment: ProofAttachment, data: Data) throws {
+        guard data.count == attachment.byteCount else {
+            throw OpenLARPAttachmentStoreError.byteCountMismatch
+        }
+        let role: OpenLARPFileRole
+        let roots: Set<AttachmentRoot>
+        if attachment.localRelativePath.hasPrefix("ProofAttachments/") {
+            role = .committedProof
+            roots = [.committed]
+        } else if attachment.localRelativePath.hasPrefix("ProofAttachmentDrafts/") {
+            role = .proofDraft
+            roots = [.draft]
+        } else {
+            throw OpenLARPAttachmentStoreError.unsafeLocalPath
+        }
+        let fileURL = try validatedURL(
+            relativePath: attachment.localRelativePath,
+            allowedRoots: roots
+        )
+        guard !FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw OpenLARPAttachmentStoreError.destinationAlreadyExists
+        }
+        try filePolicy.write(data, to: fileURL, role: role)
     }
 
     func data(for uploadIntent: CareerGraphSyncUploadIntent) async throws -> Data {
@@ -219,6 +245,7 @@ struct OpenLARPAttachmentStore: CareerGraphProofAttachmentDataProviding, Sendabl
                     withIntermediateDirectories: true
                 )
                 try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+                try filePolicy.apply(to: destinationURL, role: .committedProof)
                 committedAttachments.append(committed)
             }
         } catch {
