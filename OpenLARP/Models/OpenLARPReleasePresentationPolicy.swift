@@ -12,9 +12,12 @@ enum AppTab: String, CaseIterable, Identifiable, Sendable {
     static func visibleTabs(
         for configuration: OpenLARPReleaseConfiguration
     ) -> [AppTab] {
-        allCases.filter { tab in
-            tab != .agent || configuration.isEnabled(.agent)
+        var tabs: [AppTab] = [.today, .map, .progress]
+        if configuration.isEnabled(.agent) {
+            tabs.append(.agent)
         }
+        tabs.append(.profile)
+        return tabs
     }
 
     var title: String {
@@ -53,20 +56,21 @@ enum TodaySection: String, CaseIterable, Identifiable, Sendable {
     static func visibleSections(
         for configuration: OpenLARPReleaseConfiguration
     ) -> [TodaySection] {
-        allCases.filter { section in
-            switch section {
-            case .subscriptionAccess:
-                configuration.isEnabled(.subscriptions)
-            case .agentBrief, .agentAction:
-                configuration.isEnabled(.agent)
-            case .header, .quest, .diagnostic, .progress, .outcome:
-                true
-            }
+        var sections: [TodaySection] = [.header]
+        if configuration.isEnabled(.subscriptions) {
+            sections.append(.subscriptionAccess)
         }
+        sections.append(contentsOf: [.quest, .diagnostic, .progress])
+        if configuration.isEnabled(.agent) {
+            sections.append(contentsOf: [.agentBrief, .agentAction])
+        }
+        sections.append(.outcome)
+        return sections
     }
 }
 
 enum ProfileSection: String, CaseIterable, Identifiable, Sendable {
+    case hero
     case careerSummary
     case accountProfile
     case accountDataControls
@@ -86,27 +90,29 @@ enum ProfileSection: String, CaseIterable, Identifiable, Sendable {
     static func visibleSections(
         for configuration: OpenLARPReleaseConfiguration
     ) -> [ProfileSection] {
-        allCases.filter { section in
-            switch section {
-            case .accountProfile, .accountDataControls:
-                configuration.isEnabled(.account)
-            case .subscriptionStatus:
-                configuration.isEnabled(.subscriptions)
-            case .careerGraphStatus:
-                configuration.isEnabled(.cloudSync)
-            case .betaMeasurement:
-                configuration.isEnabled(.developerTools)
-            case .careerSummary,
-                 .activeGoal,
-                 .recentOutcomes,
-                 .streak,
-                 .privacy,
-                 .badges,
-                 .proof,
-                 .rules:
-                true
-            }
+        var sections: [ProfileSection] = [.hero, .careerSummary]
+        if configuration.isEnabled(.account) {
+            sections.append(contentsOf: [.accountProfile, .accountDataControls])
         }
+        if configuration.isEnabled(.subscriptions) {
+            sections.append(.subscriptionStatus)
+        }
+        if configuration.isEnabled(.cloudSync) {
+            sections.append(.careerGraphStatus)
+        }
+        if configuration.isEnabled(.developerTools) {
+            sections.append(.betaMeasurement)
+        }
+        sections.append(contentsOf: [
+            .activeGoal,
+            .recentOutcomes,
+            .streak,
+            .privacy,
+            .badges,
+            .proof,
+            .rules
+        ])
+        return sections
     }
 }
 

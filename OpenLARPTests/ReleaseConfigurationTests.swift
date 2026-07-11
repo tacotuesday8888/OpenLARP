@@ -101,6 +101,7 @@ final class ReleaseConfigurationTests: XCTestCase {
         XCTAssertEqual(
             ProfileSection.visibleSections(for: .appStoreMVP),
             [
+                .hero,
                 .careerSummary,
                 .activeGoal,
                 .recentOutcomes,
@@ -138,6 +139,7 @@ final class ReleaseConfigurationTests: XCTestCase {
         XCTAssertEqual(
             ProfileSection.visibleSections(for: .internalBeta),
             [
+                .hero,
                 .careerSummary,
                 .accountProfile,
                 .accountDataControls,

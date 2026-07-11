@@ -17,14 +17,6 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                OpenLARPHeroCard(
-                    feature: .profile,
-                    eyebrow: "Me",
-                    title: "Career Hub",
-                    subtitle: store.state.goal?.currentStatus.rawValue ?? "Set a goal to start the first proof sprint.",
-                    stat: "L\(max(1, store.state.progress.completedQuestCount + 1))"
-                )
-
                 ForEach(
                     ProfileSection.visibleSections(
                         for: store.releaseConfiguration
@@ -123,6 +115,14 @@ struct ProfileView: View {
     @ViewBuilder
     private func profileSection(_ section: ProfileSection) -> some View {
         switch section {
+        case .hero:
+            OpenLARPHeroCard(
+                feature: .profile,
+                eyebrow: "Me",
+                title: "Career Hub",
+                subtitle: store.state.goal?.currentStatus.rawValue ?? "Set a goal to start the first proof sprint.",
+                stat: "L\(max(1, store.state.progress.completedQuestCount + 1))"
+            )
         case .careerSummary:
             careerSummaryCard
         case .accountProfile:
