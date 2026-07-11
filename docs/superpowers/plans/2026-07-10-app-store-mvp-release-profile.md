@@ -1190,6 +1190,7 @@ Commit the remediation in small reviewable commits and return it to the whole-br
 - Produces: an explicit privacy presentation mode for local-only notice versus internal cloud controls.
 - Produces: a minimal public, read-only `OpenLARPReleaseContractSnapshot` derived from the bundled release channel and production-used policies.
 - Produces: an `OpenLARPReleaseContractTests` target and `OpenLARPReleaseContract` scheme whose test action uses the Release configuration without `@testable` access.
+- Enforces: Firebase and RevenueCat local configuration plists remain available to internal beta builds but are actively absent from App Store Release products.
 - Simplifies: the Node gate to validate structured project/workflow wiring and non-Swift readiness facts, not Swift semantics.
 
 - [ ] **Step 1: Add failing typed-policy tests**
@@ -1230,6 +1231,8 @@ Expose only a minimal public, immutable snapshot needed by this target. Derive i
 - [ ] **Step 4: Implement the Release snapshot and turn the compiled contract GREEN**
 
 Implement the read-only snapshot without exposing service objects, mutable configuration, user state, or test seams. Regenerate the project and run:
+
+Gate the existing Firebase and RevenueCat plist copy scripts on the explicit `internal-beta` release channel. A non-internal build must remove any stale target copy and exit without bundling either plist. The ordinary-import Release contract must assert that `Bundle.main` is `com.openlarp.app`, that the raw bundled release-channel value is exactly `app-store`, and that neither service configuration plist exists in the hosted app bundle.
 
 ```bash
 xcodebuild \
