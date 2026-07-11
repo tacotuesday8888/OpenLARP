@@ -179,6 +179,10 @@ struct AppRootView: View {
             )
         }
         .onOpenURL { url in
+            guard store.releaseConfiguration.serviceMode != .localOnly,
+                  store.releaseConfiguration.isEnabled(.account) else {
+                return
+            }
             _ = store.handleOpenURL(url)
         }
     }

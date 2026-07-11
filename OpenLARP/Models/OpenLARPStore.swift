@@ -86,18 +86,31 @@ final class OpenLARPStore {
     ) {
         self.persistence = persistence
         self.attachmentStore = attachmentStore
-        self.aiWorkflowService = aiWorkflowService
-        self.agentService = agentService
-        self.careerGraphSyncService = careerGraphSyncService
-        let resolvedAuthenticationService = authenticationService ?? MockOpenLARPAuthenticationService()
-        self.authenticationService = resolvedAuthenticationService
-        self.backendEventSyncService = backendEventSyncService
-        self.privateEvidenceCloudSyncConsentService = privateEvidenceCloudSyncConsentService
-        self.privateEvidenceBackupCleanupService = privateEvidenceBackupCleanupService
-        self.accountDeletionService = accountDeletionService
-        self.backendSessionProvider = backendSessionProvider ?? resolvedAuthenticationService
-        self.subscriptionService = subscriptionService
         self.releaseConfiguration = releaseConfiguration
+        if releaseConfiguration.serviceMode == .localOnly {
+            self.aiWorkflowService = LocalMockV0AIWorkflowService()
+            self.agentService = MockCareerAgentService()
+            self.careerGraphSyncService = LocalMockCareerGraphSyncService()
+            self.authenticationService = MockOpenLARPAuthenticationService()
+            self.backendEventSyncService = LocalMockBackendEventSyncService()
+            self.privateEvidenceCloudSyncConsentService = LocalMockPrivateEvidenceCloudSyncConsentService()
+            self.privateEvidenceBackupCleanupService = LocalMockPrivateEvidenceBackupCleanupService()
+            self.accountDeletionService = LocalMockAccountDeletionService()
+            self.backendSessionProvider = LocalMockBackendSessionProvider()
+            self.subscriptionService = MockOpenLARPSubscriptionService()
+        } else {
+            let resolvedAuthenticationService = authenticationService ?? MockOpenLARPAuthenticationService()
+            self.aiWorkflowService = aiWorkflowService
+            self.agentService = agentService
+            self.careerGraphSyncService = careerGraphSyncService
+            self.authenticationService = resolvedAuthenticationService
+            self.backendEventSyncService = backendEventSyncService
+            self.privateEvidenceCloudSyncConsentService = privateEvidenceCloudSyncConsentService
+            self.privateEvidenceBackupCleanupService = privateEvidenceBackupCleanupService
+            self.accountDeletionService = accountDeletionService
+            self.backendSessionProvider = backendSessionProvider ?? resolvedAuthenticationService
+            self.subscriptionService = subscriptionService
+        }
         self.now = now
         self.calendar = calendar
         self.backendEventRetryDelay = backendEventRetryDelay
@@ -458,7 +471,7 @@ final class OpenLARPStore {
             return
         }
 
-        let session = backendSessionProvider.currentSession(for: state)
+        let session = currentBackendSession()
         guard session.isAuthenticated else {
             if isEnabled {
                 errorMessage = "Sign in before enabling private evidence cloud sync."
@@ -487,7 +500,7 @@ final class OpenLARPStore {
                     "Private evidence consent result did not match the requested setting."
                 )
             }
-            let currentSession = backendSessionProvider.currentSession(for: state)
+            let currentSession = currentBackendSession()
             guard currentSession.isAuthenticated,
                   currentSession.ownerUserID == session.ownerUserID
             else {
@@ -813,7 +826,11 @@ final class OpenLARPStore {
 
     @discardableResult
     func handleOpenURL(_ url: URL) -> Bool {
-        authenticationService.handleOpenURL(url)
+        guard releaseConfiguration.serviceMode != .localOnly,
+              releaseConfiguration.isEnabled(.account) else {
+            return false
+        }
+        return authenticationService.handleOpenURL(url)
     }
 
     func logOutcome(
@@ -1587,7 +1604,11 @@ final class OpenLARPStore {
     }
 
     private func currentBackendSession() -> BackendUserSession {
-        backendSessionProvider.currentSession(for: state)
+        guard releaseConfiguration.serviceMode != .localOnly,
+              releaseConfiguration.isEnabled(.account) else {
+            return BackendUserSession.localOnly(for: state)
+        }
+        return backendSessionProvider.currentSession(for: state)
     }
 
     private func recordNextDayReturnIfNeeded(

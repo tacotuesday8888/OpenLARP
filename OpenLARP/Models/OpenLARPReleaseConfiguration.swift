@@ -10,6 +10,11 @@ enum OpenLARPReleaseAccessMode: Equatable, Sendable {
     case subscription
 }
 
+enum OpenLARPReleaseServiceMode: Equatable, Sendable {
+    case localOnly
+    case firebaseBeta
+}
+
 enum OpenLARPReleaseCapability: String, CaseIterable, Hashable, Sendable {
     case agent
     case account
@@ -24,17 +29,20 @@ struct OpenLARPReleaseConfiguration: Equatable, Sendable {
 
     let channel: OpenLARPReleaseChannel
     let accessMode: OpenLARPReleaseAccessMode
+    let serviceMode: OpenLARPReleaseServiceMode
     let enabledCapabilities: Set<OpenLARPReleaseCapability>
 
     static let appStoreMVP = OpenLARPReleaseConfiguration(
         channel: .appStore,
         accessMode: .free,
+        serviceMode: .localOnly,
         enabledCapabilities: []
     )
 
     static let internalBeta = OpenLARPReleaseConfiguration(
         channel: .internalBeta,
         accessMode: .subscription,
+        serviceMode: .firebaseBeta,
         enabledCapabilities: [
             .agent,
             .account,
