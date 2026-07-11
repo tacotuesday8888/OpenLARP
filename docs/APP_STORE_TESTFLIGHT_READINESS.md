@@ -18,7 +18,18 @@ This is a working launch packet for the free, local-first App Store build. It is
 - Career goals, progress, proof text, links, and private proof attachments stay on the device in this release.
 - Public navigation contains Today, Map, Progress, and Profile.
 - No sign-in, cloud backup, cross-device sync, subscription, purchase, or Agent surface is present.
+- Ignored Firebase and RevenueCat configuration plists are copied only into the separate `internal-beta` build and are absent from the App Store Release bundle.
 - Debug builds retain the separate `internal-beta` profile for service-enabled development and verification.
+
+## Repository-Controlled Release Verification
+
+- `OpenLARPReleaseContract` compiles the real app module with the optimized Release configuration and keeps `ENABLE_TESTABILITY=NO`.
+- Its separate XCTest target uses ordinary `import OpenLARP`, not `@testable import`, and reads a minimal immutable snapshot derived from the bundled release channel and the same presentation/lifecycle policies used by the SwiftUI app.
+- The contract verifies the hosted app bundle identifier, literal `app-store` plist value, free/local-only service posture, empty unfinished-capability set, no live AI, exact public tabs and ordered sections, local-only privacy presentation, local-only lifecycle, and absence of Firebase/RevenueCat local configuration plists.
+- CI fails when simulator discovery fails, when the optimized contract test is skipped or does not run exactly once, when the Release app enables testability, or when the unsigned generic build is not Release.
+- The JavaScript repository gate validates the structured XcodeGen and GitHub Actions wiring plus non-Swift readiness files. Swift behavior is proven by compiled XCTest rather than source-text parsing.
+
+These automated checks do not replace signed-device visual and interaction QA. The final local flow, accessibility, layout, offline behavior, signing, archive, and uploaded build still require the external checks below.
 
 ## App Store Connect Draft
 
@@ -149,6 +160,7 @@ Do not submit the public build until all of these are true:
 - `npm run public:safety` passes
 - `npm run test:scripts` passes
 - `npm run beta:gate` passes
+- the dedicated `OpenLARPReleaseContract` test passes in Release and its result bundle reports exactly one passed, zero failed, and zero skipped contract test
 - the full iOS test suite passes on the supported simulator runtime
 - an unsigned generic Release build succeeds and its built plist resolves exactly to `app-store`
 - the complete local flow is verified on a signed physical device, including goal setup, diagnostic, Today, Map, proof text/link/photo handling, Progress, Profile, relaunch persistence, and offline behavior

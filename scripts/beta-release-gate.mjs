@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
 
 const REQUIRED_PRIVACY_DATA_TYPES = [
   "NSPrivacyCollectedDataTypeUserID",
@@ -15,6 +16,9 @@ const REQUIRED_FILES = [
   "OpenLARP/PrivacyInfo.xcprivacy",
   "OpenLARP/OpenLARP.entitlements",
   "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
+  "OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift",
+  "OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift",
+  "OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift",
   "docs/APP_STORE_TESTFLIGHT_READINESS.md",
   "docs/BETA_TESTFLIGHT_PATH.md",
   "docs/FIREBASE_BACKEND_SETUP.md",
@@ -25,186 +29,24 @@ const REQUIRED_FILES = [
   "storage.rules"
 ];
 
+const PROJECT_CONTRACT_BLOCKER =
+  "project.yml must define the isolated Release contract target and scheme.";
+const RELEASE_CHANNEL_BLOCKER =
+  "Debug or Release build channel configuration is missing.";
+const SERVICE_COPY_BLOCKER =
+  "Local service configuration copy hooks must be restricted to internal-beta builds.";
+const WORKFLOW_BLOCKER =
+  "CI workflow must fail closed and execute Debug tests plus the verified Release contract.";
+
 function textIncludesAll(text, values) {
   return values.every((value) => text.includes(value));
 }
 
-function textHasLine(text, expectedLine) {
-  return text.split(/\r?\n/).some((line) => line.trim() === expectedLine);
-}
-
-function textHasTopLevelLine(text, expectedLine) {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  const minimumIndentation = lines.reduce(
-    (minimum, line) => Math.min(minimum, line.search(/\S/)),
-    Number.POSITIVE_INFINITY
-  );
-  return lines.some(
-    (line) => line.search(/\S/) === minimumIndentation && line.trim() === expectedLine
-  );
-}
-
-function exactLineOffsets(text, expectedLine) {
-  const offsets = [];
-  let offset = 0;
-  for (const line of text.split("\n")) {
-    if (line.trim() === expectedLine) {
-      const firstCodeCharacter = line.search(/\S/);
-      offsets.push(offset + Math.max(0, firstCodeCharacter));
-    }
-    offset += line.length + 1;
-  }
-  return offsets;
-}
-
-const PROTECTED_INVOCATION_PATTERNS = new Map([
-  ["AgentDashboardView(store: store)", "\\bAgentDashboardView\\b"],
-  ["subscriptionAccessCard", "\\bsubscriptionAccessCard\\b"],
-  ["dailyAgentBrief", "\\bdailyAgentBrief\\b"],
-  ["showingAgent = true", "\\bshowingAgent\\s*=\\s*true\\b"]
-]);
-
-function protectedInvocationCount(text, invocation) {
-  const pattern = PROTECTED_INVOCATION_PATTERNS.get(invocation);
-  if (!pattern) {
-    return 0;
-  }
-  return [...text.matchAll(new RegExp(pattern, "g"))].length;
-}
-
-function codeLineOffset(text, expectedPrefix) {
-  let offset = 0;
-  for (const line of text.split("\n")) {
-    const trimmedLine = line.trimStart();
-    if (trimmedLine.startsWith(expectedPrefix)) {
-      return offset + line.indexOf(trimmedLine);
-    }
-    offset += line.length + 1;
-  }
-  return -1;
-}
-
-function extractBalancedBlockAfter(text, startIndex, openingCharacter, closingCharacter) {
-  const openingIndex = text.indexOf(openingCharacter, startIndex);
-  if (startIndex < 0 || openingIndex < 0) {
-    return "";
-  }
-
-  let depth = 0;
-  for (let index = openingIndex; index < text.length; index += 1) {
-    if (text[index] === openingCharacter) {
-      depth += 1;
-    } else if (text[index] === closingCharacter) {
-      depth -= 1;
-      if (depth === 0) {
-        return text.slice(openingIndex + 1, index);
-      }
-    }
-  }
-
-  return "";
-}
-
-function extractCodeBlockAfterUniqueExactLine(
-  text,
-  expectedLine,
-  openingCharacter,
-  closingCharacter
-) {
-  const offsets = exactLineOffsets(text, expectedLine);
-  if (offsets.length !== 1) {
-    return "";
-  }
-  return extractBalancedBlockAfter(
-    text,
-    offsets[0],
-    openingCharacter,
-    closingCharacter
-  );
-}
-
-function normalizedCodeLines(text) {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function hasExpectedReleaseResolverSwitch(currentResolver) {
-  const switchBody = extractCodeBlockAfterUniqueExactLine(
-    currentResolver,
-    "switch channel {",
-    "{",
-    "}"
-  );
-  return JSON.stringify(normalizedCodeLines(switchBody)) === JSON.stringify([
-    "case .appStore:",
-    "return .appStoreMVP",
-    "case .internalBeta:",
-    "return .internalBeta"
-  ]);
-}
-
-function hasGatedStandaloneInvocations(
-  source,
-  typeDeclaration,
-  capabilityGuard,
-  protectedInvocations
-) {
-  const typeBody = extractCodeBlockAfterUniqueExactLine(
-    source,
-    typeDeclaration,
-    "{",
-    "}"
-  );
-  const viewBody = extractCodeBlockAfterUniqueExactLine(
-    typeBody,
-    "var body: some View {",
-    "{",
-    "}"
-  );
-  const capabilityBlock = extractCodeBlockAfterUniqueExactLine(
-    viewBody,
-    capabilityGuard,
-    "{",
-    "}"
-  );
-  if (!typeBody || !viewBody || !capabilityBlock) {
-    return false;
-  }
-  return protectedInvocations.every(
-    (invocation) =>
-      protectedInvocationCount(viewBody, invocation) === 1 &&
-      protectedInvocationCount(capabilityBlock, invocation) === 1
-  );
-}
-
-function extractIndentedBlock(text, header) {
-  const lines = text.split(/\r?\n/);
-  const directChildIndentation = lines
-    .filter((line) => line.trim())
-    .reduce(
-      (minimum, line) => Math.min(minimum, line.search(/\S/)),
-      Number.POSITIVE_INFINITY
-    );
-  const headerIndex = lines.findIndex(
-    (line) => line.search(/\S/) === directChildIndentation && line.trim() === header
-  );
-  if (headerIndex < 0) {
-    return "";
-  }
-
-  const headerIndentation = lines[headerIndex].search(/\S/);
-  const blockLines = [];
-  for (let index = headerIndex + 1; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (line.trim() && line.search(/\S/) <= headerIndentation) {
-      break;
-    }
-    blockLines.push(line);
-  }
-
-  return blockLines.join("\n");
+function normalizedShell(script) {
+  return script
+    .replace(/\\\r?\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function readTrackedText(path) {
@@ -217,6 +59,255 @@ function readTrackedText(path) {
 
 function addResult(results, level, message) {
   results.push({ level, message });
+}
+
+function parseYaml(text) {
+  try {
+    const value = parse(text);
+    return value && typeof value === "object" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function isExactArray(value, expected) {
+  return Array.isArray(value) &&
+    value.length === expected.length &&
+    value.every((item, index) => item === expected[index]);
+}
+
+function dependenciesInclude(dependencies, expected) {
+  return Array.isArray(dependencies) && dependencies.some((dependency) =>
+    dependency && typeof dependency === "object" &&
+    Object.entries(expected).every(([key, value]) => dependency[key] === value)
+  );
+}
+
+function hasInternalOnlyCopyScript(scriptDefinition, fileName) {
+  if (!scriptDefinition || typeof scriptDefinition !== "object") {
+    return false;
+  }
+  const script = scriptDefinition.script;
+  if (typeof script !== "string") {
+    return false;
+  }
+
+  const guard = 'if [ "${OPENLARP_RELEASE_CHANNEL}" != "internal-beta" ]; then';
+  const guardIndex = script.indexOf(guard);
+  const exitIndex = script.indexOf("exit 0", guardIndex);
+  const copyIndex = script.indexOf('cp "$CONFIG_FILE" "$TARGET_FILE"');
+  const staleRemovalCount = [...script.matchAll(/rm -f "\$TARGET_FILE"/g)].length;
+
+  return scriptDefinition.name === `Copy Local ${fileName === "GoogleService-Info.plist" ? "Firebase" : "RevenueCat"} Configuration` &&
+    script.includes(`/OpenLARP/${fileName}`) &&
+    script.includes(`.app/${fileName}`) &&
+    guardIndex >= 0 &&
+    exitIndex > guardIndex &&
+    copyIndex > exitIndex &&
+    staleRemovalCount >= 2;
+}
+
+function validateProjectDefinition(project) {
+  const appTarget = project?.targets?.OpenLARP;
+  const appSettings = appTarget?.settings;
+
+  const baseConfigurationValid =
+    appSettings?.base?.PRODUCT_BUNDLE_IDENTIFIER === "com.openlarp.app" &&
+    project?.packages?.Firebase &&
+    project?.packages?.GoogleSignIn &&
+    project?.packages?.RevenueCat &&
+    dependenciesInclude(appTarget?.dependencies, {
+      package: "Firebase",
+      product: "FirebaseAppCheck"
+    }) &&
+    dependenciesInclude(appTarget?.dependencies, {
+      package: "GoogleSignIn",
+      product: "GoogleSignIn"
+    }) &&
+    dependenciesInclude(appTarget?.dependencies, {
+      package: "RevenueCat",
+      product: "RevenueCat"
+    });
+
+  const channelsValid =
+    appTarget?.info?.properties?.OpenLARPReleaseChannel === "$(OPENLARP_RELEASE_CHANNEL)" &&
+    appSettings?.configs?.Debug?.OPENLARP_RELEASE_CHANNEL === "internal-beta" &&
+    appSettings?.configs?.Release?.OPENLARP_RELEASE_CHANNEL === "app-store";
+
+  const copyScripts = appTarget?.postBuildScripts;
+  const firebaseScripts = Array.isArray(copyScripts)
+    ? copyScripts.filter((script) => script?.name === "Copy Local Firebase Configuration")
+    : [];
+  const revenueCatScripts = Array.isArray(copyScripts)
+    ? copyScripts.filter((script) => script?.name === "Copy Local RevenueCat Configuration")
+    : [];
+  const serviceCopiesValid =
+    firebaseScripts.length === 1 &&
+    revenueCatScripts.length === 1 &&
+    hasInternalOnlyCopyScript(firebaseScripts[0], "GoogleService-Info.plist") &&
+    hasInternalOnlyCopyScript(revenueCatScripts[0], "RevenueCat-Info.plist");
+
+  const contractTarget = project?.targets?.OpenLARPReleaseContractTests;
+  const contractScheme = project?.schemes?.OpenLARPReleaseContract;
+  const buildTargets = contractScheme?.build?.targets;
+  const contractValid =
+    isExactArray(appTarget?.scheme?.testTargets, ["OpenLARPTests"]) &&
+    contractTarget?.type === "bundle.unit-test" &&
+    contractTarget?.platform === "iOS" &&
+    isExactArray(contractTarget?.sources, ["OpenLARPReleaseContractTests"]) &&
+    Array.isArray(contractTarget?.dependencies) &&
+    contractTarget.dependencies.length === 1 &&
+    dependenciesInclude(contractTarget.dependencies, { target: "OpenLARP" }) &&
+    contractTarget?.settings?.base?.PRODUCT_BUNDLE_IDENTIFIER ===
+      "com.openlarp.release-contract-tests" &&
+    contractTarget?.settings?.base?.GENERATE_INFOPLIST_FILE === "YES" &&
+    contractScheme?.management?.shared === true &&
+    contractScheme?.build?.buildImplicitDependencies === false &&
+    buildTargets &&
+    isExactArray(Object.keys(buildTargets).sort(), ["OpenLARP", "OpenLARPReleaseContractTests"]) &&
+    isExactArray(buildTargets.OpenLARP, ["test"]) &&
+    isExactArray(buildTargets.OpenLARPReleaseContractTests, ["test"]) &&
+    contractScheme?.test?.config === "Release" &&
+    isExactArray(contractScheme?.test?.targets, ["OpenLARPReleaseContractTests"]);
+
+  return {
+    baseConfigurationValid,
+    channelsValid,
+    serviceCopiesValid,
+    contractValid
+  };
+}
+
+function uniqueRequiredStep(steps, name) {
+  if (!Array.isArray(steps)) {
+    return null;
+  }
+  const matches = steps.filter((step) => step?.name === name);
+  if (matches.length !== 1) {
+    return null;
+  }
+  const step = matches[0];
+  if (Object.hasOwn(step, "if") || Object.hasOwn(step, "continue-on-error")) {
+    return null;
+  }
+  return typeof step.run === "string" ? step : null;
+}
+
+function validateWorkflowDefinition(workflow) {
+  const job = workflow?.jobs?.["build-and-test"];
+  const steps = job?.steps;
+  if (!Array.isArray(steps)) {
+    return false;
+  }
+  if (Object.hasOwn(job, "if") || Object.hasOwn(job, "continue-on-error")) {
+    return false;
+  }
+
+  const serializedWorkflow = JSON.stringify(workflow).toLowerCase();
+  if (serializedWorkflow.includes("has_simulator") ||
+      serializedWorkflow.includes("will be skipped") ||
+      serializedWorkflow.includes("skipped simulator")) {
+    return false;
+  }
+
+  const publicSafety = uniqueRequiredStep(steps, "Check public repo safety");
+  const betaGate = uniqueRequiredStep(steps, "Check beta release gate");
+  const backendTests = uniqueRequiredStep(steps, "Test Genkit backend");
+  const backendBuild = uniqueRequiredStep(steps, "Build Firebase Functions backend");
+  const rulesTests = uniqueRequiredStep(steps, "Test Firebase security rules");
+  const projectGeneration = uniqueRequiredStep(steps, "Generate Xcode project");
+  const simulator = uniqueRequiredStep(steps, "Select available iPhone simulator");
+  const unsignedBuild = uniqueRequiredStep(steps, "Build unsigned iOS app");
+  const debugTests = uniqueRequiredStep(steps, "Run Debug simulator tests");
+  const releaseContract = uniqueRequiredStep(
+    steps,
+    "Run optimized App Store Release contract"
+  );
+
+  if (!publicSafety || !betaGate || !backendTests || !backendBuild || !rulesTests ||
+      !projectGeneration || !simulator || !unsignedBuild || !debugTests ||
+      !releaseContract) {
+    return false;
+  }
+
+  const simulatorRun = simulator.run;
+  const simulatorFailsClosed =
+    simulator.id === "simulator" &&
+    simulatorRun.includes("subprocess.TimeoutExpired") &&
+    simulatorRun.includes("sys.exit(1)") &&
+    simulatorRun.includes("sys.exit(result.returncode or 1)") &&
+    simulatorRun.includes('if [ -z "$DEVICE_ID" ]; then') &&
+    simulatorRun.includes("exit 1") &&
+    simulatorRun.includes('device_id=$DEVICE_ID') &&
+    !simulatorRun.includes("has_simulator") &&
+    !simulatorRun.includes("will be skipped");
+
+  const unsignedBuildRun = normalizedShell(unsignedBuild.run);
+  const unsignedReleaseBuild = textIncludesAll(unsignedBuildRun, [
+    "-project OpenLARP.xcodeproj",
+    "-scheme OpenLARP",
+    "-configuration Release",
+    "-destination generic/platform=iOS",
+    "CODE_SIGNING_ALLOWED=NO",
+    "build"
+  ]);
+
+  const debugRun = normalizedShell(debugTests.run);
+  const debugSuite = textIncludesAll(debugRun, [
+    "set -euo pipefail",
+    "-project OpenLARP.xcodeproj",
+    "-scheme OpenLARP",
+    "-configuration Debug",
+    "steps.simulator.outputs.device_id",
+    "OpenLARPDebug-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult",
+    '-resultBundlePath "$DEBUG_RESULT_BUNDLE"',
+    'xcrun xcresulttool get test-results summary --path "$DEBUG_RESULT_BUNDLE"',
+    'summary.get("totalTestCount")',
+    'summary.get("passedTests")',
+    'summary.get("failedTests")',
+    'summary.get("skippedTests")',
+    "total <= 0",
+    "passed != total",
+    "failed != 0",
+    "skipped != 0",
+    "sys.exit(1)",
+    "test"
+  ]);
+
+  const contractRun = releaseContract.run;
+  const normalizedContractRun = normalizedShell(contractRun);
+  const releaseContractVerified = textIncludesAll(normalizedContractRun, [
+    "set -euo pipefail",
+    "-target OpenLARP -configuration Release -showBuildSettings",
+    '[ "$ENABLE_TESTABILITY" != "NO" ]',
+    "-scheme OpenLARPReleaseContract -configuration Release",
+    "steps.simulator.outputs.device_id",
+    "OpenLARPReleaseContract-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult",
+    '-resultBundlePath "$RESULT_BUNDLE"',
+    "-only-testing:OpenLARPReleaseContractTests/OpenLARPReleaseContractTests/testAppStoreReleaseContract",
+    "xcrun xcresulttool get test-results summary",
+    '"totalTestCount": 1',
+    '"passedTests": 1',
+    '"failedTests": 0',
+    '"skippedTests": 0',
+    "actual != expected",
+    "sys.exit(1)"
+  ]) && !contractRun.includes("rm -rf");
+
+  const requiredCommandsValid =
+    publicSafety.run.trim() === "npm run public:safety" &&
+    betaGate.run.trim() === "npm run beta:gate" &&
+    backendTests.run.trim() === "npm run test:backend" &&
+    backendBuild.run.trim() === "npm run build:backend" &&
+    rulesTests.run.trim() === "npm run test:rules:emulators" &&
+    projectGeneration.run.trim() === "xcodegen generate";
+
+  const hasSkipStep = steps.some((step) =>
+    typeof step?.name === "string" && step.name.toLowerCase().includes("skipped simulator")
+  );
+
+  return requiredCommandsValid && simulatorFailsClosed && unsignedReleaseBuild &&
+    debugSuite && releaseContractVerified && !hasSkipStep;
 }
 
 export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists = existsSync) {
@@ -232,7 +323,8 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
 
   const privacyManifest = readText("OpenLARP/PrivacyInfo.xcprivacy");
   if (privacyManifest) {
-    if (privacyManifest.includes("<key>NSPrivacyTracking</key>") && privacyManifest.includes("<false/>")) {
+    if (privacyManifest.includes("<key>NSPrivacyTracking</key>") &&
+        privacyManifest.includes("<false/>")) {
       addResult(results, "pass", "Privacy manifest declares no tracking.");
     } else {
       addResult(results, "blocker", "Privacy manifest must explicitly declare tracking as false.");
@@ -245,119 +337,40 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
     }
   }
 
-  const project = readText("project.yml");
-  if (project) {
-    if (project.includes("PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app")) {
-      addResult(results, "pass", "Bundle ID is set to com.openlarp.app.");
+  const projectText = readText("project.yml");
+  if (projectText) {
+    const project = parseYaml(projectText);
+    if (!project) {
+      addResult(results, "blocker", "project.yml is not valid YAML.");
+      addResult(results, "blocker", RELEASE_CHANNEL_BLOCKER);
+      addResult(results, "blocker", SERVICE_COPY_BLOCKER);
+      addResult(results, "blocker", PROJECT_CONTRACT_BLOCKER);
     } else {
-      addResult(results, "blocker", "Bundle ID is not set to com.openlarp.app in project.yml.");
+      const validation = validateProjectDefinition(project);
+      if (validation.baseConfigurationValid) {
+        addResult(results, "pass", "Bundle ID and service package wiring are declared in project.yml.");
+      } else {
+        addResult(results, "blocker", "project.yml is missing the app bundle ID or required service package wiring.");
+      }
+
+      if (validation.channelsValid) {
+        addResult(results, "pass", "Debug and Release builds declare explicit release channels.");
+      } else {
+        addResult(results, "blocker", RELEASE_CHANNEL_BLOCKER);
+      }
+
+      if (validation.serviceCopiesValid) {
+        addResult(results, "pass", "Local service plists are copied only into internal-beta builds.");
+      } else {
+        addResult(results, "blocker", SERVICE_COPY_BLOCKER);
+      }
+
+      if (validation.contractValid) {
+        addResult(results, "pass", "The isolated shared Release contract target and scheme are configured.");
+      } else {
+        addResult(results, "blocker", PROJECT_CONTRACT_BLOCKER);
+      }
     }
-
-    if (textIncludesAll(project, ["FirebaseAppCheck", "GoogleSignIn", "RevenueCat"])) {
-      addResult(results, "pass", "Firebase App Check, Google Sign-In, and RevenueCat packages are declared.");
-    } else {
-      addResult(results, "blocker", "project.yml is missing Firebase App Check, Google Sign-In, or RevenueCat package wiring.");
-    }
-
-    if (project.includes("GoogleService-Info.plist") && project.includes("RevenueCat-Info.plist")) {
-      addResult(results, "pass", "Local Firebase and RevenueCat plist copy hooks are present.");
-    } else {
-      addResult(results, "blocker", "Local Firebase and RevenueCat plist copy hooks are missing from project.yml.");
-    }
-
-    const targets = extractIndentedBlock(project, "targets:");
-    const appTarget = extractIndentedBlock(targets, "OpenLARP:");
-    const infoProperties = extractIndentedBlock(
-      extractIndentedBlock(appTarget, "info:"),
-      "properties:"
-    );
-    const configurations = extractIndentedBlock(
-      extractIndentedBlock(appTarget, "settings:"),
-      "configs:"
-    );
-    const debugConfiguration = extractIndentedBlock(configurations, "Debug:");
-    const releaseConfiguration = extractIndentedBlock(configurations, "Release:");
-    if (
-      textHasTopLevelLine(infoProperties, "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)") &&
-      textHasTopLevelLine(debugConfiguration, "OPENLARP_RELEASE_CHANNEL: internal-beta") &&
-      textHasTopLevelLine(releaseConfiguration, "OPENLARP_RELEASE_CHANNEL: app-store")
-    ) {
-      addResult(results, "pass", "Debug and Release builds declare explicit release channels.");
-    } else {
-      addResult(results, "blocker", "Debug or Release build channel configuration is missing.");
-    }
-  }
-
-  const releaseConfiguration = readText("OpenLARP/Models/OpenLARPReleaseConfiguration.swift");
-  const appStoreProfile = extractCodeBlockAfterUniqueExactLine(
-    releaseConfiguration,
-    "static let appStoreMVP = OpenLARPReleaseConfiguration(",
-    "(",
-    ")"
-  );
-  const currentResolver = extractCodeBlockAfterUniqueExactLine(
-    releaseConfiguration,
-    "static func current(",
-    "{",
-    "}"
-  );
-  const guardIndex = codeLineOffset(currentResolver, "guard ");
-  const guardElseIndex = guardIndex < 0 ? -1 : currentResolver.indexOf("else {", guardIndex);
-  const guardCondition = guardElseIndex < 0 ? "" : currentResolver.slice(guardIndex, guardElseIndex);
-  const guardFallback = extractBalancedBlockAfter(currentResolver, guardElseIndex, "{", "}");
-  if (
-    textHasTopLevelLine(appStoreProfile, "channel: .appStore,") &&
-    textHasTopLevelLine(appStoreProfile, "accessMode: .free,") &&
-    textHasTopLevelLine(appStoreProfile, "serviceMode: .localOnly,") &&
-    textHasTopLevelLine(appStoreProfile, "enabledCapabilities: []") &&
-    textHasLine(
-      guardCondition,
-      "guard let rawChannel = infoDictionary[infoDictionaryKey] as? String,"
-    ) &&
-    textHasLine(
-      guardCondition,
-      "let channel = OpenLARPReleaseChannel(rawValue: rawChannel)"
-    ) &&
-    guardFallback.trim() === "return .appStoreMVP" &&
-    hasExpectedReleaseResolverSwitch(currentResolver)
-  ) {
-    addResult(results, "pass", "App Store release configuration is free and fail-safe.");
-  } else {
-    addResult(results, "blocker", "App Store release configuration is missing or not fail-safe.");
-  }
-
-  const rootView = readText("OpenLARP/AppRootView.swift");
-  const todayView = readText("OpenLARP/Views/TodayView.swift");
-  const profileView = readText("OpenLARP/Views/ProfileView.swift");
-  if (
-    hasGatedStandaloneInvocations(
-      rootView,
-      "struct AppRootView: View {",
-      "if store.releaseConfiguration.isEnabled(.agent) {",
-      ["AgentDashboardView(store: store)"]
-    ) &&
-    hasGatedStandaloneInvocations(
-      todayView,
-      "struct TodayView: View {",
-      "if store.releaseConfiguration.isEnabled(.subscriptions) {",
-      ["subscriptionAccessCard"]
-    ) &&
-    hasGatedStandaloneInvocations(
-      todayView,
-      "struct TodayView: View {",
-      "if store.releaseConfiguration.isEnabled(.agent) {",
-      ["dailyAgentBrief", "showingAgent = true"]
-    ) &&
-    textIncludesAll(profileView, [
-      "releaseConfiguration.isEnabled(.account)",
-      "releaseConfiguration.isEnabled(.cloudSync)",
-      "releaseConfiguration.isEnabled(.subscriptions)",
-      "releaseConfiguration.isEnabled(.developerTools)"
-    ])
-  ) {
-    addResult(results, "pass", "Public SwiftUI surfaces gate unfinished capabilities.");
-  } else {
-    addResult(results, "blocker", "Public SwiftUI surfaces do not consistently gate unfinished capabilities.");
   }
 
   const entitlements = readText("OpenLARP/OpenLARP.entitlements");
@@ -373,20 +386,13 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
     }
   }
 
-  const workflow = readText(".github/workflows/ios-ci.yml");
-  if (workflow) {
-    if (textIncludesAll(workflow, [
-      "npm run public:safety",
-      "npm run beta:gate",
-      "npm run test:backend",
-      "npm run build:backend",
-      "npm run test:rules:emulators",
-      "xcodebuild",
-      "test"
-    ])) {
-      addResult(results, "pass", "CI runs public safety, backend, rules, unsigned build, and simulator test checks.");
+  const workflowText = readText(".github/workflows/ios-ci.yml");
+  if (workflowText) {
+    const workflow = parseYaml(workflowText);
+    if (workflow && validateWorkflowDefinition(workflow)) {
+      addResult(results, "pass", "CI fails closed and verifies Debug plus the optimized App Store Release contract.");
     } else {
-      addResult(results, "blocker", "CI workflow is missing one or more beta gate checks.");
+      addResult(results, "blocker", WORKFLOW_BLOCKER);
     }
   }
 
@@ -409,11 +415,11 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   }
 
   if (!fileExists("OpenLARP/GoogleService-Info.plist")) {
-    addResult(results, "warn", "Local GoogleService-Info.plist is absent; live Google Sign-In and Firebase simulator smoke need ignored local config.");
+    addResult(results, "warn", "Ignored GoogleService-Info.plist is absent; separate internal-beta Firebase smoke requires local configuration.");
   }
 
   if (!fileExists("OpenLARP/RevenueCat-Info.plist")) {
-    addResult(results, "warn", "Local RevenueCat-Info.plist is absent; paid entitlement and purchase smoke remain setup-blocked.");
+    addResult(results, "warn", "Ignored RevenueCat-Info.plist is absent; separate internal-beta purchase smoke requires local configuration.");
   }
 
   return {

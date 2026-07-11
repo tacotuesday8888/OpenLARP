@@ -1,150 +1,186 @@
 import { describe, expect, it } from "vitest";
 import { evaluateBetaReleaseGate } from "../beta-release-gate.mjs";
 
-const projectFixture = [
-  "packages:",
-  "  FirebaseAppCheck:",
-  "  GoogleSignIn:",
-  "  RevenueCat:",
-  "targets:",
-  "  OpenLARP:",
-  "    preBuildScripts:",
-  "      - name: Local service configuration",
-  "        script: |",
-  "          GoogleService-Info.plist",
-  "          RevenueCat-Info.plist",
-  "    info:",
-  "      properties:",
-  "        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)",
-  "    settings:",
-  "      base:",
-  "        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app",
-  "      configs:",
-  "        Debug:",
-  "          OPENLARP_RELEASE_CHANNEL: internal-beta",
-  "        Release:",
-  "          OPENLARP_RELEASE_CHANNEL: app-store"
-].join("\n");
+const projectFixture = `
+name: OpenLARP
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+  RevenueCat:
+    url: https://github.com/RevenueCat/purchases-ios
+targets:
+  OpenLARP:
+    type: application
+    dependencies:
+      - package: Firebase
+        product: FirebaseAppCheck
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: RevenueCat
+        product: RevenueCat
+    postBuildScripts:
+      - name: Copy Local Firebase Configuration
+        script: |
+          CONFIG_FILE="\${SRCROOT}/OpenLARP/GoogleService-Info.plist"
+          TARGET_FILE="\${BUILT_PRODUCTS_DIR}/\${PRODUCT_NAME}.app/GoogleService-Info.plist"
+          if [ "\${OPENLARP_RELEASE_CHANNEL}" != "internal-beta" ]; then
+            rm -f "$TARGET_FILE"
+            exit 0
+          fi
+          if [ -f "$CONFIG_FILE" ]; then
+            cp "$CONFIG_FILE" "$TARGET_FILE"
+          else
+            rm -f "$TARGET_FILE"
+          fi
+      - name: Copy Local RevenueCat Configuration
+        script: |
+          CONFIG_FILE="\${SRCROOT}/OpenLARP/RevenueCat-Info.plist"
+          TARGET_FILE="\${BUILT_PRODUCTS_DIR}/\${PRODUCT_NAME}.app/RevenueCat-Info.plist"
+          if [ "\${OPENLARP_RELEASE_CHANNEL}" != "internal-beta" ]; then
+            rm -f "$TARGET_FILE"
+            exit 0
+          fi
+          if [ -f "$CONFIG_FILE" ]; then
+            cp "$CONFIG_FILE" "$TARGET_FILE"
+          else
+            rm -f "$TARGET_FILE"
+          fi
+    scheme:
+      testTargets:
+        - OpenLARPTests
+    info:
+      properties:
+        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app
+      configs:
+        Debug:
+          OPENLARP_RELEASE_CHANNEL: internal-beta
+        Release:
+          OPENLARP_RELEASE_CHANNEL: app-store
+  OpenLARPTests:
+    type: bundle.unit-test
+    dependencies:
+      - target: OpenLARP
+  OpenLARPReleaseContractTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - OpenLARPReleaseContractTests
+    dependencies:
+      - target: OpenLARP
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  OpenLARPReleaseContract:
+    management:
+      shared: true
+    build:
+      buildImplicitDependencies: false
+      targets:
+        OpenLARP:
+          - test
+        OpenLARPReleaseContractTests:
+          - test
+    test:
+      config: Release
+      targets:
+        - OpenLARPReleaseContractTests
+`.trim();
 
-const releaseConfigurationFixture = [
-  "struct OpenLARPReleaseConfiguration {",
-  "    static let appStoreMVP = OpenLARPReleaseConfiguration(",
-  "        channel: .appStore,",
-  "        accessMode: .free,",
-  "        serviceMode: .localOnly,",
-  "        enabledCapabilities: []",
-  "    )",
-  "",
-  "    static let internalBeta = OpenLARPReleaseConfiguration(",
-  "        channel: .internalBeta,",
-  "        accessMode: .subscription,",
-  "        serviceMode: .firebaseBeta,",
-  "        enabledCapabilities: [.subscriptions]",
-  "    )",
-  "",
-  "    static func current(",
-  "        infoDictionary: [String: Any]",
-  "    ) -> OpenLARPReleaseConfiguration {",
-  "        guard let rawChannel = infoDictionary[infoDictionaryKey] as? String,",
-  "              let channel = OpenLARPReleaseChannel(rawValue: rawChannel) else {",
-  "            return .appStoreMVP",
-  "        }",
-  "",
-  "        switch channel {",
-  "        case .appStore:",
-  "            return .appStoreMVP",
-  "        case .internalBeta:",
-  "            return .internalBeta",
-  "        }",
-  "    }",
-  "}"
-].join("\n");
-
-function addingSafeProfileDecoy(source) {
-  return [
-    source,
-    "",
-    "let legacyFreePreview = OpenLARPReleaseConfiguration(",
-    "    channel: .appStore,",
-    "    accessMode: .free,",
-    "    serviceMode: .localOnly,",
-    "    enabledCapabilities: []",
-    ")"
-  ].join("\n");
-}
-
-function addingSafeResolverSwitchDecoy(source) {
-  return [
-    source,
-    "",
-    "func safeResolverDecoy(channel: OpenLARPReleaseChannel) -> OpenLARPReleaseConfiguration {",
-    "    switch channel {",
-    "    case .appStore:",
-    "        return .appStoreMVP",
-    "    case .internalBeta:",
-    "        return .internalBeta",
-    "    }",
-    "}"
-  ].join("\n");
-}
-
-function replacingResolver(source, resolverLines) {
-  const start = source.indexOf("    static func current");
-  const end = source.lastIndexOf("\n}");
-  return `${source.slice(0, start)}${resolverLines.join("\n")}${source.slice(end)}`;
-}
-
-function addingExternalChannelDecoy(configuration, value) {
-  const expectedLine = `          OPENLARP_RELEASE_CHANNEL: ${value}`;
-  return [
-    projectFixture.replace(expectedLine, "          OPENLARP_RELEASE_CHANNEL: preview"),
-    "  DecoyTarget:",
-    "    settings:",
-    "      configs:",
-    `        ${configuration}:`,
-    expectedLine
-  ].join("\n");
-}
-
-const rootViewFixture = [
-  "struct AppRootView: View {",
-  "    var body: some View {",
-  "        TabView {",
-  "            TodayView(store: store)",
-  "            if store.releaseConfiguration.isEnabled(.agent) {",
-  "                AgentDashboardView(store: store)",
-  "            }",
-  "        }",
-  "    }",
-  "}",
-  "",
-  "struct AgentDashboardView: View {}"
-].join("\n");
-
-const todayViewFixture = [
-  "struct TodayView: View {",
-  "    var body: some View {",
-  "        VStack {",
-  "            if store.releaseConfiguration.isEnabled(.subscriptions) {",
-  "                subscriptionAccessCard",
-  "            }",
-  "            if store.releaseConfiguration.isEnabled(.agent) {",
-  "                dailyAgentBrief",
-  "                Button {",
-  "                    showingAgent = true",
-  "                } label: {",
-  "                    Text(\"Ask Agent\")",
-  "                }",
-  "            }",
-  "            todayCore",
-  "        }",
-  "    }",
-  "",
-  "    private var subscriptionAccessCard: some View { EmptyView() }",
-  "    private var dailyAgentBrief: some View { EmptyView() }",
-  "    private var todayCore: some View { EmptyView() }",
-  "}"
-].join("\n");
+const workflowFixture = `
+name: iOS CI
+jobs:
+  build-and-test:
+    steps:
+      - name: Check public repo safety
+        run: npm run public:safety
+      - name: Check beta release gate
+        run: npm run beta:gate
+      - name: Test Genkit backend
+        run: npm run test:backend
+      - name: Build Firebase Functions backend
+        run: npm run build:backend
+      - name: Test Firebase security rules
+        run: npm run test:rules:emulators
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Select available iPhone simulator
+        id: simulator
+        run: |
+          DEVICE_ID="$(python3 - <<'PY'
+          import subprocess
+          import sys
+          try:
+              result = subprocess.run(["xcrun", "simctl", "list", "devices", "available"], timeout=120)
+          except subprocess.TimeoutExpired:
+              print("::error::Timed out while listing iOS simulators.", file=sys.stderr)
+              sys.exit(1)
+          if result.returncode != 0:
+              sys.exit(result.returncode or 1)
+          print("00000000-0000-0000-0000-000000000000")
+          PY
+          )"
+          if [ -z "$DEVICE_ID" ]; then
+            echo "::error::No available iPhone simulator found."
+            exit 1
+          fi
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARP -configuration Release -destination generic/platform=iOS CODE_SIGNING_ALLOWED=NO build
+      - name: Run Debug simulator tests
+        run: |
+          set -euo pipefail
+          DEBUG_RESULT_BUNDLE="\${RUNNER_TEMP}/OpenLARPDebug-\${GITHUB_RUN_ID}-\${GITHUB_RUN_ATTEMPT}.xcresult"
+          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARP -configuration Debug -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPDerivedDataTests -resultBundlePath "$DEBUG_RESULT_BUNDLE" test
+          export DEBUG_SUMMARY_JSON="$(xcrun xcresulttool get test-results summary --path "$DEBUG_RESULT_BUNDLE" --compact)"
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          summary = json.loads(os.environ["DEBUG_SUMMARY_JSON"])
+          total = summary.get("totalTestCount")
+          passed = summary.get("passedTests")
+          failed = summary.get("failedTests")
+          skipped = summary.get("skippedTests")
+          if not isinstance(total, int) or total <= 0 or passed != total or failed != 0 or skipped != 0:
+              print("::error::Debug test count mismatch.", file=sys.stderr)
+              sys.exit(1)
+          PY
+      - name: Run optimized App Store Release contract
+        run: |
+          set -euo pipefail
+          ENABLE_TESTABILITY="$(xcodebuild -project OpenLARP.xcodeproj -target OpenLARP -configuration Release -showBuildSettings | awk -F ' = ' '/^[[:space:]]*ENABLE_TESTABILITY = / { print $2 }')"
+          if [ "$ENABLE_TESTABILITY" != "NO" ]; then
+            echo "::error::Release ENABLE_TESTABILITY must be NO."
+            exit 1
+          fi
+          RESULT_BUNDLE="\${RUNNER_TEMP}/OpenLARPReleaseContract-\${GITHUB_RUN_ID}-\${GITHUB_RUN_ATTEMPT}.xcresult"
+          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARPReleaseContract -configuration Release -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPReleaseContractTests -resultBundlePath "$RESULT_BUNDLE" -only-testing:OpenLARPReleaseContractTests/OpenLARPReleaseContractTests/testAppStoreReleaseContract test
+          export SUMMARY_JSON="$(xcrun xcresulttool get test-results summary --path "$RESULT_BUNDLE" --compact)"
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          summary = json.loads(os.environ["SUMMARY_JSON"])
+          expected = {
+              "totalTestCount": 1,
+              "passedTests": 1,
+              "failedTests": 0,
+              "skippedTests": 0,
+          }
+          actual = {key: summary.get(key) for key in expected}
+          if actual != expected:
+              print(f"::error::Release contract test count mismatch: {actual}", file=sys.stderr)
+              sys.exit(1)
+          PY
+`.trim();
 
 const completeFiles = new Map([
   ["OpenLARP/PrivacyInfo.xcprivacy", [
@@ -162,6 +198,10 @@ const completeFiles = new Map([
     "com.apple.developer.devicecheck.appattest-environment",
     "production"
   ].join("\n")],
+  ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", "release configuration"],
+  ["OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift", "presentation policy"],
+  ["OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift", "release snapshot"],
+  ["OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift", "ordinary import contract"],
   ["docs/APP_STORE_TESTFLIGHT_READINESS.md", [
     "TestFlight Beta Notes Draft",
     "Privacy Policy Checklist",
@@ -172,25 +212,8 @@ const completeFiles = new Map([
   ["docs/BETA_TESTFLIGHT_PATH.md", "Beta path"],
   ["docs/FIREBASE_BACKEND_SETUP.md", "Firebase setup"],
   ["docs/REVENUECAT_SETUP.md", "RevenueCat setup"],
-  [".github/workflows/ios-ci.yml", [
-    "npm run public:safety",
-    "npm run beta:gate",
-    "npm run test:backend",
-    "npm run build:backend",
-    "npm run test:rules:emulators",
-    "xcodebuild",
-    "test"
-  ].join("\n")],
+  [".github/workflows/ios-ci.yml", workflowFixture],
   ["project.yml", projectFixture],
-  ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", releaseConfigurationFixture],
-  ["OpenLARP/AppRootView.swift", rootViewFixture],
-  ["OpenLARP/Views/TodayView.swift", todayViewFixture],
-  ["OpenLARP/Views/ProfileView.swift", [
-    "releaseConfiguration.isEnabled(.account)",
-    "releaseConfiguration.isEnabled(.cloudSync)",
-    "releaseConfiguration.isEnabled(.subscriptions)",
-    "releaseConfiguration.isEnabled(.developerTools)"
-  ].join("\n")],
   ["firestore.rules", "rules_version = '2';"],
   ["storage.rules", "rules_version = '2';"]
 ]);
@@ -208,335 +231,141 @@ function expectBlocker(files, message) {
   expect(gate.results).toContainEqual({ level: "blocker", message });
 }
 
-const releaseConfigurationPath = "OpenLARP/Models/OpenLARPReleaseConfiguration.swift";
-const releaseConfigurationBlocker = "App Store release configuration is missing or not fail-safe.";
+function replacing(path, from, to) {
+  const files = new Map(completeFiles);
+  files.set(path, files.get(path).replace(from, to));
+  return files;
+}
+
+const projectContractBlocker = "project.yml must define the isolated Release contract target and scheme.";
 const releaseChannelBlocker = "Debug or Release build channel configuration is missing.";
-const publicSurfaceBlocker = "Public SwiftUI surfaces do not consistently gate unfinished capabilities.";
+const serviceCopyBlocker = "Local service configuration copy hooks must be restricted to internal-beta builds.";
+const workflowBlocker = "CI workflow must fail closed and execute Debug tests plus the verified Release contract.";
 
 describe("beta release gate", () => {
-  it("passes repo-controlled beta gates while warning about external setup", () => {
+  it("passes repository-controlled checks while warning about external setup", () => {
     const gate = evaluatorFor(completeFiles);
 
+    expect(gate.results.filter((result) => result.level === "blocker")).toEqual([]);
     expect(gate.ok).toBe(true);
     expect(gate.results.some((result) => result.level === "blocker")).toBe(false);
     expect(gate.results).toContainEqual({
       level: "warn",
       message: "Hosted privacy/support URLs still need final owner-controlled pages before TestFlight/App Store submission."
     });
-    expect(gate.results).toContainEqual({
-      level: "warn",
-      message: "Local GoogleService-Info.plist is absent; live Google Sign-In and Firebase simulator smoke need ignored local config."
-    });
-    expect(gate.results).toContainEqual({
-      level: "warn",
-      message: "Local RevenueCat-Info.plist is absent; paid entitlement and purchase smoke remain setup-blocked."
-    });
   });
 
   it("blocks missing privacy data categories", () => {
-    const files = new Map(completeFiles);
-    files.set("OpenLARP/PrivacyInfo.xcprivacy", "<key>NSPrivacyTracking</key>\n<false/>");
-
-    const gate = evaluatorFor(files);
-
-    expect(gate.ok).toBe(false);
-    expect(gate.results).toContainEqual({
-      level: "blocker",
-      message: "Privacy manifest is missing one or more required OpenLARP data categories."
-    });
-  });
-
-  it("blocks missing CI beta checks", () => {
-    const files = new Map(completeFiles);
-    files.set(".github/workflows/ios-ci.yml", "xcodebuild");
-
-    const gate = evaluatorFor(files);
-
-    expect(gate.ok).toBe(false);
-    expect(gate.results).toContainEqual({
-      level: "blocker",
-      message: "CI workflow is missing one or more beta gate checks."
-    });
-  });
-
-  it("blocks a missing fail-safe App Store release profile", () => {
-    const files = new Map(completeFiles);
-    files.delete("OpenLARP/Models/OpenLARPReleaseConfiguration.swift");
-
-    const gate = evaluatorFor(files);
-
-    expect(gate.ok).toBe(false);
-    expect(gate.results).toContainEqual({
-      level: "blocker",
-      message: "App Store release configuration is missing or not fail-safe."
-    });
+    expectBlocker(
+      replacing("OpenLARP/PrivacyInfo.xcprivacy", "NSPrivacyCollectedDataTypeUserID", ""),
+      "Privacy manifest is missing one or more required OpenLARP data categories."
+    );
   });
 
   it.each([
-    ["paid App Store profile with a separate free-profile decoy", addingSafeProfileDecoy(
-      releaseConfigurationFixture.replace("accessMode: .free", "accessMode: .subscription")
-    )],
-    ["non-empty App Store capabilities with an empty-profile decoy", addingSafeProfileDecoy(
-      releaseConfigurationFixture.replace("enabledCapabilities: []", "enabledCapabilities: [.subscriptions]")
-    )],
-    ["internal App Store channel with an App Store-profile decoy", addingSafeProfileDecoy(
-      releaseConfigurationFixture.replace("channel: .appStore", "channel: .internalBeta")
-    )],
-    ["Firebase App Store service mode with a local-only profile decoy", addingSafeProfileDecoy(
-      releaseConfigurationFixture.replace("serviceMode: .localOnly", "serviceMode: .firebaseBeta")
-    )],
-    ["internal-beta fallback with a later App Store switch case", releaseConfigurationFixture.replace(
-      "            return .appStoreMVP",
-      "            return .internalBeta"
-    )],
-    ["early internal return before an App Store fallback return", releaseConfigurationFixture.replace(
-      "            return .appStoreMVP",
-      [
-        "            if infoDictionary[infoDictionaryKey] == nil { return .internalBeta }",
-        "            return .appStoreMVP"
-      ].join("\n")
-    )],
-    ["missing guard with matching comments and an unrelated else", replacingResolver(
-      releaseConfigurationFixture,
-      [
-        "    static func current(infoDictionary: [String: Any]) -> OpenLARPReleaseConfiguration {",
-        "        let rawChannel = infoDictionary[infoDictionaryKey] as? String ?? \"\"",
-        "        if rawChannel.isEmpty { return .internalBeta }",
-        "        // guard let rawChannel = infoDictionary[infoDictionaryKey] as? String,",
-        "        // OpenLARPReleaseChannel(rawValue: rawChannel)",
-        "        if rawChannel == \"internal-beta\" { return .internalBeta } else {",
-        "            return .appStoreMVP",
-        "        }",
-        "    }"
-      ]
-    )],
-    ["unvalidated unknown channel with guard-condition comment decoys", replacingResolver(
-      releaseConfigurationFixture,
-      [
-        "    static func current(infoDictionary: [String: Any]) -> OpenLARPReleaseConfiguration {",
-        "        guard !infoDictionary.isEmpty,",
-        "              // infoDictionary[infoDictionaryKey] as? String",
-        "              // OpenLARPReleaseChannel(rawValue: rawChannel)",
-        "              true else { return .appStoreMVP }",
-        "        let channel = OpenLARPReleaseChannel.internalBeta",
-        "        switch channel {",
-        "        case .appStore: return .appStoreMVP",
-        "        case .internalBeta: return .internalBeta",
-        "        }",
-        "    }"
-      ]
-    )]
-  ])("blocks %s", (_scenario, unsafeSource) => {
-    const files = new Map(completeFiles);
-    files.set(releaseConfigurationPath, unsafeSource);
-    expectBlocker(files, releaseConfigurationBlocker);
-  });
-
-  it.each([
-    ["App Store switch remapped to internal beta with a safe resolver decoy",
-      addingSafeResolverSwitchDecoy(releaseConfigurationFixture.replace(
-        [
-          "        case .appStore:",
-          "            return .appStoreMVP"
-        ].join("\n"),
-        [
-          "        case .appStore:",
-          "            return .internalBeta"
-        ].join("\n")
-      ))],
-    ["internal-beta switch remapped to App Store with a safe resolver decoy",
-      addingSafeResolverSwitchDecoy(releaseConfigurationFixture.replace(
-        [
-          "        case .internalBeta:",
-          "            return .internalBeta"
-        ].join("\n"),
-        [
-          "        case .internalBeta:",
-          "            return .appStoreMVP"
-        ].join("\n")
-      ))]
-  ])("blocks %s", (_scenario, unsafeSource) => {
-    const files = new Map(completeFiles);
-    files.set(releaseConfigurationPath, unsafeSource);
-    expectBlocker(files, releaseConfigurationBlocker);
+    ["contract target", "  OpenLARPReleaseContractTests:\n", "  RenamedContractTests:\n"],
+    ["contract target type", "    type: bundle.unit-test\n    platform: iOS", "    type: application\n    platform: iOS"],
+    ["contract target platform", "  OpenLARPReleaseContractTests:\n    type: bundle.unit-test\n    platform: iOS", "  OpenLARPReleaseContractTests:\n    type: bundle.unit-test\n    platform: macOS"],
+    ["contract target source", "    sources:\n      - OpenLARPReleaseContractTests", "    sources:\n      - OpenLARPTests"],
+    ["contract target app dependency", "    dependencies:\n      - target: OpenLARP\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "    dependencies:\n      - target: OpenLARPTests\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests"],
+    ["contract target sole dependency", "    dependencies:\n      - target: OpenLARP\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "    dependencies:\n      - target: OpenLARP\n      - target: OpenLARPTests\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests"],
+    ["contract target unique bundle ID", "PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app"],
+    ["contract target generated plist", "        GENERATE_INFOPLIST_FILE: YES", "        GENERATE_INFOPLIST_FILE: NO"],
+    ["Debug scheme test target", "    scheme:\n      testTargets:\n        - OpenLARPTests", "    scheme:\n      testTargets:\n        - OpenLARPReleaseContractTests"],
+    ["contract scheme", "  OpenLARPReleaseContract:\n", "  RenamedReleaseContract:\n"],
+    ["shared scheme marker", "      shared: true", "      shared: false"],
+    ["explicit dependency closure", "      buildImplicitDependencies: false", "      buildImplicitDependencies: true"],
+    ["app build-for-test entry", "        OpenLARP:\n          - test", "        OpenLARP:\n          - all"],
+    ["contract build entry", "        OpenLARPReleaseContractTests:\n          - test", "        OpenLARPReleaseContractTests:\n          - run"],
+    ["Release test configuration", "      config: Release", "      config: Debug"],
+    ["contract test target", "      targets:\n        - OpenLARPReleaseContractTests", "      targets:\n        - OpenLARPTests"]
+  ])("blocks a missing or weakened %s", (_name, from, to) => {
+    expectBlocker(replacing("project.yml", from, to), projectContractBlocker);
   });
 
   it.each([
     ["Info key", "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)"],
     ["Debug channel", "OPENLARP_RELEASE_CHANNEL: internal-beta"],
     ["Release channel", "OPENLARP_RELEASE_CHANNEL: app-store"]
-  ])("blocks a missing %s release channel marker", (_name, marker) => {
-    const files = new Map(completeFiles);
-    files.set("project.yml", files.get("project.yml").replace(marker, ""));
-    expectBlocker(files, releaseChannelBlocker);
+  ])("blocks a missing %s release channel value", (_name, marker) => {
+    expectBlocker(replacing("project.yml", marker, ""), releaseChannelBlocker);
   });
 
   it.each([
-    ["swapped Debug and Release values", projectFixture
-      .replace("OPENLARP_RELEASE_CHANNEL: internal-beta", "OPENLARP_RELEASE_CHANNEL: swapped")
-      .replace("OPENLARP_RELEASE_CHANNEL: app-store", "OPENLARP_RELEASE_CHANNEL: internal-beta")
-      .replace("OPENLARP_RELEASE_CHANNEL: swapped", "OPENLARP_RELEASE_CHANNEL: app-store")],
-    ["incorrect Debug value with a valid marker in another target",
-      addingExternalChannelDecoy("Debug", "internal-beta")],
-    ["incorrect Release value with a valid marker in another target",
-      addingExternalChannelDecoy("Release", "app-store")],
-    ["Info marker outside the OpenLARP target", [
-      projectFixture.replace(
-        "OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)",
-        "LegacyReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)"
-      ),
-      "  DecoyTarget:",
-      "    info:",
-      "      properties:",
-      "        OpenLARPReleaseChannel: $(OPENLARP_RELEASE_CHANNEL)"
-    ].join("\n")],
-    ["nested Debug marker decoy", projectFixture.replace(
-      "          OPENLARP_RELEASE_CHANNEL: internal-beta",
-      [
-        "          OPENLARP_RELEASE_CHANNEL: preview",
-        "          metadata:",
-        "            OPENLARP_RELEASE_CHANNEL: internal-beta"
-      ].join("\n")
-    )],
-    ["nested safe Debug header before the unsafe real configuration", projectFixture.replace(
-      [
-        "      configs:",
-        "        Debug:",
-        "          OPENLARP_RELEASE_CHANNEL: internal-beta"
-      ].join("\n"),
-      [
-        "      configs:",
-        "        metadata:",
-        "          Debug:",
-        "            OPENLARP_RELEASE_CHANNEL: internal-beta",
-        "        Debug:",
-        "          OPENLARP_RELEASE_CHANNEL: preview"
-      ].join("\n")
-    )]
-  ])("blocks %s", (_scenario, unsafeProject) => {
-    const files = new Map(completeFiles);
-    files.set("project.yml", unsafeProject);
-    expectBlocker(files, releaseChannelBlocker);
-  });
-
-  it("blocks public views that do not consume release capabilities", () => {
-    const files = new Map(completeFiles);
-    files.set("OpenLARP/Views/TodayView.swift", "Today without release gates");
-
-    const gate = evaluatorFor(files);
-
-    expect(gate.ok).toBe(false);
-    expect(gate.results).toContainEqual({
-      level: "blocker",
-      message: publicSurfaceBlocker
-    });
-  });
-
-  it("blocks an unconditional root Agent tab beside a correctly guarded Agent tab", () => {
-    const files = new Map(completeFiles);
-    files.set(
-      "OpenLARP/AppRootView.swift",
-      rootViewFixture.replace(
-        "        }\n    }\n}",
-        "        }\n        AgentDashboardView(store: store)\n    }\n}"
-      )
-    );
-    expectBlocker(files, publicSurfaceBlocker);
-  });
-
-  it("blocks a multiline unconditional root Agent tab beside a correctly guarded Agent tab", () => {
-    const files = new Map(completeFiles);
-    files.set(
-      "OpenLARP/AppRootView.swift",
-      rootViewFixture.replace(
-        "        }\n    }\n}",
-        [
-          "        }",
-          "        AgentDashboardView(",
-          "            store: store",
-          "        )",
-          "    }",
-          "}"
-        ].join("\n")
-      )
-    );
-    expectBlocker(files, publicSurfaceBlocker);
-  });
-
-  it("blocks an unconditional Today subscription card beside the safe subscription gate", () => {
-    const files = new Map(completeFiles);
-    files.set(
-      "OpenLARP/Views/TodayView.swift",
-      todayViewFixture.replace(
-        "            todayCore",
-        "            subscriptionAccessCard\n            todayCore"
-      )
-    );
-    expectBlocker(files, publicSurfaceBlocker);
-  });
-
-  it("blocks a chained unconditional Today subscription card beside the safe subscription gate", () => {
-    const files = new Map(completeFiles);
-    files.set(
-      "OpenLARP/Views/TodayView.swift",
-      todayViewFixture.replace(
-        "            todayCore",
-        "            subscriptionAccessCard.padding()\n            todayCore"
-      )
-    );
-    expectBlocker(files, publicSurfaceBlocker);
-  });
-
-  it("blocks unconditional Today Agent content beside the safe Agent gate", () => {
-    const files = new Map(completeFiles);
-    files.set(
-      "OpenLARP/Views/TodayView.swift",
-      todayViewFixture.replace(
-        "            todayCore",
-        [
-          "            dailyAgentBrief",
-          "            Button {",
-          "                showingAgent = true",
-          "            } label: {",
-          "                Text(\"Unsafe Agent\")",
-          "            }",
-          "            todayCore"
-        ].join("\n")
-      )
-    );
-    expectBlocker(files, publicSurfaceBlocker);
-  });
-
-  it("blocks chained unconditional Today Agent content and action beside the safe Agent gate", () => {
-    const files = new Map(completeFiles);
-    files.set(
-      "OpenLARP/Views/TodayView.swift",
-      todayViewFixture.replace(
-        "            todayCore",
-        "            dailyAgentBrief.padding().onTapGesture { self.showingAgent = true }\n            todayCore"
-      )
-    );
-    expectBlocker(files, publicSurfaceBlocker);
+    ["Firebase copy guard", "Copy Local Firebase Configuration", "Copy Legacy Firebase Configuration"],
+    ["RevenueCat copy guard", "Copy Local RevenueCat Configuration", "Copy Legacy RevenueCat Configuration"],
+    ["internal-only branch", "if [ \"${OPENLARP_RELEASE_CHANNEL}\" != \"internal-beta\" ]; then", "if false; then"],
+    ["stale-copy removal", "rm -f \"$TARGET_FILE\"", "true"]
+  ])("blocks a weakened %s", (_name, from, to) => {
+    expectBlocker(replacing("project.yml", from, to), serviceCopyBlocker);
   });
 
   it.each([
-    ["OpenLARP/AppRootView.swift", "releaseConfiguration.isEnabled(.agent)"],
-    ["OpenLARP/Views/TodayView.swift", "releaseConfiguration.isEnabled(.subscriptions)"],
-    ["OpenLARP/Views/TodayView.swift", "releaseConfiguration.isEnabled(.agent)"],
-    ["OpenLARP/Views/ProfileView.swift", "releaseConfiguration.isEnabled(.account)"],
-    ["OpenLARP/Views/ProfileView.swift", "releaseConfiguration.isEnabled(.cloudSync)"],
-    ["OpenLARP/Views/ProfileView.swift", "releaseConfiguration.isEnabled(.subscriptions)"],
-    ["OpenLARP/Views/ProfileView.swift", "releaseConfiguration.isEnabled(.developerTools)"]
-  ])("blocks %s when it is missing %s", (path, marker) => {
+    ["conditional simulator selection", "        id: simulator\n", "        id: simulator\n        if: success()\n"],
+    ["continue-on-error simulator selection", "        id: simulator\n", "        id: simulator\n        continue-on-error: true\n"],
+    ["timeout success", "              sys.exit(1)", "              sys.exit(0)"],
+    ["simctl failure success", "              sys.exit(result.returncode or 1)", "              sys.exit(0)"],
+    ["no-device success", "            exit 1\n          fi", "            exit 0\n          fi"],
+    ["conditional Debug tests", "      - name: Run Debug simulator tests\n", "      - name: Run Debug simulator tests\n        if: success()\n"],
+    ["continue-on-error Debug tests", "      - name: Run Debug simulator tests\n", "      - name: Run Debug simulator tests\n        continue-on-error: true\n"],
+    ["missing Debug configuration", "-configuration Debug", ""],
+    ["missing selected simulator in Debug tests", "-configuration Debug -destination \"id=${{ steps.simulator.outputs.device_id }}\"", "-configuration Debug"],
+    ["Debug result bundle", "-resultBundlePath \"$DEBUG_RESULT_BUNDLE\"", ""],
+    ["Debug xcresult summary", "xcrun xcresulttool get test-results summary --path \"$DEBUG_RESULT_BUNDLE\"", "echo"],
+    ["Debug nonzero test count", "total <= 0", "total < 0"],
+    ["Debug all-tests-passed count", "passed != total", "passed < total"],
+    ["Debug failed test count", "failed != 0", "failed < 0"],
+    ["Debug skipped test count", "skipped != 0", "skipped < 0"],
+    ["conditional Release contract", "      - name: Run optimized App Store Release contract\n", "      - name: Run optimized App Store Release contract\n        if: success()\n"],
+    ["continue-on-error Release contract", "      - name: Run optimized App Store Release contract\n", "      - name: Run optimized App Store Release contract\n        continue-on-error: true\n"],
+    ["contract scheme", "-scheme OpenLARPReleaseContract", "-scheme OpenLARP"],
+    ["contract Release configuration", "-scheme OpenLARPReleaseContract -configuration Release", "-scheme OpenLARPReleaseContract -configuration Debug"],
+    ["missing selected simulator in Release contract", "-scheme OpenLARPReleaseContract -configuration Release -destination \"id=${{ steps.simulator.outputs.device_id }}\"", "-scheme OpenLARPReleaseContract -configuration Release"],
+    ["named only-testing filter", "-only-testing:OpenLARPReleaseContractTests/OpenLARPReleaseContractTests/testAppStoreReleaseContract", ""],
+    ["result bundle", "-resultBundlePath \"$RESULT_BUNDLE\"", ""],
+    ["unique result bundle path", "OpenLARPReleaseContract-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult", "OpenLARPReleaseContract.xcresult"],
+    ["xcresult summary", "xcrun xcresulttool get test-results summary", "echo"],
+    ["exact total test count", "\"totalTestCount\": 1", "\"totalTestCount\": 0"],
+    ["exact passed test count", "\"passedTests\": 1", "\"passedTests\": 0"],
+    ["exact failed test count", "\"failedTests\": 0", "\"failedTests\": 1"],
+    ["exact skipped test count", "\"skippedTests\": 0", "\"skippedTests\": 1"],
+    ["Release testability query", "-target OpenLARP -configuration Release -showBuildSettings", "-target OpenLARP -configuration Debug -showBuildSettings"],
+    ["Release testability assertion", "[ \"$ENABLE_TESTABILITY\" != \"NO\" ]", "[ \"$ENABLE_TESTABILITY\" != \"YES\" ]"],
+    ["generic Release build", "-scheme OpenLARP -configuration Release -destination generic/platform=iOS", "-scheme OpenLARP -destination generic/platform=iOS"]
+  ])("blocks %s weakening", (_name, from, to) => {
+    expectBlocker(replacing(".github/workflows/ios-ci.yml", from, to), workflowBlocker);
+  });
+
+  it("blocks duplicate required Release contract steps", () => {
+    const duplicate = workflowFixture.replace(
+      "      - name: Run optimized App Store Release contract\n",
+      "      - name: Run optimized App Store Release contract\n        run: echo decoy\n      - name: Run optimized App Store Release contract\n"
+    );
     const files = new Map(completeFiles);
-    files.set(path, files.get(path).replace(marker, ""));
+    files.set(".github/workflows/ios-ci.yml", duplicate);
+    expectBlocker(files, workflowBlocker);
+  });
 
-    const gate = evaluatorFor(files);
+  it.each([
+    ["simulator", "      - name: Select available iPhone simulator\n", "      - name: Select available iPhone simulator\n        run: echo decoy\n      - name: Select available iPhone simulator\n"],
+    ["Debug test", "      - name: Run Debug simulator tests\n", "      - name: Run Debug simulator tests\n        run: echo decoy\n      - name: Run Debug simulator tests\n"]
+  ])("blocks duplicate required %s steps", (_name, from, to) => {
+    expectBlocker(
+      replacing(".github/workflows/ios-ci.yml", from, to),
+      workflowBlocker
+    );
+  });
 
-    expect(gate.ok).toBe(false);
-    expect(gate.results).toContainEqual({
-      level: "blocker",
-      message: publicSurfaceBlocker
-    });
+  it.each([
+    ["job if", "  build-and-test:\n    steps:", "  build-and-test:\n    if: success()\n    steps:"],
+    ["job continue-on-error", "  build-and-test:\n    steps:", "  build-and-test:\n    continue-on-error: true\n    steps:"],
+    ["legacy has_simulator output", "          echo \"device_id=$DEVICE_ID\" >> \"$GITHUB_OUTPUT\"", "          echo \"device_id=$DEVICE_ID\" >> \"$GITHUB_OUTPUT\"\n          echo \"has_simulator=true\" >> \"$GITHUB_OUTPUT\""],
+    ["warning-only skip marker", "          echo \"device_id=$DEVICE_ID\" >> \"$GITHUB_OUTPUT\"", "          echo \"device_id=$DEVICE_ID\" >> \"$GITHUB_OUTPUT\"\n          echo \"::warning::simulator tests will be skipped\""],
+    ["skipped-test report step", "      - name: Build unsigned iOS app\n", "      - name: Report skipped simulator tests\n        run: echo skipped\n      - name: Build unsigned iOS app\n"]
+  ])("blocks %s bypass", (_name, from, to) => {
+    expectBlocker(
+      replacing(".github/workflows/ios-ci.yml", from, to),
+      workflowBlocker
+    );
   });
 });

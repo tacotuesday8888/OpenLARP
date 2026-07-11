@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "firebase": "12.15.0",
-    "firebase-tools": "15.21.0"
+    "firebase-tools": "15.21.0",
+    "yaml": "2.9.0"
   }
 }

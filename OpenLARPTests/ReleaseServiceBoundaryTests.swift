@@ -70,33 +70,6 @@ final class ReleaseServiceBoundaryTests: XCTestCase {
         XCTAssertEqual(store.releaseConfiguration, .internalBeta)
     }
 
-    func testAppDelegatesStoreConstructionWithoutDirectRemoteServices() throws {
-        let appSource = try source("OpenLARP/OpenLARPApp.swift")
-
-        XCTAssertTrue(appSource.contains("OpenLARPAppStoreFactory().makeStore(for: releaseConfiguration)"))
-        XCTAssertFalse(appSource.contains("OpenLARPFirebaseBootstrap.configureIfAvailable"))
-        XCTAssertFalse(appSource.contains("FirebaseOpenLARPAuthenticationService"))
-        XCTAssertFalse(appSource.contains("FirebaseCallableV0AIWorkflowService"))
-        XCTAssertFalse(appSource.contains("OpenLARPRevenueCatSubscriptionService.live"))
-    }
-
-    func testAppRootForwardsURLsOnlyInsideTheAccountServiceGuard() throws {
-        let rootSource = try source("OpenLARP/AppRootView.swift")
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { String($0).trimmingCharacters(in: .whitespaces) }
-            .joined(separator: "\n")
-
-        XCTAssertTrue(rootSource.contains("""
-        .onOpenURL { url in
-        guard store.releaseConfiguration.serviceMode != .localOnly,
-        store.releaseConfiguration.isEnabled(.account) else {
-        return
-        }
-        _ = store.handleOpenURL(url)
-        }
-        """))
-    }
-
     func testAppStoreWorkflowStaysLocalAndNeverCallsInjectedRemoteAuthOrSessionServices() async throws {
         let localServices = makeTemporaryLocalServices()
         defer { try? FileManager.default.removeItem(at: localServices.directory) }
@@ -303,16 +276,6 @@ final class ReleaseServiceBoundaryTests: XCTestCase {
             directory,
             OpenLARPPersistence(directory: directory),
             OpenLARPAttachmentStore(directory: directory)
-        )
-    }
-
-    private func source(_ relativePath: String) throws -> String {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
         )
     }
 }
