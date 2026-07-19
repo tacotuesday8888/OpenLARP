@@ -17,27 +17,13 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                OpenLARPHeroCard(
-                    feature: .profile,
-                    eyebrow: "Me",
-                    title: "Career Hub",
-                    subtitle: store.state.goal?.currentStatus.rawValue ?? "Set a goal to start the first proof sprint.",
-                    stat: "L\(max(1, store.state.progress.completedQuestCount + 1))"
-                )
-
-                careerSummaryCard
-                accountProfileCard
-                accountDataControlsCard
-                subscriptionStatusCard
-                careerGraphSetupStatusCard
-                betaMeasurementCard
-                activeGoalCard
-                recentOutcomesCard
-                streakCard
-                privacyCard
-                badgeCard
-                proofCard
-                rulesCard
+                ForEach(
+                    ProfileSection.visibleSections(
+                        for: store.releaseConfiguration
+                    )
+                ) { section in
+                    profileSection(section)
+                }
             }
             .padding(20)
             .padding(.bottom, 88)
@@ -124,6 +110,46 @@ struct ProfileView: View {
             Text(store.errorMessage ?? "")
         }
         .background(authenticationPresentationAnchorReader)
+    }
+
+    @ViewBuilder
+    private func profileSection(_ section: ProfileSection) -> some View {
+        switch section {
+        case .hero:
+            OpenLARPHeroCard(
+                feature: .profile,
+                eyebrow: "Me",
+                title: "Career Hub",
+                subtitle: store.state.goal?.currentStatus.rawValue ?? "Set a goal to start the first proof sprint.",
+                stat: "L\(max(1, store.state.progress.completedQuestCount + 1))"
+            )
+        case .careerSummary:
+            careerSummaryCard
+        case .accountProfile:
+            accountProfileCard
+        case .accountDataControls:
+            accountDataControlsCard
+        case .subscriptionStatus:
+            subscriptionStatusCard
+        case .careerGraphStatus:
+            careerGraphSetupStatusCard
+        case .betaMeasurement:
+            betaMeasurementCard
+        case .activeGoal:
+            activeGoalCard
+        case .recentOutcomes:
+            recentOutcomesCard
+        case .streak:
+            streakCard
+        case .privacy:
+            privacyCard
+        case .badges:
+            badgeCard
+        case .proof:
+            proofCard
+        case .rules:
+            rulesCard
+        }
     }
 
     private var betaMeasurementCard: some View {
@@ -925,45 +951,80 @@ struct ProfileView: View {
     private var privacyCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 14) {
-                SectionHeader(feature: .privacy, eyebrow: "Private by default", title: "Memory and sharing")
+                let presentation = ProfilePrivacyPresentation.mode(
+                    for: store.releaseConfiguration
+                )
 
-                if store.state.userProfile == nil {
-                    Text("Set a goal first to create local privacy controls for memory and sharing.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    PrivacyToggleRow(
-                        title: "Long-term memory",
-                        detail: "Keep local context on this device.",
-                        isOn: memoryBinding
-                    )
-                    PrivacyToggleRow(
-                        title: "Shareable wins",
-                        detail: "Allow proof wins to be shared later.",
-                        isOn: shareWinsBinding
-                    )
-                    PrivacyToggleRow(
-                        title: "Private evidence cloud sync",
-                        detail: "Allow future proof, files, links, and private notes in account backup.",
-                        isOn: privateEvidenceCloudSyncBinding
-                    )
-                    .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
+                switch presentation {
+                case .localOnlyNotice:
+                    SectionHeader(feature: .privacy, eyebrow: "Local privacy", title: "Your data in this release")
 
-                    Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
-                        .font(.caption)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let content = presentation.localOnlyContent {
+                        Label(content.dataHandlingStatement, systemImage: "iphone.and.arrow.forward")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                    Text(memoryEnabled ? "Local memory is on for this device. Real cloud memory is not built yet." : "Memory is off for future sensitive chats on this device.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.openLARPSoftInk)
-                        .fixedSize(horizontal: false, vertical: true)
+                        Text(content.deviceBackupStatement)
+                            .font(.caption)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     Label("External actions always require approval.", systemImage: "hand.raised.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.openLARPCoral)
                         .fixedSize(horizontal: false, vertical: true)
+                case .cloudControls:
+                    SectionHeader(feature: .privacy, eyebrow: "Private by default", title: "Memory and sharing")
+
+                    if store.state.userProfile == nil {
+                        Text("Set a goal first to create local privacy controls for memory and sharing.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        ForEach(presentation.visibleControls) { control in
+                            switch control {
+                            case .longTermMemory:
+                                PrivacyToggleRow(
+                                    title: "Long-term memory",
+                                    detail: "Keep local context on this device.",
+                                    isOn: memoryBinding
+                                )
+                            case .shareableWins:
+                                PrivacyToggleRow(
+                                    title: "Shareable wins",
+                                    detail: "Allow proof wins to be shared later.",
+                                    isOn: shareWinsBinding
+                                )
+                            case .privateEvidenceCloudSync:
+                                PrivacyToggleRow(
+                                    title: "Private evidence cloud sync",
+                                    detail: "Allow future proof, files, links, and private notes in account backup.",
+                                    isOn: privateEvidenceCloudSyncBinding
+                                )
+                                .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
+                            }
+                        }
+
+                        Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
+                            .font(.caption)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(memoryEnabled
+                            ? "Local career context is available on this device."
+                            : "Local career context is off.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Label("External actions always require approval.", systemImage: "hand.raised.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.openLARPCoral)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -1095,7 +1156,7 @@ struct ProfileView: View {
 
                 Label("Package real experience aggressively.", systemImage: "sparkles")
                 Label("Never invent employers, schools, certificates, titles, dates, projects, or ownership.", systemImage: "checkmark.shield")
-                Label("The agent drafts. You approve external actions.", systemImage: "hand.tap")
+                Label("OpenLARP suggests next steps. You approve every external action.", systemImage: "hand.tap")
             }
             .font(.subheadline)
             .foregroundStyle(Color.openLARPSoftInk)

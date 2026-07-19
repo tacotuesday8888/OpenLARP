@@ -1,32 +1,37 @@
 import SwiftUI
 
-enum AppTab: String, CaseIterable, Identifiable {
-    case today
-    case map
-    case progress
-    case agent
-    case profile
+enum AppLifecycleOperation: Equatable, Sendable {
+    case refreshDailyAvailability
+    case restoreAuthentication
+    case refreshSubscription
+    case syncBackendEvents
+}
 
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .today: "Today"
-        case .map: "Map"
-        case .progress: "Progress"
-        case .agent: "Agent"
-        case .profile: "Profile"
+struct AppLifecyclePolicy {
+    static func activationOperations(
+        for configuration: OpenLARPReleaseConfiguration
+    ) -> [AppLifecycleOperation] {
+        var operations: [AppLifecycleOperation] = [.refreshDailyAvailability]
+        if configuration.runsAuthenticationLifecycle {
+            operations.append(.restoreAuthentication)
         }
+        if configuration.runsSubscriptionLifecycle {
+            operations.append(.refreshSubscription)
+        }
+        if configuration.runsBackendEventSync {
+            operations.append(.syncBackendEvents)
+        }
+        return operations
     }
 
-    var systemImage: String {
-        switch self {
-        case .today: "bolt.fill"
-        case .map: "map.fill"
-        case .progress: "chart.line.uptrend.xyaxis"
-        case .agent: "sparkles"
-        case .profile: "person.crop.circle"
+    static func tabChangeOperations(
+        for configuration: OpenLARPReleaseConfiguration
+    ) -> [AppLifecycleOperation] {
+        var operations: [AppLifecycleOperation] = [.refreshDailyAvailability]
+        if configuration.runsBackendEventSync {
+            operations.append(.syncBackendEvents)
         }
+        return operations
     }
 }
 
@@ -38,14 +43,46 @@ struct AppRootView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            ForEach(AppTab.visibleTabs(for: store.releaseConfiguration)) { tab in
+                tabContent(for: tab)
+                    .tabItem {
+                        Label(tab.title, systemImage: tab.systemImage)
+                    }
+                    .tag(tab)
+            }
+        }
+        .tint(.openLARPBlue)
+        .onAppear {
+            refreshForActiveState()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            refreshForActiveState()
+        }
+        .onChange(of: selectedTab) {
+            performLifecycleOperations(
+                AppLifecyclePolicy.tabChangeOperations(
+                    for: store.releaseConfiguration
+                )
+            )
+        }
+        .onOpenURL { url in
+            guard store.releaseConfiguration.serviceMode != .localOnly,
+                  store.releaseConfiguration.isEnabled(.account) else {
+                return
+            }
+            _ = store.handleOpenURL(url)
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(for tab: AppTab) -> some View {
+        switch tab {
+        case .today:
             NavigationStack {
                 TodayView(store: store)
             }
-            .tabItem {
-                Label(AppTab.today.title, systemImage: AppTab.today.systemImage)
-            }
-            .tag(AppTab.today)
-
+        case .map:
             NavigationStack {
                 QuestMapView(
                     state: store.state,
@@ -57,11 +94,7 @@ struct AppRootView: View {
                     }
                 )
             }
-            .tabItem {
-                Label(AppTab.map.title, systemImage: AppTab.map.systemImage)
-            }
-            .tag(AppTab.map)
-
+        case .progress:
             NavigationStack {
                 ProgressTabView(
                     state: store.state,
@@ -97,51 +130,52 @@ struct AppRootView: View {
                     }
                 )
             }
-            .tabItem {
-                Label(AppTab.progress.title, systemImage: AppTab.progress.systemImage)
-            }
-            .tag(AppTab.progress)
-
+        case .agent:
             NavigationStack {
                 AgentDashboardView(store: store)
             }
-            .tabItem {
-                Label(AppTab.agent.title, systemImage: AppTab.agent.systemImage)
-            }
-            .tag(AppTab.agent)
-
+        case .profile:
             NavigationStack {
                 ProfileView(store: store)
             }
-            .tabItem {
-                Label(AppTab.profile.title, systemImage: AppTab.profile.systemImage)
+        }
+    }
+
+    private func refreshForActiveState() {
+        performLifecycleOperations(
+            AppLifecyclePolicy.activationOperations(
+                for: store.releaseConfiguration
+            )
+        )
+    }
+
+    private func performLifecycleOperations(
+        _ operations: [AppLifecycleOperation]
+    ) {
+        var serviceOperations: [AppLifecycleOperation] = []
+        for operation in operations {
+            if operation == .refreshDailyAvailability {
+                store.refreshDailyAvailability()
+            } else {
+                serviceOperations.append(operation)
             }
-            .tag(AppTab.profile)
         }
-        .tint(.openLARPBlue)
-        .onAppear {
-            store.refreshDailyAvailability()
-            Task {
-                await store.restorePreviousAuthenticationSession()
-                await store.refreshSubscriptionStatus()
-                await store.syncBackendEvents()
+
+        guard !serviceOperations.isEmpty else { return }
+
+        Task {
+            for operation in serviceOperations {
+                switch operation {
+                case .refreshDailyAvailability:
+                    break
+                case .restoreAuthentication:
+                    await store.restorePreviousAuthenticationSession()
+                case .refreshSubscription:
+                    await store.refreshSubscriptionStatus()
+                case .syncBackendEvents:
+                    await store.syncBackendEvents()
+                }
             }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            store.refreshDailyAvailability()
-            Task {
-                await store.restorePreviousAuthenticationSession()
-                await store.refreshSubscriptionStatus()
-                await store.syncBackendEvents()
-            }
-        }
-        .onChange(of: selectedTab) {
-            store.refreshDailyAvailability()
-            Task { await store.syncBackendEvents() }
-        }
-        .onOpenURL { url in
-            _ = store.handleOpenURL(url)
         }
     }
 }

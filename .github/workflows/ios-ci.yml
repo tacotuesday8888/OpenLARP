@@ -83,12 +83,12 @@ jobs:
                   timeout=120,
               )
           except subprocess.TimeoutExpired:
-              print("::warning::Timed out while listing iOS simulators; simulator tests will be skipped.", file=sys.stderr)
-              sys.exit(0)
+              print("::error::Timed out while listing iOS simulators.", file=sys.stderr)
+              sys.exit(1)
 
           if result.returncode != 0:
               print(result.stderr, file=sys.stderr)
-              sys.exit(0)
+              sys.exit(result.returncode or 1)
 
           for line in result.stdout.splitlines():
               if "iPhone" in line and ("Shutdown" in line or "Booted" in line):
@@ -99,11 +99,9 @@ jobs:
           PY
           )"
           if [ -z "$DEVICE_ID" ]; then
-            echo "has_simulator=false" >> "$GITHUB_OUTPUT"
-            echo "No available iPhone simulator found; simulator tests will be skipped."
-            exit 0
+            echo "::error::No available iPhone simulator found."
+            exit 1
           fi
-          echo "has_simulator=true" >> "$GITHUB_OUTPUT"
           echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
           echo "Selected simulator: $DEVICE_ID"
 
@@ -112,23 +110,109 @@ jobs:
           xcodebuild \
             -project OpenLARP.xcodeproj \
             -scheme OpenLARP \
+            -configuration Release \
             -destination generic/platform=iOS \
             -derivedDataPath /tmp/OpenLARPDerivedDataBuild \
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Run simulator tests
-        if: steps.simulator.outputs.has_simulator == 'true'
+      - name: Run Debug simulator tests
         timeout-minutes: 20
         run: |
+          set -euo pipefail
+
+          DEBUG_RESULT_BUNDLE="${RUNNER_TEMP}/OpenLARPDebug-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult"
           xcodebuild \
             -project OpenLARP.xcodeproj \
-            -scheme OpenLARP \
+            -scheme OpenLARPInternal \
+            -configuration Debug \
             -destination "id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath /tmp/OpenLARPDerivedDataTests \
+            -resultBundlePath "$DEBUG_RESULT_BUNDLE" \
             test
 
-      - name: Report skipped simulator tests
-        if: steps.simulator.outputs.has_simulator != 'true'
+          export DEBUG_SUMMARY_JSON="$(
+            xcrun xcresulttool get test-results summary \
+              --path "$DEBUG_RESULT_BUNDLE" \
+              --compact
+          )"
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          summary = json.loads(os.environ["DEBUG_SUMMARY_JSON"])
+          total = summary.get("totalTestCount")
+          passed = summary.get("passedTests")
+          failed = summary.get("failedTests")
+          skipped = summary.get("skippedTests")
+          if (
+              not isinstance(total, int)
+              or total <= 0
+              or passed != total
+              or failed != 0
+              or skipped != 0
+          ):
+              print(
+                  f"::error::Debug test count mismatch: total={total}, "
+                  f"passed={passed}, failed={failed}, skipped={skipped}",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
+
+      - name: Run optimized App Store Release contract
+        timeout-minutes: 20
         run: |
-          echo "::warning::No available iPhone simulator was discovered within 120 seconds. Backend checks, rules tests, and unsigned iOS build ran; run simulator XCTest locally before release."
+          set -euo pipefail
+
+          ENABLE_TESTABILITY="$(
+            xcodebuild \
+              -project OpenLARP.xcodeproj \
+              -target OpenLARP \
+              -configuration Release \
+              -showBuildSettings |
+              awk -F ' = ' '/^[[:space:]]*ENABLE_TESTABILITY = / { print $2 }'
+          )"
+          if [ "$ENABLE_TESTABILITY" != "NO" ]; then
+            echo "::error::Release ENABLE_TESTABILITY must be NO; resolved value was '$ENABLE_TESTABILITY'."
+            exit 1
+          fi
+
+          RESULT_BUNDLE="${RUNNER_TEMP}/OpenLARPReleaseContract-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult"
+          xcodebuild \
+            -project OpenLARP.xcodeproj \
+            -scheme OpenLARPReleaseContract \
+            -configuration Release \
+            -destination "id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath /tmp/OpenLARPReleaseContractTests \
+            -resultBundlePath "$RESULT_BUNDLE" \
+            -only-testing:OpenLARPReleaseContractTests/OpenLARPReleaseContractTests/testAppStoreReleaseContract \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
+          export SUMMARY_JSON="$(
+            xcrun xcresulttool get test-results summary \
+              --path "$RESULT_BUNDLE" \
+              --compact
+          )"
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          summary = json.loads(os.environ["SUMMARY_JSON"])
+          expected = {
+              "totalTestCount": 1,
+              "passedTests": 1,
+              "failedTests": 0,
+              "skippedTests": 0,
+          }
+          actual = {key: summary.get(key) for key in expected}
+          if actual != expected:
+              print(
+                  f"::error::Release contract test count mismatch: {actual}",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
