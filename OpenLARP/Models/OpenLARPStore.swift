@@ -6,6 +6,7 @@ import Observation
 final class OpenLARPStore {
     private let persistence: OpenLARPPersistence
     private let attachmentStore: OpenLARPAttachmentStore
+    private let proofImageProcessor: OpenLARPProofImageProcessor
     private let aiWorkflowService: any V0AIWorkflowServicing
     private let agentService: CareerAgentBriefServicing
     private let careerGraphSyncService: any CareerGraphSyncServicing
@@ -68,6 +69,7 @@ final class OpenLARPStore {
     init(
         persistence: OpenLARPPersistence = .live,
         attachmentStore: OpenLARPAttachmentStore = .live,
+        proofImageProcessor: OpenLARPProofImageProcessor = OpenLARPProofImageProcessor(),
         aiWorkflowService: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService(),
         agentService: CareerAgentBriefServicing = MockCareerAgentService(),
         careerGraphSyncService: any CareerGraphSyncServicing = LocalMockCareerGraphSyncService(),
@@ -86,6 +88,7 @@ final class OpenLARPStore {
     ) {
         self.persistence = persistence
         self.attachmentStore = attachmentStore
+        self.proofImageProcessor = proofImageProcessor
         self.releaseConfiguration = releaseConfiguration
         if releaseConfiguration.serviceMode == .localOnly {
             self.aiWorkflowService = LocalMockV0AIWorkflowService()
@@ -115,8 +118,10 @@ final class OpenLARPStore {
         self.calendar = calendar
         self.backendEventRetryDelay = backendEventRetryDelay
         self.staleBackendEventInFlightAge = staleBackendEventInFlightAge
+        var shouldReconcileAttachments = false
         do {
             let loadedState = try persistence.load()
+            shouldReconcileAttachments = true
             let refreshedState = OpenLARPEngine.refreshDailyAvailability(
                 in: loadedState,
                 now: now(),
@@ -135,7 +140,7 @@ final class OpenLARPStore {
             state = .empty
             errorMessage = "Local progress could not be loaded. A fresh state was started."
         }
-        restorePersistedProofDraft()
+        restorePersistedProofDraft(reconcileOrphans: shouldReconcileAttachments)
     }
 
     var isAuthenticationOperationInFlight: Bool {
@@ -160,7 +165,7 @@ final class OpenLARPStore {
         let requestedAt = now()
         isGoalSetupRunning = true
         defer { isGoalSetupRunning = false }
-        deletePendingProofAttachments()
+        guard discardProofDraft() else { return }
         do {
             let diagnosticResponse = try await aiWorkflowService.generateDiagnostic(
                 V0DiagnosticRequest(goal: goal, requestedAt: requestedAt)
@@ -248,7 +253,7 @@ final class OpenLARPStore {
         let existingSubscriptionState = state.subscriptionState
         let existingPrivateEvidenceBackupCleanupResult = state.privateEvidenceBackupCleanupResult
         let existingAccountDeletionResult = state.accountDeletionResult
-        deletePendingProofAttachments()
+        guard discardProofDraft() else { return }
         state = OpenLARPEngine.resetGoal(now: now())
         state.userProfile = existingProfile
         state.outcomeLog = existingOutcomeLog
@@ -309,6 +314,7 @@ final class OpenLARPStore {
             return
         }
         refreshDailyAvailability()
+        guard discardProofDraft() else { return }
         let skippedQuest = state.currentQuest
         do {
             state = try OpenLARPEngine.skipCurrentQuest(
@@ -317,7 +323,6 @@ final class OpenLARPStore {
                 calendar: calendar
             )
             recordBetaEvent(.questSkipped, day: skippedQuest?.day)
-            deletePendingProofAttachments()
             pendingProof = nil
             pendingQualityResult = nil
             clearPersistedProofDraft()
@@ -330,26 +335,187 @@ final class OpenLARPStore {
 
     func swapCurrentQuest() {
         guard requireSubscriptionAccess(for: .swapQuest) else { return }
+        guard !isProofChecking else {
+            errorMessage = "Wait for the proof check to finish before swapping today's quest."
+            return
+        }
+        guard discardProofDraft() else { return }
         mutate {
             try OpenLARPEngine.swappedCurrentQuest(in: state, now: now())
         }
     }
 
+    @discardableResult
+    func prepareProofDraft(kind: ProofKind = .proof) -> UUID? {
+        guard let quest = state.currentQuest, quest.status == .inProgress else {
+            errorMessage = OpenLARPProofDraftError.noActiveQuest.localizedDescription
+            return nil
+        }
+
+        if let pendingProof,
+           state.proofDraftQuestID == quest.id {
+            return pendingProof.id
+        }
+
+        guard discardProofDraft() else { return nil }
+        let previousState = state
+        let draft = ProofSubmission(
+            kind: kind,
+            text: "",
+            link: "",
+            attachments: [],
+            submittedAt: now()
+        )
+        pendingProof = draft
+        pendingQualityResult = nil
+        state.proofDraftQuestID = quest.id
+        guard persistProofDraft() else {
+            state = previousState
+            pendingProof = nil
+            pendingQualityResult = nil
+            errorMessage = OpenLARPProofDraftError.persistenceFailed.localizedDescription
+            return nil
+        }
+        errorMessage = nil
+        return draft.id
+    }
+
+    func updateProofDraftText(_ text: String, draftID: UUID) throws {
+        var draft = try activeProofDraft(id: draftID)
+        draft.text = text
+        try replaceActiveProofDraft(draft)
+    }
+
+    func updateProofDraftLink(_ link: String, draftID: UUID) throws {
+        var draft = try activeProofDraft(id: draftID)
+        draft.link = link
+        try replaceActiveProofDraft(draft)
+    }
+
+    func changeProofDraftKind(to kind: ProofKind, draftID: UUID) throws {
+        var draft = try activeProofDraft(id: draftID)
+        let attachmentsToDelete = kind == .selfReport ? draft.attachments : []
+        draft.kind = kind
+        if kind == .selfReport {
+            draft.attachments = []
+        }
+        try replaceActiveProofDraft(draft)
+        deleteDraftAttachmentsAfterPersistence(attachmentsToDelete)
+    }
+
+    func stageProofImage(
+        data: Data,
+        declaredContentType: String,
+        originalFileName: String = "",
+        draftID: UUID
+    ) async throws -> ProofAttachment {
+        let initialDraft = try activeProofDraft(id: draftID)
+        guard initialDraft.kind == .proof else {
+            throw OpenLARPProofDraftError.attachmentsRequireProofKind
+        }
+        guard initialDraft.attachments.count < ProofAttachmentPolicy.maximumCount else {
+            throw OpenLARPProofDraftError.attachmentLimitReached
+        }
+
+        let processor = proofImageProcessor
+        let processed = try await Task.detached(priority: .userInitiated) {
+            try processor.process(
+                data: data,
+                declaredContentType: declaredContentType
+            )
+        }.value
+
+        var currentDraft = try activeProofDraft(id: draftID)
+        guard currentDraft.kind == .proof else {
+            throw OpenLARPProofDraftError.attachmentsRequireProofKind
+        }
+        guard currentDraft.attachments.count < ProofAttachmentPolicy.maximumCount else {
+            throw OpenLARPProofDraftError.attachmentLimitReached
+        }
+
+        let attachment: ProofAttachment
+        do {
+            attachment = try attachmentStore.stageImage(
+                processed,
+                draftID: draftID,
+                originalFileName: originalFileName,
+                now: now()
+            )
+        } catch {
+            throw OpenLARPProofDraftError.storageFailed
+        }
+
+        let previousState = state
+        let previousProof = pendingProof
+        let previousResult = pendingQualityResult
+        currentDraft.attachments.append(attachment)
+        pendingProof = currentDraft
+        pendingQualityResult = nil
+        guard persistProofDraft() else {
+            state = previousState
+            pendingProof = previousProof
+            pendingQualityResult = previousResult
+            try? attachmentStore.delete(attachment)
+            throw OpenLARPProofDraftError.persistenceFailed
+        }
+        errorMessage = nil
+        return attachment
+    }
+
+    func removeProofDraftAttachment(_ attachmentID: UUID, draftID: UUID) throws {
+        var draft = try activeProofDraft(id: draftID)
+        guard let attachment = draft.attachments.first(where: { $0.id == attachmentID }) else {
+            return
+        }
+        draft.attachments.removeAll { $0.id == attachmentID }
+        try replaceActiveProofDraft(draft)
+        deleteDraftAttachmentsAfterPersistence([attachment])
+    }
+
+    var remainingProofAttachmentCapacity: Int {
+        max(0, ProofAttachmentPolicy.maximumCount - (pendingProof?.attachments.count ?? 0))
+    }
+
     func checkProof(
         kind: ProofKind,
         text: String,
-        link: String,
-        attachments: [ProofAttachment] = []
+        link: String
     ) async {
         guard requireSubscriptionAccess(for: .submitProof) else { return }
-        guard !isProofChecking else { return }
-        let questID = state.currentQuest?.id
-        let questDay = state.currentQuest?.day
-        let requestedAt = now()
-        isProofChecking = true
-        defer { isProofChecking = false }
         do {
-            let proof = ProofSubmission(kind: kind, text: text, link: link, attachments: attachments, submittedAt: requestedAt)
+            guard let draftID = prepareProofDraft(kind: kind) else { return }
+            var draft = try activeProofDraft(id: draftID)
+            let removedAttachments = kind == .selfReport ? draft.attachments : []
+            draft.kind = kind
+            draft.text = text
+            draft.link = link
+            if kind == .selfReport {
+                draft.attachments = []
+            }
+            try replaceActiveProofDraft(draft)
+            deleteDraftAttachmentsAfterPersistence(removedAttachments)
+            await checkPendingProof(draftID: draftID)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func checkPendingProof(draftID: UUID) async {
+        guard requireSubscriptionAccess(for: .submitProof) else { return }
+        guard !isProofChecking else { return }
+        do {
+            var proof = try activeProofDraft(id: draftID)
+            guard !proof.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw OpenLARPError.emptyProof
+            }
+            let questID = try currentDraftQuestID()
+            let questDay = state.currentQuest?.day
+            let requestedAt = now()
+            proof.submittedAt = requestedAt
+            try replaceActiveProofDraft(proof)
+
+            isProofChecking = true
+            defer { isProofChecking = false }
             let response = try await aiWorkflowService.reviewProof(
                 V0ProofReviewRequest(
                     state: state,
@@ -357,14 +523,28 @@ final class OpenLARPStore {
                     requestedAt: requestedAt
                 )
             )
+
+            // Keep the privacy-safe workflow audit even when the user has moved on,
+            // but never publish a result against a changed or abandoned draft.
+            let stateBeforeApplyingResponse = state
+            let proofBeforeApplyingResponse = pendingProof
+            let resultBeforeApplyingResponse = pendingQualityResult
             recordAIWorkflowRun(response.run)
-            guard state.currentQuest?.id == questID else {
-                state.updatedAt = now()
-                save()
+            let currentDraft = try? activeProofDraft(id: draftID)
+            guard state.currentQuest?.id == questID,
+                  currentDraft == proof
+            else {
+                if pendingProof?.id == draftID,
+                   (state.currentQuest?.id != questID || state.proofDraftQuestID != questID) {
+                    _ = discardProofDraft(draftID: draftID)
+                } else {
+                    state.updatedAt = now()
+                    save()
+                }
                 return
             }
-            let result = response.result
-            deletePendingProofAttachments(excluding: proof.attachments)
+
+            let result = try providerIndependentProofReviewResult(for: proof)
             pendingProof = proof
             pendingQualityResult = result
             recordBackendEvent(
@@ -386,7 +566,12 @@ final class OpenLARPStore {
             recordBetaEvent(.proofSubmitted, occurredAt: requestedAt, day: questDay)
             recordBetaEvent(result.isAccepted ? .proofAccepted : .proofNeedsImprovement, occurredAt: requestedAt, day: questDay)
             errorMessage = nil
-            persistProofDraft()
+            if !persistProofDraft() {
+                state = stateBeforeApplyingResponse
+                pendingProof = proofBeforeApplyingResponse
+                pendingQualityResult = resultBeforeApplyingResponse
+                throw OpenLARPProofDraftError.persistenceFailed
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -394,24 +579,39 @@ final class OpenLARPStore {
 
     func claimPendingQualityResult() {
         guard let pendingProof, let pendingQualityResult else { return }
+        guard !pendingProof.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = OpenLARPError.emptyProof.localizedDescription
+            return
+        }
         guard requireSubscriptionAccess(for: .claimProofXP) else { return }
         let quest = state.currentQuest
+        let previousState = state
+        let previousProof = pendingProof
+        let previousResult = pendingQualityResult
+        var promotion: OpenLARPAttachmentPromotion?
         do {
+            let preparedPromotion = try attachmentStore.preparePromotion(
+                pendingProof.attachments,
+                draftID: pendingProof.id
+            )
+            promotion = preparedPromotion
+            var committedProof = pendingProof
+            committedProof.attachments = preparedPromotion.committedAttachments
             state = try OpenLARPEngine.claim(
                 pendingQualityResult,
-                proof: pendingProof,
+                proof: committedProof,
                 in: state,
                 now: now(),
                 calendar: calendar
             )
             recordBackendEvent(
                 .proofClaimed,
-                entityID: pendingProof.id.uuidString,
+                entityID: committedProof.id.uuidString,
                 summary: BackendEventSummary(
                     targetRoleTitle: state.goal?.targetRole,
                     questID: quest?.id,
                     questDay: quest?.day,
-                    proofID: pendingProof.id,
+                    proofID: committedProof.id,
                     readinessOverall: state.progress.readiness.overall,
                     xp: state.progress.xp,
                     proofCount: state.progress.proofCount,
@@ -425,24 +625,65 @@ final class OpenLARPStore {
             clearCareerGraphSyncPreview()
             clearPersistedProofDraft()
             errorMessage = nil
-            save()
+            guard save() else {
+                throw OpenLARPProofDraftError.persistenceFailed
+            }
+            do {
+                try attachmentStore.finalizePromotion(preparedPromotion)
+            } catch {
+                errorMessage = "Your proof was saved, but an old local draft copy still needs cleanup."
+            }
         } catch {
+            state = previousState
+            self.pendingProof = previousProof
+            self.pendingQualityResult = previousResult
+            if let promotion {
+                try? attachmentStore.rollbackPromotion(promotion)
+            }
             errorMessage = error.localizedDescription
         }
     }
 
     func discardPendingQualityResult() {
-        deletePendingProofAttachments()
+        _ = discardProofDraft()
+    }
+
+    @discardableResult
+    func discardProofDraft(draftID: UUID? = nil) -> Bool {
+        if let draftID,
+           let activeID = (pendingProof ?? state.proofDraft)?.id,
+           draftID != activeID {
+            return false
+        }
+
+        let discardedProof = pendingProof ?? state.proofDraft
+        let previousState = state
+        let previousProof = pendingProof
+        let previousResult = pendingQualityResult
         pendingProof = nil
         pendingQualityResult = nil
         clearPersistedProofDraft()
-        save()
+        state.updatedAt = now()
+        guard save() else {
+            state = previousState
+            pendingProof = previousProof
+            pendingQualityResult = previousResult
+            errorMessage = OpenLARPProofDraftError.persistenceFailed.localizedDescription
+            return false
+        }
+
+        errorMessage = nil
+        if let discardedProof {
+            deleteDiscardedDraftFiles(discardedProof)
+        }
+        return true
     }
 
     func improvePendingProofDraft() {
         pendingQualityResult = nil
-        persistProofDraft()
-        errorMessage = nil
+        if persistProofDraft() {
+            errorMessage = nil
+        }
     }
 
     func updateProfilePrivacy(
@@ -1264,23 +1505,6 @@ final class OpenLARPStore {
         }
     }
 
-    func saveProofImage(
-        data: Data,
-        contentType: String,
-        originalFileName: String = ""
-    ) throws -> ProofAttachment {
-        do {
-            return try attachmentStore.saveImage(
-                data: data,
-                contentType: contentType,
-                originalFileName: originalFileName
-            )
-        } catch {
-            errorMessage = OpenLARPError.attachmentStorageFailed.localizedDescription
-            throw OpenLARPError.attachmentStorageFailed
-        }
-    }
-
     func localURL(for attachment: ProofAttachment) -> URL {
         attachmentStore.url(for: attachment)
     }
@@ -1300,14 +1524,6 @@ final class OpenLARPStore {
 
     func currentBackendSessionSnapshot() -> BackendUserSession {
         currentBackendSession()
-    }
-
-    func deleteProofImage(_ attachment: ProofAttachment) {
-        do {
-            try attachmentStore.delete(attachment)
-        } catch {
-            errorMessage = "That local proof image could not be removed."
-        }
     }
 
     private func mutate(_ change: () throws -> OpenLARPState) {
@@ -1638,45 +1854,293 @@ final class OpenLARPStore {
         }
     }
 
-    private func deletePendingProofAttachments(excluding retainedAttachments: [ProofAttachment] = []) {
-        guard let pendingProof else { return }
-        let retainedAttachmentIDs = Set(retainedAttachments.map(\.id))
+    private func currentDraftQuestID() throws -> UUID {
+        guard let quest = state.currentQuest, quest.status == .inProgress else {
+            throw OpenLARPProofDraftError.noActiveQuest
+        }
+        return quest.id
+    }
 
-        for attachment in pendingProof.attachments where !retainedAttachmentIDs.contains(attachment.id) {
+    private func providerIndependentProofReviewResult(
+        for proof: ProofSubmission
+    ) throws -> QualityCheckResult {
+        guard let quest = state.currentQuest else {
+            throw OpenLARPError.noCurrentQuest
+        }
+
+        // V0 sends written context, link text, and attachment metadata to a workflow,
+        // but it does not provide image bytes or verifiable linked-page inspection.
+        // Keep all user-visible claims and progress rewards client-owned until a
+        // versioned evidence-review contract can prove those capabilities.
+        return try OpenLARPEngine.checkProof(proof, for: quest)
+    }
+
+    private func activeProofDraft(id draftID: UUID) throws -> ProofSubmission {
+        let questID = try currentDraftQuestID()
+        guard let pendingProof,
+              pendingProof.id == draftID,
+              state.proofDraftQuestID == questID
+        else {
+            throw OpenLARPProofDraftError.staleDraft
+        }
+        return pendingProof
+    }
+
+    private func replaceActiveProofDraft(_ draft: ProofSubmission) throws {
+        _ = try activeProofDraft(id: draft.id)
+        let previousState = state
+        let previousProof = pendingProof
+        let previousResult = pendingQualityResult
+        pendingProof = draft
+        pendingQualityResult = nil
+        guard persistProofDraft() else {
+            state = previousState
+            pendingProof = previousProof
+            pendingQualityResult = previousResult
+            throw OpenLARPProofDraftError.persistenceFailed
+        }
+        errorMessage = nil
+    }
+
+    private func deleteDraftAttachmentsAfterPersistence(_ attachments: [ProofAttachment]) {
+        for attachment in attachments {
             do {
                 try attachmentStore.delete(attachment)
             } catch {
-                errorMessage = "Some local draft proof images could not be removed."
+                errorMessage = "Some local draft proof images still need cleanup."
             }
         }
     }
 
-    private func restorePersistedProofDraft() {
-        guard state.currentQuest != nil else {
-            let hadPersistedDraft = state.proofDraft != nil || state.proofDraftQualityResult != nil
-            state.proofDraft = nil
-            state.proofDraftQualityResult = nil
+    private func deleteDiscardedDraftFiles(_ proof: ProofSubmission) {
+        do {
+            try attachmentStore.deleteDraft(proof.id)
+        } catch {
+            errorMessage = "Some local draft proof images still need cleanup."
+        }
+
+        let claimedAttachmentPaths = Set(
+            state.progress.recentProof
+                .flatMap(\.attachments)
+                .compactMap(attachmentStore.committedCanonicalPath)
+        )
+        for attachment in proof.attachments
+        where attachmentStore.isCommittedAttachment(attachment) {
+            guard let path = attachmentStore.committedCanonicalPath(for: attachment),
+                  !claimedAttachmentPaths.contains(path)
+            else {
+                continue
+            }
+            do {
+                try attachmentStore.delete(attachment)
+            } catch {
+                errorMessage = "Some local draft proof images still need cleanup."
+            }
+        }
+    }
+
+    private func restorePersistedProofDraft(reconcileOrphans: Bool) {
+        defer {
+            if reconcileOrphans {
+                reconcileAttachmentFiles()
+            }
+        }
+
+        guard let persistedProof = state.proofDraft else {
+            let hadOrphanedMetadata = state.proofDraftQuestID != nil || state.proofDraftQualityResult != nil
             pendingProof = nil
             pendingQualityResult = nil
-            if hadPersistedDraft {
-                save()
-            }
+            clearPersistedProofDraft()
+            if hadOrphanedMetadata { save() }
             return
         }
 
-        pendingProof = state.proofDraft
+        pendingProof = persistedProof
         pendingQualityResult = state.proofDraftQualityResult
+        guard let currentQuest = state.currentQuest,
+              currentQuest.status == .inProgress,
+              state.proofDraftQuestID == nil || state.proofDraftQuestID == currentQuest.id
+        else {
+            _ = discardProofDraft(draftID: persistedProof.id)
+            return
+        }
+
+        migrateLegacyDraftAttachmentsIfNeeded()
     }
 
-    private func persistProofDraft() {
+    private func migrateLegacyDraftAttachmentsIfNeeded() {
+        guard var draft = pendingProof else { return }
+
+        let previousState = state
+        let previousProof = pendingProof
+        let previousResult = pendingQualityResult
+        let claimedPaths = Set(
+            state.progress.recentProof
+                .flatMap(\.attachments)
+                .compactMap(attachmentStore.committedCanonicalPath)
+        )
+        var stagedCopies: [ProofAttachment] = []
+        var sourceFilesToDelete: [ProofAttachment] = []
+        var migratedAttachments: [ProofAttachment] = []
+        var droppedAttachmentCount = 0
+        var migrationStorageFailed = false
+
+        for attachment in draft.attachments {
+            let isOwnedDraftAttachment = attachmentStore.isDraftAttachment(
+                attachment,
+                draftID: draft.id
+            )
+            let isCommittedAttachment = attachmentStore.isCommittedAttachment(attachment)
+            guard isOwnedDraftAttachment || isCommittedAttachment else {
+                droppedAttachmentCount += 1
+                continue
+            }
+            guard migratedAttachments.count < ProofAttachmentPolicy.maximumCount else {
+                droppedAttachmentCount += 1
+                if isOwnedDraftAttachment || shouldDeleteUnclaimedCommittedAttachment(
+                    attachment,
+                    claimedPaths: claimedPaths
+                ) {
+                    sourceFilesToDelete.append(attachment)
+                }
+                continue
+            }
+
+            let data: Data
+            do {
+                data = try attachmentStore.data(for: attachment)
+            } catch {
+                droppedAttachmentCount += 1
+                if isOwnedDraftAttachment || shouldDeleteUnclaimedCommittedAttachment(
+                    attachment,
+                    claimedPaths: claimedPaths
+                ) {
+                    sourceFilesToDelete.append(attachment)
+                }
+                continue
+            }
+
+            let processed: ProcessedProofImage
+            do {
+                processed = try proofImageProcessor.process(
+                    data: data,
+                    declaredContentType: attachment.contentType
+                )
+            } catch {
+                droppedAttachmentCount += 1
+                if isOwnedDraftAttachment || shouldDeleteUnclaimedCommittedAttachment(
+                    attachment,
+                    claimedPaths: claimedPaths
+                ) {
+                    sourceFilesToDelete.append(attachment)
+                }
+                continue
+            }
+
+            let canKeepOwnedFile = isOwnedDraftAttachment &&
+                processed.data == data &&
+                processed.contentType == attachment.contentType.lowercased() &&
+                processed.byteCount == attachment.byteCount
+            if canKeepOwnedFile {
+                migratedAttachments.append(attachment)
+                continue
+            }
+
+            do {
+                var staged = try attachmentStore.stageImage(
+                    processed,
+                    draftID: draft.id,
+                    originalFileName: attachment.originalFileName,
+                    now: attachment.createdAt
+                )
+                staged.id = attachment.id
+                stagedCopies.append(staged)
+                migratedAttachments.append(staged)
+                if isOwnedDraftAttachment || shouldDeleteUnclaimedCommittedAttachment(
+                    attachment,
+                    claimedPaths: claimedPaths
+                ) {
+                    sourceFilesToDelete.append(attachment)
+                }
+            } catch {
+                migrationStorageFailed = true
+                break
+            }
+        }
+
+        if migrationStorageFailed {
+            deleteDraftAttachmentsAfterPersistence(stagedCopies)
+            state = previousState
+            pendingProof = previousProof
+            pendingQualityResult = previousResult
+            errorMessage = "Your recovered proof draft images could not be staged safely."
+            return
+        }
+
+        draft.attachments = migratedAttachments
+        pendingProof = draft
+        let expectedRecoveredResult = state.currentQuest.flatMap { quest in
+            try? OpenLARPEngine.checkProof(draft, for: quest)
+        }
+        let clearedRecoveredResult = pendingQualityResult != nil &&
+            pendingQualityResult != expectedRecoveredResult
+        if clearedRecoveredResult {
+            pendingQualityResult = nil
+        }
+        state.proofDraftQuestID = state.currentQuest?.id
+        let needsPersistence = draft != previousProof ||
+            pendingQualityResult != previousResult ||
+            state != previousState
+        guard needsPersistence else { return }
+        guard persistProofDraft() else {
+            state = previousState
+            pendingProof = previousProof
+            pendingQualityResult = previousResult
+            deleteDraftAttachmentsAfterPersistence(stagedCopies)
+            return
+        }
+
+        deleteDraftAttachmentsAfterPersistence(sourceFilesToDelete)
+        if droppedAttachmentCount > 0 {
+            let noun = droppedAttachmentCount == 1 ? "image was" : "images were"
+            errorMessage = "\(droppedAttachmentCount) unavailable \(noun) removed from your recovered proof draft."
+        } else if clearedRecoveredResult {
+            errorMessage = "Your recovered proof draft needs a fresh submission review."
+        }
+    }
+
+    private func shouldDeleteUnclaimedCommittedAttachment(
+        _ attachment: ProofAttachment,
+        claimedPaths: Set<String>
+    ) -> Bool {
+        guard let path = attachmentStore.committedCanonicalPath(for: attachment) else {
+            return false
+        }
+        return !claimedPaths.contains(path)
+    }
+
+    private func reconcileAttachmentFiles() {
+        let referencedAttachments = state.progress.recentProof.flatMap(\.attachments) +
+            (pendingProof?.attachments ?? [])
+        do {
+            try attachmentStore.reconcile(referencedAttachments: referencedAttachments)
+        } catch {
+            errorMessage = "Some unreferenced local proof images still need cleanup."
+        }
+    }
+
+    @discardableResult
+    private func persistProofDraft() -> Bool {
         state.proofDraft = pendingProof
+        state.proofDraftQuestID = pendingProof == nil ? nil : state.currentQuest?.id
         state.proofDraftQualityResult = pendingQualityResult
         state.updatedAt = now()
-        save()
+        return save()
     }
 
     private func clearPersistedProofDraft() {
         state.proofDraft = nil
+        state.proofDraftQuestID = nil
         state.proofDraftQualityResult = nil
     }
 

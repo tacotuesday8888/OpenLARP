@@ -439,6 +439,57 @@ struct ProofSubmission: Codable, Equatable, Identifiable {
     }
 }
 
+struct ProofInspectionScope: Codable, Equatable {
+    var didInspectWrittenText: Bool
+    var didInspectLinkFormat: Bool
+    var didInspectLinkedDestination: Bool
+    var didInspectAttachmentMetadata: Bool
+    var didInspectAttachmentContents: Bool
+
+    static let notDocumented = ProofInspectionScope(
+        didInspectWrittenText: false,
+        didInspectLinkFormat: false,
+        didInspectLinkedDestination: false,
+        didInspectAttachmentMetadata: false,
+        didInspectAttachmentContents: false
+    )
+
+    init(
+        didInspectWrittenText: Bool,
+        didInspectLinkFormat: Bool,
+        didInspectLinkedDestination: Bool,
+        didInspectAttachmentMetadata: Bool,
+        didInspectAttachmentContents: Bool
+    ) {
+        self.didInspectWrittenText = didInspectWrittenText
+        self.didInspectLinkFormat = didInspectLinkFormat
+        self.didInspectLinkedDestination = didInspectLinkedDestination
+        self.didInspectAttachmentMetadata = didInspectAttachmentMetadata
+        self.didInspectAttachmentContents = didInspectAttachmentContents
+    }
+
+    var didInspectSubmittedEvidence: Bool {
+        didInspectLinkedDestination || didInspectAttachmentContents
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case didInspectWrittenText
+        case didInspectLinkFormat
+        case didInspectLinkedDestination
+        case didInspectAttachmentMetadata
+        case didInspectAttachmentContents
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        didInspectWrittenText = try container.decodeIfPresent(Bool.self, forKey: .didInspectWrittenText) ?? false
+        didInspectLinkFormat = try container.decodeIfPresent(Bool.self, forKey: .didInspectLinkFormat) ?? false
+        didInspectLinkedDestination = try container.decodeIfPresent(Bool.self, forKey: .didInspectLinkedDestination) ?? false
+        didInspectAttachmentMetadata = try container.decodeIfPresent(Bool.self, forKey: .didInspectAttachmentMetadata) ?? false
+        didInspectAttachmentContents = try container.decodeIfPresent(Bool.self, forKey: .didInspectAttachmentContents) ?? false
+    }
+}
+
 struct QualityCheckResult: Codable, Equatable {
     var isAccepted: Bool
     var qualityScore: Int
@@ -447,6 +498,102 @@ struct QualityCheckResult: Codable, Equatable {
     var improvement: String
     var xpEarned: Int
     var readinessDelta: Int
+    var inspectionScope: ProofInspectionScope
+
+    init(
+        isAccepted: Bool,
+        qualityScore: Int,
+        label: String,
+        reason: String,
+        improvement: String,
+        xpEarned: Int,
+        readinessDelta: Int,
+        inspectionScope: ProofInspectionScope = .notDocumented
+    ) {
+        self.isAccepted = isAccepted
+        self.qualityScore = qualityScore
+        self.label = label
+        self.reason = reason
+        self.improvement = improvement
+        self.xpEarned = xpEarned
+        self.readinessDelta = readinessDelta
+        self.inspectionScope = inspectionScope
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isAccepted
+        case qualityScore
+        case label
+        case reason
+        case improvement
+        case xpEarned
+        case readinessDelta
+        case inspectionScope
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isAccepted = try container.decode(Bool.self, forKey: .isAccepted)
+        qualityScore = try container.decode(Int.self, forKey: .qualityScore)
+        label = try container.decode(String.self, forKey: .label)
+        reason = try container.decode(String.self, forKey: .reason)
+        improvement = try container.decode(String.self, forKey: .improvement)
+        xpEarned = try container.decode(Int.self, forKey: .xpEarned)
+        readinessDelta = try container.decode(Int.self, forKey: .readinessDelta)
+        inspectionScope = try container.decodeIfPresent(ProofInspectionScope.self, forKey: .inspectionScope) ?? .notDocumented
+    }
+}
+
+struct ProofReviewDisclosure: Equatable {
+    var reviewedText: String
+    var notInspectedText: String
+
+    init(result: QualityCheckResult, proof: ProofSubmission) {
+        let scope = result.inspectionScope
+        guard scope != .notDocumented else {
+            reviewedText = "Inspection scope was not recorded for this earlier review."
+            notInspectedText = "Do not assume that linked pages or image contents were inspected."
+            return
+        }
+
+        var reviewedItems: [String] = []
+        if scope.didInspectWrittenText { reviewedItems.append("written description") }
+        if scope.didInspectLinkFormat { reviewedItems.append("link format") }
+        if scope.didInspectAttachmentMetadata { reviewedItems.append("image metadata") }
+        if scope.didInspectLinkedDestination { reviewedItems.append("linked page content") }
+        if scope.didInspectAttachmentContents { reviewedItems.append("image contents") }
+        reviewedText = reviewedItems.isEmpty
+            ? "Reviewed: no inspection scope was recorded."
+            : "Reviewed: \(Self.naturalList(reviewedItems, finalConjunction: "and"))."
+
+        var uninspectedItems: [String] = []
+        let hasLink = !proof.link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if hasLink && !scope.didInspectLinkedDestination {
+            uninspectedItems.append("linked page")
+        }
+        if !proof.attachments.isEmpty && !scope.didInspectAttachmentContents {
+            uninspectedItems.append("image contents")
+        }
+        notInspectedText = uninspectedItems.isEmpty
+            ? "Not inspected: nothing beyond the items listed above."
+            : "Not inspected: \(Self.naturalList(uninspectedItems, finalConjunction: "or"))."
+    }
+
+    private static func naturalList(
+        _ items: [String],
+        finalConjunction: String
+    ) -> String {
+        switch items.count {
+        case 0:
+            return ""
+        case 1:
+            return items[0]
+        case 2:
+            return "\(items[0]) \(finalConjunction) \(items[1])"
+        default:
+            return "\(items.dropLast().joined(separator: ", ")), \(finalConjunction) \(items.last ?? "")"
+        }
+    }
 }
 
 struct ProofRecord: Codable, Equatable, Identifiable {
@@ -522,6 +669,8 @@ struct ProofDetailContent: Equatable {
     var xpText: String
     var reason: String
     var improvement: String
+    var reviewedText: String
+    var notInspectedText: String
     var proofText: String?
     var proofLinkText: String?
     var proofURL: URL?
@@ -533,10 +682,34 @@ struct ProofDetailContent: Equatable {
         questTitle = proof.questTitle
         proofType = proof.kind.label
         submittedAt = proof.submittedAt
-        qualityLabel = proof.quality?.label ?? proof.kind.label
+        if let quality = proof.quality,
+           quality.inspectionScope == .notDocumented,
+           quality.label.localizedCaseInsensitiveCompare("Strong proof") == .orderedSame {
+            qualityLabel = quality.isAccepted
+                ? "Earlier accepted submission"
+                : "Earlier submission review"
+        } else {
+            qualityLabel = proof.quality?.label ?? proof.kind.label
+        }
         xpText = "\(proof.quality?.xpEarned ?? 0) XP"
         reason = proof.quality?.reason ?? "No quality check is attached to this receipt yet."
         improvement = proof.quality?.improvement ?? "Submit stronger proof on the next quest to get sharper feedback."
+        if let quality = proof.quality {
+            let submission = ProofSubmission(
+                id: proof.id,
+                kind: proof.kind,
+                text: proof.text,
+                link: proof.link,
+                attachments: proof.attachments,
+                submittedAt: proof.submittedAt
+            )
+            let disclosure = ProofReviewDisclosure(result: quality, proof: submission)
+            reviewedText = disclosure.reviewedText
+            notInspectedText = disclosure.notInspectedText
+        } else {
+            reviewedText = "No submission review is attached to this receipt."
+            notInspectedText = "Do not assume that linked pages or image contents were inspected."
+        }
         proofText = trimmedText.isEmpty ? nil : trimmedText
         proofLinkText = trimmedLink.isEmpty ? nil : trimmedLink
         proofURL = trimmedLink.hasPrefix("http://") || trimmedLink.hasPrefix("https://") ? URL(string: trimmedLink) : nil
@@ -1196,6 +1369,7 @@ struct OpenLARPState: Codable, Equatable {
     var missedDayRecovery: MissedDayRecoveryState = .empty
     var skippedToday: SkippedTodayState = .empty
     var proofDraft: ProofSubmission?
+    var proofDraftQuestID: UUID?
     var proofDraftQualityResult: QualityCheckResult?
     var outcomeLog: [CareerOutcomeRecord]
     var betaEvents: [BetaEventRecord]
@@ -1206,7 +1380,7 @@ struct OpenLARPState: Codable, Equatable {
     var accountDeletionResult: AccountDeletionResult?
 
     init(
-        schemaVersion: Int = 9,
+        schemaVersion: Int = 10,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
         targetRoles: [TargetRole] = [],
@@ -1219,6 +1393,7 @@ struct OpenLARPState: Codable, Equatable {
         missedDayRecovery: MissedDayRecoveryState = .empty,
         skippedToday: SkippedTodayState = .empty,
         proofDraft: ProofSubmission? = nil,
+        proofDraftQuestID: UUID? = nil,
         proofDraftQualityResult: QualityCheckResult? = nil,
         outcomeLog: [CareerOutcomeRecord] = [],
         betaEvents: [BetaEventRecord] = [],
@@ -1241,6 +1416,7 @@ struct OpenLARPState: Codable, Equatable {
         self.missedDayRecovery = missedDayRecovery
         self.skippedToday = skippedToday
         self.proofDraft = proofDraft
+        self.proofDraftQuestID = proofDraftQuestID
         self.proofDraftQualityResult = proofDraftQualityResult
         self.outcomeLog = outcomeLog
         self.betaEvents = betaEvents
@@ -1252,7 +1428,7 @@ struct OpenLARPState: Codable, Equatable {
     }
 
     static let empty = OpenLARPState(
-        schemaVersion: 9,
+        schemaVersion: 10,
         userProfile: nil,
         goal: nil,
         targetRoles: [],
@@ -1291,6 +1467,7 @@ extension OpenLARPState {
         case missedDayRecovery
         case skippedToday
         case proofDraft
+        case proofDraftQuestID
         case proofDraftQualityResult
         case outcomeLog
         case betaEvents
@@ -1304,7 +1481,7 @@ extension OpenLARPState {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         _ = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        schemaVersion = 9
+        schemaVersion = 10
         userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
         goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
@@ -1317,6 +1494,7 @@ extension OpenLARPState {
         missedDayRecovery = try container.decodeIfPresent(MissedDayRecoveryState.self, forKey: .missedDayRecovery) ?? .empty
         skippedToday = try container.decodeIfPresent(SkippedTodayState.self, forKey: .skippedToday) ?? .empty
         proofDraft = try container.decodeIfPresent(ProofSubmission.self, forKey: .proofDraft)
+        proofDraftQuestID = try container.decodeIfPresent(UUID.self, forKey: .proofDraftQuestID)
         proofDraftQualityResult = try container.decodeIfPresent(QualityCheckResult.self, forKey: .proofDraftQualityResult)
         outcomeLog = try container.decodeIfPresent([CareerOutcomeRecord].self, forKey: .outcomeLog) ?? []
         betaEvents = (try? container.decodeIfPresent(LossyBetaEventRecordList.self, forKey: .betaEvents)?.records) ?? []
@@ -1346,6 +1524,7 @@ extension OpenLARPState {
         try container.encode(missedDayRecovery, forKey: .missedDayRecovery)
         try container.encode(skippedToday, forKey: .skippedToday)
         try container.encodeIfPresent(proofDraft, forKey: .proofDraft)
+        try container.encodeIfPresent(proofDraftQuestID, forKey: .proofDraftQuestID)
         try container.encodeIfPresent(proofDraftQualityResult, forKey: .proofDraftQualityResult)
         try container.encode(outcomeLog, forKey: .outcomeLog)
         try container.encode(betaEvents, forKey: .betaEvents)
@@ -1445,17 +1624,13 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
     case noCurrentQuest
     case questNotAvailable
     case emptyProof
-    case attachmentStorageFailed
-    case unsupportedProofImageType
     case invalidQuestPlan
 
     var errorDescription: String? {
         switch self {
         case .noCurrentQuest: "There is no current quest to work on."
         case .questNotAvailable: "This quest is not available yet."
-        case .emptyProof: "Add a short proof note, link, photo, or screenshot before checking quality."
-        case .attachmentStorageFailed: "That image could not be saved locally. Try another screenshot or photo."
-        case .unsupportedProofImageType: "Use a PNG, JPEG, HEIC, or HEIF screenshot or photo for proof uploads."
+        case .emptyProof: "Add a written note about what you did before checking your submission."
         case .invalidQuestPlan: "The generated plan was not usable, so OpenLARP switched to a local plan."
         }
     }

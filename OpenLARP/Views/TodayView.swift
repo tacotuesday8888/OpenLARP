@@ -353,7 +353,7 @@ struct TodayView: View {
                         if let result = store.pendingQualityResult {
                             QualityResultCard(result: result, store: store)
                         } else {
-                            ProofComposer(store: store, draft: store.pendingProof)
+                            ProofComposer(store: store)
                         }
                         skipTodayButton
                     case .completed:
@@ -1027,55 +1027,57 @@ private struct ResultSignalRow: View {
 }
 
 private enum ProofImageContentPolicy {
-    static let allowedContentTypes = Set([
-        "image/png",
-        "image/jpeg",
-        "image/heic",
-        "image/heif"
-    ])
-
     static func supportedContentType(for item: PhotosPickerItem) -> String? {
         item.supportedContentTypes
             .compactMap(\.preferredMIMEType)
-            .first { allowedContentTypes.contains($0.lowercased()) }
+            .first { ProofAttachmentPolicy.allowedContentTypes.contains($0.lowercased()) }
     }
 }
 
 private struct ProofComposer: View {
     let store: OpenLARPStore
-    @State private var kind: ProofKind = .proof
-    @State private var text = ""
-    @State private var link = ""
+    @State private var draftID: UUID?
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
-    @State private var attachments: [ProofAttachment] = []
     @State private var isSavingAttachments = false
 
-    private var canSubmit: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            !attachments.isEmpty
+    private var activeDraft: ProofSubmission? {
+        guard let draftID, store.pendingProof?.id == draftID else { return nil }
+        return store.pendingProof
     }
 
-    init(store: OpenLARPStore, draft: ProofSubmission? = nil) {
-        self.store = store
-        _kind = State(initialValue: draft?.kind ?? .proof)
-        _text = State(initialValue: draft?.text ?? "")
-        _link = State(initialValue: draft?.link ?? "")
-        _attachments = State(initialValue: draft?.attachments ?? [])
+    private var kind: ProofKind { activeDraft?.kind ?? .proof }
+    private var text: String { activeDraft?.text ?? "" }
+    private var link: String { activeDraft?.link ?? "" }
+    private var attachments: [ProofAttachment] { activeDraft?.attachments ?? [] }
+    private var remainingCapacity: Int {
+        max(0, ProofAttachmentPolicy.maximumCount - attachments.count)
+    }
+
+    private var canSubmit: Bool {
+        let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasText
+    }
+
+    private var hasDraftContent: Bool {
+        canSubmit ||
+            !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !attachments.isEmpty ||
+            kind == .selfReport
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(feature: .proof, eyebrow: "Private proof", title: "Add evidence")
 
-            Picker("Proof type", selection: $kind) {
+            Picker("Proof type", selection: kindBinding) {
                 ForEach(ProofKind.allCases) { proofKind in
                     Text(proofKind.label).tag(proofKind)
                 }
             }
             .pickerStyle(.segmented)
+            .disabled(isSavingAttachments || store.isProofChecking)
 
-            TextEditor(text: $text)
+            TextEditor(text: textBinding)
                 .frame(minHeight: 116)
                 .padding(8)
                 .background(Color.openLARPBackground)
@@ -1085,38 +1087,50 @@ private struct ProofComposer: View {
                         .stroke(Color.openLARPGray.opacity(0.25))
                 )
                 .accessibilityLabel("Proof text")
+                .disabled(store.isProofChecking)
 
-            TextField("Optional proof link", text: $link)
+            TextField("Optional proof link", text: linkBinding)
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.never)
                 .keyboardType(.URL)
+                .disabled(store.isProofChecking)
 
             if kind == .proof {
-                PhotosPicker(
-                    selection: $selectedPhotoItems,
-                    maxSelectionCount: 4,
-                    matching: .images
-                ) {
-                    Label("Add Screenshot or Photo", systemImage: "photo.on.rectangle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(isSavingAttachments)
-                .onChange(of: selectedPhotoItems) { _, newItems in
-                    Task {
-                        await saveSelectedPhotos(newItems)
+                if remainingCapacity > 0 {
+                    PhotosPicker(
+                        selection: $selectedPhotoItems,
+                        maxSelectionCount: max(1, remainingCapacity),
+                        matching: .images
+                    ) {
+                        Label("Add Screenshot or Photo", systemImage: "photo.on.rectangle")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(isSavingAttachments || store.isProofChecking)
+                    .onChange(of: selectedPhotoItems) { _, newItems in
+                        Task {
+                            await saveSelectedPhotos(newItems)
+                        }
+                    }
+                } else {
+                    Label("4 of 4 proof images added", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPGreen)
                 }
 
+                Text("Up to 4 PNG, JPEG, HEIC, or HEIF images; 8 MB per image after processing.")
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
+
                 if isSavingAttachments {
-                    Label("Saving proof images locally...", systemImage: "arrow.down.doc")
+                    Label("Validating and staging proof images locally...", systemImage: "arrow.down.doc")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.openLARPSoftInk)
                 }
 
                 if !attachments.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Saved locally")
+                        Text("Draft images saved locally")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(Color.openLARPGreen)
                             .textCase(.uppercase)
@@ -1127,12 +1141,13 @@ private struct ProofComposer: View {
 
                         ForEach(attachments) { attachment in
                             Button {
-                                remove(attachment)
+                                removeDraftAttachment(attachment)
                             } label: {
                                 Label("Remove \(attachment.originalFileName.isEmpty ? "image" : attachment.originalFileName)", systemImage: "xmark.circle")
                                     .font(.caption.weight(.semibold))
                             }
                             .foregroundStyle(Color.openLARPCoral)
+                            .disabled(store.isProofChecking)
                         }
                     }
                 }
@@ -1140,7 +1155,8 @@ private struct ProofComposer: View {
 
             Button {
                 Task {
-                    await store.checkProof(kind: kind, text: text, link: link, attachments: kind == .proof ? attachments : [])
+                    guard let draftID else { return }
+                    await store.checkPendingProof(draftID: draftID)
                 }
             } label: {
                 Label(store.isProofChecking ? "Checking Proof" : "Check My Proof", systemImage: "checkmark.seal.fill")
@@ -1149,52 +1165,143 @@ private struct ProofComposer: View {
             .disabled(!canSubmit || isSavingAttachments || store.isProofChecking)
             .opacity(canSubmit && !isSavingAttachments && !store.isProofChecking ? 1 : 0.5)
 
-            Text(kind == .selfReport ? "Self-report keeps momentum, but earns less than real evidence." : "Links, screenshots, notes, and artifacts are saved locally as private evidence.")
+            Text(kind == .selfReport
+                ? "Self-report requires a written reflection and earns less than a documented proof submission."
+                : "Add a written note before review. Your draft auto-saves on this device; a link or image is not treated as inspected evidence unless its contents are actually reviewed.")
                 .font(.caption)
                 .foregroundStyle(Color.openLARPSoftInk)
+
+            if hasDraftContent {
+                Button(role: .destructive) {
+                    guard let draftID else { return }
+                    if store.discardProofDraft(draftID: draftID) {
+                        self.draftID = nil
+                    }
+                } label: {
+                    Label("Discard Draft", systemImage: "trash")
+                }
+                .font(.caption.weight(.semibold))
+                .disabled(isSavingAttachments || store.isProofChecking)
+            }
         }
+        .onAppear {
+            if draftID == nil {
+                draftID = store.prepareProofDraft()
+            }
+        }
+    }
+
+    private var kindBinding: Binding<ProofKind> {
+        Binding(
+            get: { kind },
+            set: { newKind in
+                guard let draftID = ensureDraftID(preferredKind: newKind) else { return }
+                do {
+                    try store.changeProofDraftKind(to: newKind, draftID: draftID)
+                } catch {
+                    store.errorMessage = error.localizedDescription
+                }
+            }
+        )
+    }
+
+    private var textBinding: Binding<String> {
+        Binding(
+            get: { text },
+            set: { newText in
+                guard let draftID = ensureDraftID(preferredKind: kind) else { return }
+                do {
+                    try store.updateProofDraftText(newText, draftID: draftID)
+                } catch {
+                    store.errorMessage = error.localizedDescription
+                }
+            }
+        )
+    }
+
+    private var linkBinding: Binding<String> {
+        Binding(
+            get: { link },
+            set: { newLink in
+                guard let draftID = ensureDraftID(preferredKind: kind) else { return }
+                do {
+                    try store.updateProofDraftLink(newLink, draftID: draftID)
+                } catch {
+                    store.errorMessage = error.localizedDescription
+                }
+            }
+        )
+    }
+
+    private func ensureDraftID(preferredKind: ProofKind) -> UUID? {
+        if let draftID, store.pendingProof?.id == draftID {
+            return draftID
+        }
+        let preparedID = store.prepareProofDraft(kind: preferredKind)
+        draftID = preparedID
+        return preparedID
     }
 
     @MainActor
     private func saveSelectedPhotos(_ items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
+        guard let draftID = ensureDraftID(preferredKind: .proof) else {
+            selectedPhotoItems = []
+            return
+        }
         isSavingAttachments = true
         defer { isSavingAttachments = false }
+        var attachmentErrors: [String] = []
 
         for item in items {
             do {
-                guard let data = try await item.loadTransferable(type: Data.self) else {
-                    continue
-                }
                 guard let contentType = ProofImageContentPolicy.supportedContentType(for: item) else {
-                    store.errorMessage = OpenLARPError.unsupportedProofImageType.localizedDescription
+                    attachmentErrors.append(
+                        ProofImageProcessingError.unsupportedContentType.localizedDescription
+                    )
                     continue
                 }
-                let originalFileName = item.itemIdentifier ?? "selected-proof-image"
-                let attachment = try store.saveProofImage(
-                    data: data,
-                    contentType: contentType,
-                    originalFileName: originalFileName
-                )
-                if !attachments.contains(attachment) {
-                    attachments.append(attachment)
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    attachmentErrors.append(
+                        ProofImageProcessingError.corruptImage.localizedDescription
+                    )
+                    continue
                 }
+                _ = try await store.stageProofImage(
+                    data: data,
+                    declaredContentType: contentType,
+                    originalFileName: "Proof image",
+                    draftID: draftID
+                )
             } catch {
-                store.errorMessage = OpenLARPError.attachmentStorageFailed.localizedDescription
+                attachmentErrors.append(error.localizedDescription)
             }
         }
         selectedPhotoItems = []
+        if let firstError = attachmentErrors.first {
+            store.errorMessage = attachmentErrors.count == 1
+                ? firstError
+                : "Some selected images could not be added. \(firstError)"
+        }
     }
 
-    private func remove(_ attachment: ProofAttachment) {
-        attachments.removeAll { $0.id == attachment.id }
-        store.deleteProofImage(attachment)
+    private func removeDraftAttachment(_ attachment: ProofAttachment) {
+        guard let draftID else { return }
+        do {
+            try store.removeProofDraftAttachment(attachment.id, draftID: draftID)
+        } catch {
+            store.errorMessage = error.localizedDescription
+        }
     }
 }
 
 private struct QualityResultCard: View {
     let result: QualityCheckResult
     let store: OpenLARPStore
+
+    private var disclosure: ProofReviewDisclosure? {
+        store.pendingProof.map { ProofReviewDisclosure(result: result, proof: $0) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1214,10 +1321,22 @@ private struct QualityResultCard: View {
                 .foregroundStyle(Color.openLARPInk)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let disclosure {
+                Label(disclosure.reviewedText, systemImage: "text.magnifyingglass")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPGreen)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Label(disclosure.notInspectedText, systemImage: "eye.slash")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPCoral)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack {
                 Pill(title: "+\(result.xpEarned) XP", systemImage: "bolt.fill", color: .openLARPYellow)
                 Pill(title: "+\(result.readinessDelta) proof", systemImage: "chart.line.uptrend.xyaxis", color: .openLARPGreen)
-                Pill(title: "\(result.qualityScore)/100", systemImage: "gauge", color: .openLARPCoral)
+                Pill(title: "\(result.qualityScore)/100 context", systemImage: "gauge", color: .openLARPCoral)
             }
 
             if result.isAccepted {
