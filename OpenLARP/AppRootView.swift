@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum AppLifecycleOperation: Equatable, Sendable {
     case refreshDailyAvailability
@@ -66,6 +69,11 @@ struct AppRootView: View {
                 )
             )
         }
+        #if canImport(UIKit)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+            _ = store.retryProtectedLocalDataAccess()
+        }
+        #endif
         .onOpenURL { url in
             guard store.releaseConfiguration.serviceMode != .localOnly,
                   store.releaseConfiguration.isEnabled(.account) else {

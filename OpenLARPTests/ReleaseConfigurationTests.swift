@@ -107,6 +107,7 @@ final class ReleaseConfigurationTests: XCTestCase {
                 .recentOutcomes,
                 .streak,
                 .privacy,
+                .localData,
                 .badges,
                 .proof,
                 .rules
@@ -124,8 +125,16 @@ final class ReleaseConfigurationTests: XCTestCase {
             "OpenLARP does not upload or sync career data in this release."
         )
         XCTAssertEqual(
+            privacyPresentation.localOnlyContent?.committedDataBackupStatement,
+            "Committed OpenLARP data follows your iOS device backup settings."
+        )
+        XCTAssertEqual(
+            privacyPresentation.localOnlyContent?.temporaryDataBackupStatement,
+            "Proof drafts and temporary files are marked for exclusion from iOS device backups."
+        )
+        XCTAssertEqual(
             privacyPresentation.localOnlyContent?.deviceBackupStatement,
-            "iOS device backups may include app data according to your device backup settings."
+            "Committed OpenLARP data follows your iOS device backup settings.\n\nProof drafts and temporary files are marked for exclusion from iOS device backups."
         )
     }
 
@@ -161,6 +170,7 @@ final class ReleaseConfigurationTests: XCTestCase {
                 .recentOutcomes,
                 .streak,
                 .privacy,
+                .localData,
                 .badges,
                 .proof,
                 .rules
@@ -174,7 +184,7 @@ final class ReleaseConfigurationTests: XCTestCase {
         let privacyPresentation = ProfilePrivacyPresentation.mode(for: .internalBeta)
         XCTAssertEqual(
             privacyPresentation.visibleControls,
-            [.longTermMemory, .shareableWins, .privateEvidenceCloudSync]
+            [.privateEvidenceCloudSync]
         )
         XCTAssertNil(privacyPresentation.localOnlyContent)
     }

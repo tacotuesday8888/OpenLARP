@@ -9,6 +9,7 @@ struct OpenLARPAppStoreFactory {
 
     private let localPersistence: OpenLARPPersistence
     private let localAttachmentStore: OpenLARPAttachmentStore
+    private let localDataStore: OpenLARPLocalDataStore?
     #if OPENLARP_INTERNAL_SERVICES
     private let firebaseBootstrap: FirebaseBootstrap
     private let internalStoreBuilder: InternalStoreBuilder
@@ -18,6 +19,7 @@ struct OpenLARPAppStoreFactory {
     init(
         localPersistence: OpenLARPPersistence = .live,
         localAttachmentStore: OpenLARPAttachmentStore = .live,
+        localDataStore: OpenLARPLocalDataStore? = nil,
         firebaseBootstrap: @escaping FirebaseBootstrap = {
             _ = OpenLARPFirebaseBootstrap.configureIfAvailable()
         },
@@ -25,16 +27,19 @@ struct OpenLARPAppStoreFactory {
     ) {
         self.localPersistence = localPersistence
         self.localAttachmentStore = localAttachmentStore
+        self.localDataStore = localDataStore
         self.firebaseBootstrap = firebaseBootstrap
         self.internalStoreBuilder = internalStoreBuilder
     }
     #else
     init(
         localPersistence: OpenLARPPersistence = .live,
-        localAttachmentStore: OpenLARPAttachmentStore = .live
+        localAttachmentStore: OpenLARPAttachmentStore = .live,
+        localDataStore: OpenLARPLocalDataStore? = nil
     ) {
         self.localPersistence = localPersistence
         self.localAttachmentStore = localAttachmentStore
+        self.localDataStore = localDataStore
     }
     #endif
 
@@ -58,6 +63,7 @@ struct OpenLARPAppStoreFactory {
         OpenLARPStore(
             persistence: localPersistence,
             attachmentStore: localAttachmentStore,
+            localDataStore: localDataStore,
             aiWorkflowService: LocalMockV0AIWorkflowService(),
             agentService: MockCareerAgentService(),
             careerGraphSyncService: LocalMockCareerGraphSyncService(),
@@ -76,7 +82,7 @@ struct OpenLARPAppStoreFactory {
     private static func makeFirebaseBetaStore(
         configuration: OpenLARPReleaseConfiguration
     ) -> OpenLARPStore {
-        let attachmentStore = OpenLARPAttachmentStore.live
+        let localDataStore = OpenLARPLocalDataStore.live
         let authenticationService = FirebaseOpenLARPAuthenticationService()
         let aiWorkflowService = FallbackV0AIWorkflowService(
             primary: FirebaseCallableV0AIWorkflowService(),
@@ -84,11 +90,11 @@ struct OpenLARPAppStoreFactory {
         )
 
         return OpenLARPStore(
-            attachmentStore: attachmentStore,
+            localDataStore: localDataStore,
             aiWorkflowService: aiWorkflowService,
             careerGraphSyncService: FirebaseReadyCareerGraphSyncService(
                 firebaseService: FirebaseFirestoreCareerGraphSyncService(
-                    attachmentDataProvider: attachmentStore,
+                    attachmentDataProvider: localDataStore,
                     proofAttachmentReceiptPromoter: FirebaseCallableProofAttachmentReceiptPromoter()
                 )
             ),

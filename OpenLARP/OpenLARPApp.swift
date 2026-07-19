@@ -7,7 +7,9 @@ struct OpenLARPApp: App {
     init() {
         let releaseConfiguration = OpenLARPReleaseConfiguration.current()
         _store = State(
-            initialValue: OpenLARPAppStoreFactory().makeStore(for: releaseConfiguration)
+            initialValue: OpenLARPAppStoreFactory(
+                localDataStore: .live
+            ).makeStore(for: releaseConfiguration)
         )
     }
 

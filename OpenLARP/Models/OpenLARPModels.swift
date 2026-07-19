@@ -393,6 +393,52 @@ struct ProofAttachment: Codable, Equatable, Identifiable {
     var isImage: Bool {
         contentType.hasPrefix("image/")
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case fileName
+        case originalFileName
+        case contentType
+        case byteCount
+        case createdAt
+        case localRelativePath
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        originalFileName = try container.decodeIfPresent(String.self, forKey: .originalFileName) ?? ""
+        contentType = try container.decode(String.self, forKey: .contentType)
+        byteCount = try container.decode(Int.self, forKey: .byteCount)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        if let decodedPath = try container.decodeIfPresent(String.self, forKey: .localRelativePath) {
+            localRelativePath = decodedPath
+        } else if decoder.userInfo[.openLARPExportArchive] as? Bool == true {
+            localRelativePath = ""
+        } else {
+            localRelativePath = "ProofAttachments/\(fileName)"
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(fileName, forKey: .fileName)
+        try container.encode(originalFileName, forKey: .originalFileName)
+        try container.encode(contentType, forKey: .contentType)
+        try container.encode(byteCount, forKey: .byteCount)
+        try container.encode(createdAt, forKey: .createdAt)
+        if !localRelativePath.isEmpty {
+            try container.encode(localRelativePath, forKey: .localRelativePath)
+        }
+    }
+}
+
+extension CodingUserInfoKey {
+    static let openLARPExportArchive = CodingUserInfoKey(
+        rawValue: "com.openlarp.export-archive"
+    )!
 }
 
 struct ProofSubmission: Codable, Equatable, Identifiable {
@@ -1356,6 +1402,8 @@ struct SkippedTodayState: Codable, Equatable {
 }
 
 struct OpenLARPState: Codable, Equatable {
+    static let currentSchemaVersion = 10
+
     var schemaVersion: Int
     var userProfile: CareerUserProfile?
     var goal: CareerGoal?
@@ -1380,7 +1428,7 @@ struct OpenLARPState: Codable, Equatable {
     var accountDeletionResult: AccountDeletionResult?
 
     init(
-        schemaVersion: Int = 10,
+        schemaVersion: Int = OpenLARPState.currentSchemaVersion,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
         targetRoles: [TargetRole] = [],
@@ -1428,7 +1476,7 @@ struct OpenLARPState: Codable, Equatable {
     }
 
     static let empty = OpenLARPState(
-        schemaVersion: 10,
+        schemaVersion: OpenLARPState.currentSchemaVersion,
         userProfile: nil,
         goal: nil,
         targetRoles: [],
@@ -1480,8 +1528,11 @@ extension OpenLARPState {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        _ = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        schemaVersion = 10
+        let decodedSchemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        guard decodedSchemaVersion <= Self.currentSchemaVersion else {
+            throw OpenLARPPersistenceError.unsupportedStateSchema(decodedSchemaVersion)
+        }
+        schemaVersion = Self.currentSchemaVersion
         userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
         goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
