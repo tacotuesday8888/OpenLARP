@@ -17,6 +17,7 @@ It is not an open-source project. No open-source license is granted. You may rea
 - Local quest, proof, progress, and readiness models
 - Backend-ready contracts for Firebase, Firestore, AI workflows, and subscriptions
 - Product and architecture notes in `docs/`
+- A direct Wondering product audit and OpenLARP feature translation in `docs/WONDERING_PRODUCT_AUDIT.md`
 - App Store/TestFlight draft launch packet in `docs/APP_STORE_TESTFLIGHT_READINESS.md`
 - Xcode project plus `project.yml` for project generation
 
