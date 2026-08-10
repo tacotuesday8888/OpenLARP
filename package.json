@@ -4,13 +4,14 @@
   "type": "module",
   "workspaces": [
     "backend/ai",
+    "backend/ai-service",
     "backend/functions",
     "firebase-rules"
   ],
   "scripts": {
-    "typecheck:backend": "npm --workspace backend/ai run typecheck && npm --workspace backend/functions run typecheck",
-    "test:backend": "npm --workspace backend/ai test && npm --workspace backend/functions test",
-    "build:backend": "npm --workspace backend/functions run build",
+    "typecheck:backend": "npm --workspace backend/ai run typecheck && npm --workspace backend/ai-service run typecheck && npm --workspace backend/functions run typecheck",
+    "test:backend": "npm --workspace backend/ai test && npm --workspace backend/ai-service test && npm --workspace backend/functions test",
+    "build:backend": "npm --workspace backend/ai-service run build && npm --workspace backend/functions run build",
     "public:safety": "node scripts/public-repo-safety-check.mjs",
     "beta:gate": "node scripts/beta-release-gate.mjs",
     "test:rules": "npm --workspace firebase-rules test",
