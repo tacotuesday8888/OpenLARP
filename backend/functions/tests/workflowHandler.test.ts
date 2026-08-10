@@ -333,6 +333,26 @@ describe("handleOpenLARPWorkflowRequest", () => {
     });
   });
 
+  it("dispatches bounded deterministic adaptive intake when live AI is unavailable", async () => {
+    const response = await authed(envelope("adaptiveCareerIntake", {
+      confirmedFacts: [],
+      pendingHypotheses: [],
+      rejectedHypothesisIDs: [],
+      unknownKinds: ["existingProof", "constraints", "confidence"],
+      questionHistory: [],
+      maxQuestions: 2
+    }));
+
+    expectSuccess(response, "adaptiveCareerIntake");
+    expect(response.result).toMatchObject({
+      questions: [
+        { factKind: "existingProof" },
+        { factKind: "constraints" }
+      ],
+      hypotheses: []
+    });
+  });
+
   it("dispatches deterministic workflows for every implemented kind", async () => {
     const diagnostic = {
       score: 62,

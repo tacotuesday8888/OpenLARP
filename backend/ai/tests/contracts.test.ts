@@ -6,10 +6,14 @@ import {
 } from "../src/config.js";
 import { estimateProviderUsage, providerUsageMetadata } from "../src/costAccounting.js";
 import {
+  adaptiveCareerIntakePayloadSchema,
+  adaptiveCareerIntakeResponseSchema,
   agentScanPayloadSchema,
   careerBriefPayloadSchema,
   careerGoalSchema,
   diagnosticPayloadSchema,
+  diagnosticResponseSchema,
+  executionMetadataSchema,
   implementedWorkflowKinds,
   opportunityRankingPayloadSchema,
   requestEnvelopeSchema,
@@ -17,6 +21,7 @@ import {
   safetyRulesSchema
 } from "../src/contracts.js";
 import {
+  makeAdaptiveCareerIntake,
   makeAgentScan,
   makeCareerBrief,
   makeDiagnostic,
@@ -230,6 +235,7 @@ describe("OpenLARP AI backend contracts", () => {
 
   it("keeps every accepted workflow kind backed by a deterministic contract path", () => {
     expect(implementedWorkflowKinds).toEqual([
+      "adaptiveCareerIntake",
       "cookedDiagnostic",
       "questPlan",
       "proofQualityCheck",
@@ -239,6 +245,127 @@ describe("OpenLARP AI backend contracts", () => {
       "opportunityRanking",
       "agentScan"
     ]);
+  });
+
+  it("bounds adaptive intake around confirmed facts, hypotheses, and unknowns", () => {
+    const payload = adaptiveCareerIntakePayloadSchema.parse({
+      confirmedFacts: [{
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "targetOutcome",
+        value: "iOS engineer",
+        source: "userEntry",
+        lastUpdatedAt: "2026-08-10T10:00:00.000Z"
+      }],
+      pendingHypotheses: [{
+        id: "22222222-2222-4222-8222-222222222222",
+        kind: "experience",
+        value: "May have shipped a class app",
+        source: "aiHypothesis",
+        confirmationState: "awaitingConfirmation",
+        lastUpdatedAt: "2026-08-10T10:01:00.000Z"
+      }],
+      rejectedHypothesisIDs: ["33333333-3333-4333-8333-333333333333"],
+      unknownKinds: ["existingProof", "constraints"],
+      questionHistory: [{
+        factKind: "currentStage",
+        question: "Where are you now?",
+        answer: "New graduate"
+      }],
+      maxQuestions: 2
+    });
+
+    expect(payload.maxQuestions).toBe(2);
+    const deterministic = makeAdaptiveCareerIntake(payload);
+    expect(deterministic.questions.map((question) => question.factKind)).toEqual([
+      "existingProof",
+      "constraints"
+    ]);
+    expect(() => adaptiveCareerIntakeResponseSchema.parse({
+      questions: Array.from({ length: 4 }, (_, index) => ({
+        id: `question-${index}`,
+        factKind: "existingProof",
+        question: "What proof can you show?",
+        rationale: "This clarifies the readiness baseline.",
+        responseType: "freeText",
+        options: []
+      })),
+      hypotheses: []
+    })).toThrow();
+    expect(() => adaptiveCareerIntakeResponseSchema.parse({
+      questions: [],
+      hypotheses: [{
+        kind: "experience",
+        value: "Shipped a production app",
+        confirmationState: "confirmed"
+      }]
+    })).toThrow();
+  });
+
+  it("requires a supportive Cooked result to disclose gaps and uncertainty", () => {
+    const result = diagnosticResponseSchema.parse({
+      score: 62,
+      label: "Some proof, not enough signal",
+      mainGap: "Role-specific proof is still thin.",
+      strongestSignal: "One class project is confirmed.",
+      fastestFix: "Create one small role-specific artifact.",
+      readinessBaseline: 48,
+      strongestSignals: ["One class project is confirmed."],
+      readinessGaps: ["No role-specific artifact is confirmed."],
+      missingInformation: ["The project outcome is unknown."],
+      uncertaintyExplanation: "This baseline uses only the user-confirmed facts above.",
+      firstAction: "Map three repeated requirements from two current role descriptions."
+    });
+
+    expect(result.uncertaintyExplanation).toContain("confirmed");
+    expect(result.readinessGaps).toHaveLength(1);
+  });
+
+  it("keeps live execution metadata bounded and privacy-safe", () => {
+    expect(executionMetadataSchema.parse({
+      schemaVersion: 1,
+      liveModelCallsEnabled: true,
+      liveModelUsed: true,
+      usedFallback: false,
+      fallbackReason: null,
+      promptVersion: "openlarp.cooked.v1",
+      policyRevision: "beta-2026-08-10",
+      usage: {
+        inputTokens: 320,
+        outputTokens: 180,
+        latencyBucket: "under5s"
+      }
+    })).toMatchObject({ liveModelUsed: true, usedFallback: false });
+
+    expect(() => executionMetadataSchema.parse({
+      schemaVersion: 1,
+      liveModelCallsEnabled: true,
+      liveModelUsed: true,
+      usedFallback: true,
+      fallbackReason: "provider",
+      promptVersion: "openlarp.cooked.v1",
+      policyRevision: "beta-2026-08-10",
+      usage: { inputTokens: 1, outputTokens: 1, latencyBucket: "under5s" }
+    })).toThrow();
+    expect(() => executionMetadataSchema.parse({
+      schemaVersion: 1,
+      liveModelCallsEnabled: true,
+      liveModelUsed: false,
+      usedFallback: true,
+      fallbackReason: "private proof text",
+      promptVersion: "openlarp.cooked.v1",
+      policyRevision: "beta-2026-08-10",
+      usage: { inputTokens: 0, outputTokens: 0, latencyBucket: "notRun" }
+    })).toThrow();
+    expect(() => executionMetadataSchema.parse({
+      schemaVersion: 1,
+      liveModelCallsEnabled: true,
+      liveModelUsed: true,
+      usedFallback: false,
+      fallbackReason: null,
+      promptVersion: "my private career goal",
+      policyRevision: "beta-2026-08-10",
+      usage: { inputTokens: 1, outputTokens: 1, latencyBucket: "under5s" }
+    })).toThrow();
   });
 
   it("rejects envelopes that disable external-action approval", () => {

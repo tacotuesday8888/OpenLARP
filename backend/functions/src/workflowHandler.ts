@@ -1,4 +1,6 @@
 import {
+  adaptiveCareerIntakePayloadSchema,
+  adaptiveCareerIntakeResponseSchema,
   agentScanPayloadSchema,
   agentScanResponseSchema,
   careerBriefPayloadSchema,
@@ -28,6 +30,7 @@ import {
 import { estimateProviderUsage, providerUsageMetadata } from "../../ai/src/costAccounting.js";
 import {
   checkProofQuality,
+  makeAdaptiveCareerIntake,
   makeAgentScan,
   makeCareerBrief,
   makeDiagnostic,
@@ -179,6 +182,10 @@ export async function handleOpenLARPWorkflowRequest(
 
 function dispatchDeterministicWorkflow(envelope: RequestEnvelope): unknown {
   switch (envelope.run.kind) {
+    case "adaptiveCareerIntake": {
+      const payload = adaptiveCareerIntakePayloadSchema.parse(envelope.payload);
+      return adaptiveCareerIntakeResponseSchema.parse(makeAdaptiveCareerIntake(payload));
+    }
     case "cookedDiagnostic": {
       const payload = diagnosticPayloadSchema.parse(envelope.payload);
       return diagnosticResponseSchema.parse(makeDiagnostic(payload));

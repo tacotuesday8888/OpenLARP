@@ -174,10 +174,45 @@ final class AIBackendContractTests: XCTestCase {
     }
 
     @MainActor
+    func testFirebaseCallableAIWorkflowServiceAcceptsValidatedLiveModelResponse() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "cookedDiagnostic",
+            liveModelCallsEnabled: true,
+            liveModelUsed: true,
+            promptVersion: "openlarp.cooked.v1",
+            policyRevision: "beta-2026-08-10",
+            result: [
+                "score": 62,
+                "label": "Some proof, not enough signal",
+                "mainGap": "Needs stronger evidence.",
+                "strongestSignal": "Has proof.",
+                "fastestFix": "Create an artifact.",
+                "readinessBaseline": 48
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+
+        let response = try await service.generateDiagnostic(
+            V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+        )
+
+        XCTAssertFalse(response.run.usedFallback)
+        XCTAssertEqual(response.run.providerRoute, .firebaseCallableGenkit)
+    }
+
+    @MainActor
     func testFirebaseCallableAIWorkflowServiceRejectsUnsafeCallableResponseFlags() async throws {
         let invoker = MockFirebaseCallableInvoker(response: callableResponse(
             kind: "cookedDiagnostic",
             liveModelCallsEnabled: true,
+            liveModelUsed: true,
+            externalActionTaken: true,
+            promptVersion: "openlarp.cooked.v1",
+            policyRevision: "beta-2026-08-10",
             result: [
                 "score": 62,
                 "label": "Some proof, not enough signal",
@@ -626,10 +661,15 @@ private func callableResponse(
     kind: String,
     userID: String = "user_123",
     liveModelCallsEnabled: Bool = false,
+    liveModelUsed: Bool = false,
+    usedFallback: Bool = false,
+    fallbackReason: String? = nil,
+    promptVersion: String? = nil,
+    policyRevision: String? = nil,
     externalActionTaken: Bool = false,
     result: [String: Any]
 ) -> [String: Any] {
-    [
+    var response: [String: Any] = [
         "ok": true,
         "schemaVersion": 1,
         "requestID": requestID,
@@ -638,7 +678,19 @@ private func callableResponse(
         "evaluatedAt": "2027-06-18T10:00:00.123Z",
         "providerRoute": "firebaseCallableGenkit",
         "liveModelCallsEnabled": liveModelCallsEnabled,
+        "liveModelUsed": liveModelUsed,
+        "usedFallback": usedFallback,
         "externalActionTaken": externalActionTaken,
         "result": result
     ]
+    if let fallbackReason {
+        response["fallbackReason"] = fallbackReason
+    }
+    if let promptVersion {
+        response["promptVersion"] = promptVersion
+    }
+    if let policyRevision {
+        response["policyRevision"] = policyRevision
+    }
+    return response
 }

@@ -102,6 +102,11 @@ struct CookedDiagnostic: Codable, Equatable {
     var strongestSignal: String
     var fastestFix: String
     var readinessBaseline: Int
+    var strongestSignals: [String]?
+    var readinessGaps: [String]?
+    var missingInformation: [String]?
+    var uncertaintyExplanation: String?
+    var firstAction: String?
 }
 
 struct CookedDiagnosticResultContent: Equatable, Identifiable {

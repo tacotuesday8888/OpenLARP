@@ -2,6 +2,8 @@ import { genkit } from "genkit";
 import { googleAI } from "@genkit-ai/google-genai";
 import { configFromEnvironment } from "./config.js";
 import {
+  adaptiveCareerIntakePayloadSchema,
+  adaptiveCareerIntakeResponseSchema,
   agentScanPayloadSchema,
   agentScanResponseSchema,
   careerBriefPayloadSchema,
@@ -20,6 +22,7 @@ import {
   safeShareCardTextResponseSchema
 } from "./contracts.js";
 import {
+  makeAdaptiveCareerIntake,
   checkProofQuality,
   makeAgentScan,
   makeCareerBrief,
@@ -39,6 +42,15 @@ export function createOpenLARPGenkit() {
 }
 
 export function defineOpenLARPFlows(ai = createOpenLARPGenkit()) {
+  const adaptiveCareerIntake = ai.defineFlow(
+    {
+      name: "openlarp.v0.adaptiveCareerIntake",
+      inputSchema: adaptiveCareerIntakePayloadSchema,
+      outputSchema: adaptiveCareerIntakeResponseSchema
+    },
+    async (payload) => makeAdaptiveCareerIntake(payload)
+  );
+
   const cookedDiagnostic = ai.defineFlow(
     {
       name: "openlarp.v0.cookedDiagnostic",
@@ -112,6 +124,7 @@ export function defineOpenLARPFlows(ai = createOpenLARPGenkit()) {
   );
 
   return {
+    adaptiveCareerIntake,
     cookedDiagnostic,
     questPlan,
     proofQualityCheck,

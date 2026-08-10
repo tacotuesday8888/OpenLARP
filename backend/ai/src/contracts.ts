@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const implementedWorkflowKinds = [
+  "adaptiveCareerIntake",
   "cookedDiagnostic",
   "questPlan",
   "proofQualityCheck",
@@ -61,6 +62,61 @@ export const careerGoalSchema = z.object({
   urgency: z.enum(["exploring", "steady", "urgent"]).default("steady"),
   constraints: z.string().max(4000).default(""),
   dailyCommitmentMinutes: z.number().int().min(5).max(180).default(25)
+});
+
+export const careerFactKindSchema = z.enum([
+  "outcomeType",
+  "targetOutcome",
+  "currentStage",
+  "timeline",
+  "urgency",
+  "experience",
+  "existingProof",
+  "constraints",
+  "confidence",
+  "dailyCommitment",
+  "biggestBlocker"
+]);
+
+const intakeFactBaseSchema = z.object({
+  id: z.string().uuid(),
+  kind: careerFactKindSchema,
+  value: z.string().min(1).max(4000),
+  lastUpdatedAt: z.string().datetime()
+});
+
+export const adaptiveCareerIntakePayloadSchema = z.object({
+  confirmedFacts: z.array(intakeFactBaseSchema.extend({
+    source: z.enum(["userEntry", "userEdit", "legacyMigration"])
+  })).max(24),
+  pendingHypotheses: z.array(intakeFactBaseSchema.extend({
+    source: z.literal("aiHypothesis"),
+    confirmationState: z.literal("awaitingConfirmation")
+  })).max(12),
+  rejectedHypothesisIDs: z.array(z.string().uuid()).max(24),
+  unknownKinds: z.array(careerFactKindSchema).max(11),
+  questionHistory: z.array(z.object({
+    factKind: careerFactKindSchema,
+    question: z.string().min(1).max(240),
+    answer: z.string().min(1).max(4000)
+  })).max(8),
+  maxQuestions: z.number().int().min(0).max(3)
+});
+
+export const adaptiveCareerIntakeResponseSchema = z.object({
+  questions: z.array(z.object({
+    id: z.string().min(1).max(64),
+    factKind: careerFactKindSchema,
+    question: z.string().min(1).max(240),
+    rationale: z.string().min(1).max(240),
+    responseType: z.enum(["freeText", "singleChoice", "duration", "confidence"]),
+    options: z.array(z.string().min(1).max(120)).max(6).default([])
+  })).max(3),
+  hypotheses: z.array(z.object({
+    kind: careerFactKindSchema,
+    value: z.string().min(1).max(4000),
+    confirmationState: z.literal("awaitingConfirmation")
+  })).max(6)
 });
 
 export const readinessMetricsSchema = z.object({
@@ -186,7 +242,53 @@ export const diagnosticResponseSchema = z.object({
   mainGap: z.string().min(1).max(500),
   strongestSignal: z.string().min(1).max(500),
   fastestFix: z.string().min(1).max(500),
-  readinessBaseline: z.number().int().min(0).max(100)
+  readinessBaseline: z.number().int().min(0).max(100),
+  strongestSignals: z.array(z.string().min(1).max(500)).min(1).max(4),
+  readinessGaps: z.array(z.string().min(1).max(500)).min(1).max(4),
+  missingInformation: z.array(z.string().min(1).max(500)).max(4),
+  uncertaintyExplanation: z.string().min(1).max(700),
+  firstAction: z.string().min(1).max(500)
+});
+
+export const fallbackReasonSchema = z.enum([
+  "disabled",
+  "policy",
+  "quota",
+  "budget",
+  "timeout",
+  "provider",
+  "invalidOutput",
+  "unsafeOutput"
+]);
+
+export const executionMetadataSchema = z.object({
+  schemaVersion: z.literal(1),
+  liveModelCallsEnabled: z.boolean(),
+  liveModelUsed: z.boolean(),
+  usedFallback: z.boolean(),
+  fallbackReason: fallbackReasonSchema.nullable(),
+  promptVersion: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/).nullable(),
+  policyRevision: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/),
+  usage: z.object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    latencyBucket: z.enum(["notRun", "under1s", "under5s", "under15s", "over15s"])
+  })
+}).superRefine((metadata, context) => {
+  if (metadata.liveModelUsed && (!metadata.liveModelCallsEnabled || metadata.usedFallback)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["liveModelUsed"],
+      message: "A live model cannot be used when live calls are disabled or fallback was used."
+    });
+  }
+  if (metadata.usedFallback !== (metadata.fallbackReason !== null)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["fallbackReason"],
+      message: "Fallback reason must be present exactly when fallback was used."
+    });
+  }
 });
 
 export const questPlanResponseSchema = z.object({
@@ -262,6 +364,8 @@ export const agentScanResponseSchema = z.object({
 
 export type RequestEnvelope = z.infer<typeof requestEnvelopeSchema>;
 export type WorkflowKind = z.infer<typeof workflowKindSchema>;
+export type AdaptiveCareerIntakePayload = z.infer<typeof adaptiveCareerIntakePayloadSchema>;
+export type AdaptiveCareerIntakeResponse = z.infer<typeof adaptiveCareerIntakeResponseSchema>;
 export type DiagnosticPayload = z.infer<typeof diagnosticPayloadSchema>;
 export type QuestPlanPayload = z.infer<typeof questPlanPayloadSchema>;
 export type ProofQualityPayload = z.infer<typeof proofQualityPayloadSchema>;
