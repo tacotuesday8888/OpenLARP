@@ -349,6 +349,10 @@ private struct FirebaseCallableCareerGoalDTO: Codable, Equatable, Sendable {
     var existingProof: String
     var confidence: Int
     var biggestBlocker: String
+    var outcomeType: CareerOutcomeType
+    var urgency: CareerUrgency
+    var constraints: String
+    var dailyCommitmentMinutes: Int
 
     init(goal: CareerGoal) {
         currentStatus = goal.currentStatus.rawValue
@@ -358,6 +362,10 @@ private struct FirebaseCallableCareerGoalDTO: Codable, Equatable, Sendable {
         existingProof = goal.existingProof
         confidence = goal.confidence
         biggestBlocker = goal.biggestBlocker
+        outcomeType = goal.outcomeType
+        urgency = goal.urgency
+        constraints = goal.constraints
+        dailyCommitmentMinutes = goal.dailyCommitmentMinutes
     }
 }
 

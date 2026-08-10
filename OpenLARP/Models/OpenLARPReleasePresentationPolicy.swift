@@ -1,5 +1,24 @@
 import Foundation
 
+enum OnboardingAccountEntryMode: Equatable, Sendable {
+    case directLocal
+    case offerAccountOrLocal
+    case alreadyLinked
+}
+
+struct OnboardingAccountEntryPolicy {
+    static func mode(
+        configuration: OpenLARPReleaseConfiguration,
+        session: BackendUserSession
+    ) -> OnboardingAccountEntryMode {
+        guard configuration.serviceMode != .localOnly,
+              configuration.isEnabled(.account) else {
+            return .directLocal
+        }
+        return session.isAuthenticated ? .alreadyLinked : .offerAccountOrLocal
+    }
+}
+
 enum AppTab: String, CaseIterable, Identifiable, Sendable {
     case today
     case map

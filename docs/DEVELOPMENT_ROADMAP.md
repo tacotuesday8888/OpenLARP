@@ -10,7 +10,10 @@ OpenLARP currently has:
 
 - A private GitHub repository
 - A native SwiftUI iOS app shell with Today, Map, Progress, and Profile tabs
-- Local goal setup
+- Guided four-step career onboarding with explicit review and approval
+- Durable career understanding that separates user-confirmed facts, unconfirmed AI hypotheses, rejected suggestions, and explicit unknowns
+- Backward-compatible schema-11 migration that preserves legacy facts without presenting new defaults as prior user claims
+- Knownness-aware cloud goal mapping that omits newer legacy defaults when the provenanced understanding still marks them unknown
 - Deterministic local "Am I Cooked?" diagnostic logic
 - Local seven-day quest generation
 - Local quest start, proof/self-report, mock quality check, XP, streak, badge, and readiness rules
@@ -20,6 +23,7 @@ OpenLARP currently has:
 - Daily cadence, intentional skip-today, and missed-day recovery behavior
 - XCTest coverage for the core local behavior
 - Firebase Auth, Firestore, Storage, Functions, Google Sign-In, and callable AI service boundaries behind local-safe adapters
+- Optional Apple/Google account entry for service-enabled beta builds with a clearly explained device-only path; public local-only builds skip service controls, and service onboarding waits for the protected account workspace to resolve before accepting answers
 - A development Firebase project with deployed Firestore/Storage rules and deterministic Gen 2 callable functions
 - Server-trusted proof upload receipt promotion: the client uploads Storage bytes, then a callable verifies Storage metadata and writes the uploaded Firestore receipt
 - Backend AI contracts and a deterministic callable workflow boundary, with provider token/cost estimate metadata and live model calls disabled until Genkit/Gemini safety, secrets, observability, and dependency work is ready
@@ -29,6 +33,7 @@ OpenLARP currently has:
 OpenLARP does not yet have:
 
 - Live Genkit/Gemini model calls
+- Live adaptive onboarding questions and AI-generated career hypotheses (the safe provenance and confirmation contract is present)
 - Fully server-authoritative career graph sync
 - Push notifications
 - Live App Store subscriptions/paywalls
@@ -71,7 +76,7 @@ Deliverable:
 
 Goal: make the app feel real before the engine is real.
 
-Status: largely complete for the local-first V0. The active app shell now uses the state-driven local loop instead of static sample screens.
+Status: largely complete for the local-first V0. The active app shell now uses the state-driven local loop instead of static sample screens, and first-run setup is a short reviewable career-understanding flow instead of one long form.
 
 Work:
 
@@ -96,12 +101,13 @@ Success criteria:
 
 Goal: make the mocked app logic coherent before adding cloud services.
 
-Status: largely complete for local beta validation. The app has local state models, deterministic engine rules, JSON persistence, proof receipts, local proof attachments, daily cadence, skip, missed-day recovery, and XCTest coverage.
+Status: largely complete for local beta validation. The app has local state models, deterministic engine rules, JSON persistence, provenanced career facts and explicit unknowns, proof receipts, local proof attachments, daily cadence, skip, missed-day recovery, and XCTest coverage.
 
 Work:
 
 - Add app state models
 - Add onboarding state
+- Require reviewed career understanding before committing a goal, diagnostic, or plan
 - Add quest state
 - Add proof state
 - Add XP/streak/progress rules
@@ -119,7 +125,7 @@ Success criteria:
 
 Goal: connect AI to narrow, controlled V0 jobs.
 
-Status: partially complete as a backend-ready boundary. Current diagnostic, quest, proof check, and progress behavior is deterministic local/mock logic; authenticated Firebase callable routing exists, but live model calls remain disabled.
+Status: partially complete as a backend-ready boundary. Current diagnostic, quest, proof check, and progress behavior is deterministic local/mock logic; authenticated Firebase callable routing exists, and Rich V0 goal context now survives the iOS/backend contract boundary, but live model calls and adaptive onboarding questions remain disabled.
 
 Work:
 

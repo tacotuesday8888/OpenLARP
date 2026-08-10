@@ -1747,7 +1747,7 @@ final class V0EngineTests: XCTestCase {
 
         let decoded = try decoder.decode(OpenLARPState.self, from: oldData)
 
-        XCTAssertEqual(decoded.schemaVersion, 10)
+        XCTAssertEqual(decoded.schemaVersion, OpenLARPState.currentSchemaVersion)
         XCTAssertTrue(decoded.outcomeLog.isEmpty)
     }
 
@@ -1951,6 +1951,9 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(privateSnapshot.goal?.targetRole, "AI product internship")
         XCTAssertEqual(privateSnapshot.goal?.timeline, "30 days")
         XCTAssertEqual(privateSnapshot.goal?.currentStatus, .student)
+        XCTAssertEqual(privateSnapshot.goal?.outcomeType, .internship)
+        XCTAssertEqual(privateSnapshot.goal?.urgency, .urgent)
+        XCTAssertEqual(privateSnapshot.goal?.dailyCommitmentMinutes, 30)
         XCTAssertNil(privateSnapshot.goal?.privateContext)
         XCTAssertEqual(privateSnapshot.userProfile?.segment, .student)
         XCTAssertNil(privateSnapshot.userProfile?.email)
@@ -1966,6 +1969,8 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(fullSnapshot.goal?.privateContext?.existingProof, state.goal?.existingProof)
         XCTAssertEqual(fullSnapshot.goal?.privateContext?.confidence, state.goal?.confidence)
         XCTAssertEqual(fullSnapshot.goal?.privateContext?.biggestBlocker, state.goal?.biggestBlocker)
+        XCTAssertEqual(fullSnapshot.goal?.privateContext?.constraints, state.goal?.constraints)
+        XCTAssertEqual(fullSnapshot.goal?.schemaVersion, 2)
         XCTAssertNoThrow(try JSONDecoder().decode(
             CloudCareerGraphSnapshot.self,
             from: try JSONEncoder().encode(fullSnapshot)
@@ -1998,6 +2003,9 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(decoded.goal?.targetRole, "AI product internship")
         XCTAssertEqual(decoded.goal?.timeline, "30 days")
         XCTAssertEqual(decoded.goal?.currentStatus, .student)
+        XCTAssertNil(decoded.goal?.outcomeType)
+        XCTAssertNil(decoded.goal?.urgency)
+        XCTAssertNil(decoded.goal?.dailyCommitmentMinutes)
         XCTAssertNil(decoded.goal?.privateContext)
 
         let reencodedJSON = String(
@@ -2005,6 +2013,61 @@ final class V0EngineTests: XCTestCase {
             as: UTF8.self
         )
         assertNoPrivateCloudExportLeaks(reencodedJSON)
+    }
+
+    func testCloudCareerGoalDocumentDecodesSchemaOneWithSafeRichGoalDefaults() throws {
+        let data = Data(#"""
+        {
+          "schemaVersion": 1,
+          "ownerUserID": "user_legacy",
+          "localID": "current",
+          "currentStatus": "Student",
+          "targetRole": "iOS Engineer",
+          "timeline": "90 days",
+          "privateContext": {
+            "background": "Coursework",
+            "existingProof": "Class app",
+            "confidence": 4,
+            "biggestBlocker": "Interviews"
+          },
+          "collectionPath": "users/user_legacy/goals",
+          "documentPath": "users/user_legacy/goals/current"
+        }
+        """#.utf8)
+
+        let decoded = try JSONDecoder().decode(CloudCareerGoalDocument.self, from: data)
+
+        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertNil(decoded.outcomeType)
+        XCTAssertNil(decoded.urgency)
+        XCTAssertNil(decoded.dailyCommitmentMinutes)
+        XCTAssertNil(decoded.privateContext?.constraints)
+    }
+
+    func testCloudMapperOmitsRichGoalDefaultsThatLegacyUnderstandingMarksUnknown() throws {
+        let now = Date(timeIntervalSince1970: 13_260)
+        let legacyGoal = CareerGoal(
+            currentStatus: .student,
+            targetRole: "iOS Engineer",
+            timeline: "90 days",
+            background: "Coursework",
+            existingProof: "Class app",
+            confidence: 3,
+            biggestBlocker: "Interviews"
+        )
+        var state = OpenLARPEngine.confirmGoal(legacyGoal, now: now)
+        state.careerUnderstanding = .migratingLegacyGoal(legacyGoal, updatedAt: now)
+
+        let snapshot = LocalCareerGraphCloudMapper().makeSnapshot(
+            from: state,
+            policy: CloudExportPolicy(ownerUserID: "user_legacy", includePrivateEvidence: true),
+            generatedAt: now
+        )
+
+        XCTAssertNil(snapshot.goal?.outcomeType)
+        XCTAssertNil(snapshot.goal?.urgency)
+        XCTAssertNil(snapshot.goal?.dailyCommitmentMinutes)
+        XCTAssertNil(snapshot.goal?.privateContext?.constraints)
     }
 
     func testCloudCareerOutcomeDocumentRoundTripsStableBackendFields() throws {
@@ -4211,7 +4274,11 @@ final class V0EngineTests: XCTestCase {
             background: "Private background with langqi@example.com, visa concern, campus office, and sk-test-secret api key notes.",
             existingProof: "Secret Project Falcon, private repo, and https://private.example.com/proof.",
             confidence: 2,
-            biggestBlocker: "Confidential blocker with family money stress."
+            biggestBlocker: "Confidential blocker with family money stress.",
+            outcomeType: .internship,
+            urgency: .urgent,
+            constraints: "Private constraint: visa timing and evening caregiving.",
+            dailyCommitmentMinutes: 30
         )
         let attachment = ProofAttachment(
             id: UUID(uuidString: "EBEBEBEB-EBEB-EBEB-EBEB-EBEBEBEBEBEB")!,

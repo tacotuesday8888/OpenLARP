@@ -15,7 +15,7 @@ struct TodayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if store.state.needsGoalSetup {
-                    GoalSetupView(store: store) { content in
+                    GuidedCareerOnboardingView(store: store) { content in
                         pendingDiagnosticResult = content
                     }
                 } else {
@@ -738,118 +738,6 @@ private struct DoneForTodayCard: View {
                 .background(Color.openLARPBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-        }
-    }
-}
-
-private struct GoalSetupView: View {
-    let store: OpenLARPStore
-    let onGoalConfirmed: (CookedDiagnosticResultContent) -> Void
-    @State private var currentStatus: CurrentStatus = .student
-    @State private var targetRole = ""
-    @State private var timeline = "30 days"
-    @State private var background = ""
-    @State private var existingProof = ""
-    @State private var confidence = 3.0
-    @State private var biggestBlocker = ""
-
-    private var canSubmit: Bool {
-        !targetRole.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            OpenLARPHeroCard(
-                feature: .path,
-                eyebrow: "Setup",
-                title: "Set your goal",
-                subtitle: "Pick one honest target. OpenLARP will diagnose the gap and build the first proof sprint locally.",
-                stat: "1/4"
-            )
-
-            Card {
-                VStack(alignment: .leading, spacing: 14) {
-                    Picker("Current status", selection: $currentStatus) {
-                        ForEach(CurrentStatus.allCases) { status in
-                            Text(status.rawValue).tag(status)
-                        }
-                    }
-                    .pickerStyle(.menu)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Target role or field")
-                            .font(.subheadline.weight(.semibold))
-                        TextField("Entry-level product designer", text: $targetRole)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("Target role")
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Timeline")
-                            .font(.subheadline.weight(.semibold))
-                        TextField("30 days", text: $timeline)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("Timeline")
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Current background")
-                            .font(.subheadline.weight(.semibold))
-                        TextField("Student, new grad, project work, current role...", text: $background, axis: .vertical)
-                            .lineLimit(3, reservesSpace: true)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("Current background")
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Existing proof")
-                            .font(.subheadline.weight(.semibold))
-                        TextField("Projects, coursework, links, shipped work...", text: $existingProof, axis: .vertical)
-                            .lineLimit(3, reservesSpace: true)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("Existing proof")
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Confidence: \(Int(confidence)) / 5")
-                            .font(.subheadline.weight(.semibold))
-                        Slider(value: $confidence, in: 1...5, step: 1)
-                            .tint(.openLARPGreen)
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Biggest blocker")
-                            .font(.subheadline.weight(.semibold))
-                        TextField("What makes this goal feel risky?", text: $biggestBlocker, axis: .vertical)
-                            .lineLimit(3, reservesSpace: true)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("Biggest blocker")
-                    }
-                }
-            }
-
-            Button {
-                let goal = CareerGoal(
-                    currentStatus: currentStatus,
-                    targetRole: targetRole.trimmingCharacters(in: .whitespacesAndNewlines),
-                    timeline: timeline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "30 days" : timeline,
-                    background: background,
-                    existingProof: existingProof,
-                    confidence: Int(confidence),
-                    biggestBlocker: biggestBlocker
-                )
-                Task {
-                    await store.confirmGoal(goal)
-                    if let content = CookedDiagnosticResultContent(state: store.state) {
-                        onGoalConfirmed(content)
-                    }
-                }
-            } label: {
-                Label(store.isGoalSetupRunning ? "Checking Goal" : "Check If I'm Cooked", systemImage: "flame.fill")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(!canSubmit || store.isGoalSetupRunning)
-            .opacity(canSubmit && !store.isGoalSetupRunning ? 1 : 0.5)
         }
     }
 }

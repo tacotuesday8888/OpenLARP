@@ -8,6 +8,7 @@ import { estimateProviderUsage, providerUsageMetadata } from "../src/costAccount
 import {
   agentScanPayloadSchema,
   careerBriefPayloadSchema,
+  careerGoalSchema,
   diagnosticPayloadSchema,
   implementedWorkflowKinds,
   opportunityRankingPayloadSchema,
@@ -128,6 +129,37 @@ const aiProductOpportunity = {
 } as const;
 
 describe("OpenLARP AI backend contracts", () => {
+  it("preserves the approved Rich V0 goal context used to personalize workflows", () => {
+    const goal = careerGoalSchema.parse({
+      currentStatus: "newGrad",
+      targetRole: "iOS engineer",
+      timeline: "90 days",
+      background: "One shipped class app",
+      existingProof: "App demo",
+      confidence: 3,
+      biggestBlocker: "Interview confidence",
+      outcomeType: "job",
+      urgency: "urgent",
+      constraints: "Weeknights only",
+      dailyCommitmentMinutes: 30
+    });
+
+    expect(goal).toMatchObject({
+      outcomeType: "job",
+      urgency: "urgent",
+      constraints: "Weeknights only",
+      dailyCommitmentMinutes: 30
+    });
+    expect(() => careerGoalSchema.parse({
+      ...goal,
+      targetRole: "T".repeat(121)
+    })).toThrow();
+    expect(() => careerGoalSchema.parse({
+      ...goal,
+      biggestBlocker: "B".repeat(1001)
+    })).toThrow();
+  });
+
   it("keeps Gemini model configuration server-side", () => {
     expect(DEFAULT_GEMINI_MODEL_ID).toBe("gemini-3.1-flash-lite");
     expect(configFromEnvironment({}).modelId).toBe("gemini-3.1-flash-lite");

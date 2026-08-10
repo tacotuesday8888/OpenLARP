@@ -130,7 +130,16 @@ struct CloudCareerGraphSnapshot: Codable, Equatable {
                 goal = CloudCareerGoalDocument(
                     goal: legacyGoal,
                     ownerUserID: ownerUserID,
-                    includePrivateEvidence: false
+                    includePrivateEvidence: false,
+                    knownFactKinds: [
+                        .targetOutcome,
+                        .currentStage,
+                        .timeline,
+                        .experience,
+                        .existingProof,
+                        .confidence,
+                        .biggestBlocker
+                    ]
                 )
             } else {
                 throw error
@@ -144,6 +153,38 @@ struct CloudCareerGoalPrivateContext: Codable, Equatable {
     var existingProof: String
     var confidence: Int
     var biggestBlocker: String
+    var constraints: String?
+
+    init(
+        background: String,
+        existingProof: String,
+        confidence: Int,
+        biggestBlocker: String,
+        constraints: String?
+    ) {
+        self.background = background
+        self.existingProof = existingProof
+        self.confidence = confidence
+        self.biggestBlocker = biggestBlocker
+        self.constraints = constraints
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case background
+        case existingProof
+        case confidence
+        case biggestBlocker
+        case constraints
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        background = try container.decodeIfPresent(String.self, forKey: .background) ?? ""
+        existingProof = try container.decodeIfPresent(String.self, forKey: .existingProof) ?? ""
+        confidence = try container.decodeIfPresent(Int.self, forKey: .confidence) ?? 3
+        biggestBlocker = try container.decodeIfPresent(String.self, forKey: .biggestBlocker) ?? ""
+        constraints = try container.decodeIfPresent(String.self, forKey: .constraints)
+    }
 }
 
 struct CloudCareerGoalDocument: Codable, Equatable {
@@ -153,6 +194,9 @@ struct CloudCareerGoalDocument: Codable, Equatable {
     var currentStatus: CurrentStatus
     var targetRole: String
     var timeline: String
+    var outcomeType: CareerOutcomeType?
+    var urgency: CareerUrgency?
+    var dailyCommitmentMinutes: Int?
     var privateContext: CloudCareerGoalPrivateContext?
     var collectionPath: String
     var documentPath: String
@@ -162,7 +206,8 @@ struct CloudCareerGoalDocument: Codable, Equatable {
         ownerUserID: String,
         includePrivateEvidence: Bool,
         localID: String = "current",
-        schemaVersion: Int = 1
+        schemaVersion: Int = 2,
+        knownFactKinds: Set<CareerFactKind> = Set(CareerFactKind.allCases)
     ) {
         self.schemaVersion = schemaVersion
         self.ownerUserID = ownerUserID
@@ -170,16 +215,53 @@ struct CloudCareerGoalDocument: Codable, Equatable {
         currentStatus = goal.currentStatus
         targetRole = goal.targetRole
         timeline = goal.timeline
+        outcomeType = knownFactKinds.contains(.outcomeType) ? goal.outcomeType : nil
+        urgency = knownFactKinds.contains(.urgency) ? goal.urgency : nil
+        dailyCommitmentMinutes = knownFactKinds.contains(.dailyCommitment)
+            ? goal.dailyCommitmentMinutes
+            : nil
         privateContext = includePrivateEvidence
             ? CloudCareerGoalPrivateContext(
                 background: goal.background,
                 existingProof: goal.existingProof,
                 confidence: goal.confidence,
-                biggestBlocker: goal.biggestBlocker
+                biggestBlocker: goal.biggestBlocker,
+                constraints: knownFactKinds.contains(.constraints) ? goal.constraints : nil
             )
             : nil
         collectionPath = "users/\(ownerUserID)/goals"
         documentPath = "\(collectionPath)/\(localID)"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case ownerUserID
+        case localID
+        case currentStatus
+        case targetRole
+        case timeline
+        case outcomeType
+        case urgency
+        case dailyCommitmentMinutes
+        case privateContext
+        case collectionPath
+        case documentPath
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        ownerUserID = try container.decode(String.self, forKey: .ownerUserID)
+        localID = try container.decode(String.self, forKey: .localID)
+        currentStatus = try container.decode(CurrentStatus.self, forKey: .currentStatus)
+        targetRole = try container.decode(String.self, forKey: .targetRole)
+        timeline = try container.decode(String.self, forKey: .timeline)
+        outcomeType = try container.decodeIfPresent(CareerOutcomeType.self, forKey: .outcomeType)
+        urgency = try container.decodeIfPresent(CareerUrgency.self, forKey: .urgency)
+        dailyCommitmentMinutes = try container.decodeIfPresent(Int.self, forKey: .dailyCommitmentMinutes)
+        privateContext = try container.decodeIfPresent(CloudCareerGoalPrivateContext.self, forKey: .privateContext)
+        collectionPath = try container.decode(String.self, forKey: .collectionPath)
+        documentPath = try container.decode(String.self, forKey: .documentPath)
     }
 }
 
@@ -520,10 +602,12 @@ struct LocalCareerGraphCloudMapper: CareerGraphCloudMapping {
             generatedAt: generatedAt,
             userProfile: state.userProfile.map { CloudUserProfileDocument(profile: $0, ownerUserID: ownerUserID) },
             goal: state.goal.map {
-                CloudCareerGoalDocument(
+                let knownFactKinds = Set(state.careerUnderstanding.confirmedFacts.map(\.kind))
+                return CloudCareerGoalDocument(
                     goal: $0,
                     ownerUserID: ownerUserID,
-                    includePrivateEvidence: policy.includePrivateEvidence
+                    includePrivateEvidence: policy.includePrivateEvidence,
+                    knownFactKinds: knownFactKinds
                 )
             },
             targetRoles: state.targetRoles.map { CloudTargetRoleDocument(role: $0, ownerUserID: ownerUserID) },

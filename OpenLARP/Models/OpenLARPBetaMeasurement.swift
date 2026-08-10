@@ -1,6 +1,21 @@
 import Foundation
 
+struct OnboardingFunnelState: Codable, Equatable {
+    var didRecordStart: Bool
+    var didRecordUnderstandingReview: Bool
+    var didRecordUnderstandingApproval: Bool
+
+    static let empty = OnboardingFunnelState(
+        didRecordStart: false,
+        didRecordUnderstandingReview: false,
+        didRecordUnderstandingApproval: false
+    )
+}
+
 enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
+    case onboardingStarted
+    case careerUnderstandingReviewed
+    case careerUnderstandingApproved
     case goalConfirmed
     case diagnosticShown
     case firstQuestStarted
@@ -43,6 +58,9 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
+        case .onboardingStarted: "Onboarding started"
+        case .careerUnderstandingReviewed: "Career understanding reviewed"
+        case .careerUnderstandingApproved: "Career understanding approved"
         case .goalConfirmed: "Goal confirmed"
         case .diagnosticShown: "Diagnostic shown"
         case .firstQuestStarted: "First quest started"

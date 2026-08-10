@@ -37,6 +37,10 @@ final class AIBackendContractTests: XCTestCase {
         XCTAssertTrue(payloadJSON.contains(#""providerRoute" : "firebaseCallableGenkit""#))
         XCTAssertTrue(payloadJSON.contains(#""kind" : "cookedDiagnostic""#))
         XCTAssertTrue(payloadJSON.contains(#""targetRole" : "AI product engineer""#))
+        XCTAssertTrue(payloadJSON.contains(#""outcomeType" : "careerChange""#))
+        XCTAssertTrue(payloadJSON.contains(#""urgency" : "urgent""#))
+        XCTAssertTrue(payloadJSON.contains(#""constraints" : "Weeknights only""#))
+        XCTAssertTrue(payloadJSON.contains(#""dailyCommitmentMinutes" : 30"#))
         XCTAssertTrue(payloadJSON.contains("hardBannedClaims"))
         XCTAssertFalse(payloadJSON.localizedCaseInsensitiveContains("gemini"))
         XCTAssertFalse(payloadJSON.localizedCaseInsensitiveContains("modelID"))
@@ -541,7 +545,11 @@ private let sampleGoal = CareerGoal(
     background: "CS student with one shipped class project.",
     existingProof: "GitHub project and internship notes.",
     confidence: 3,
-    biggestBlocker: "Not enough role-specific proof."
+    biggestBlocker: "Not enough role-specific proof.",
+    outcomeType: .careerChange,
+    urgency: .urgent,
+    constraints: "Weeknights only",
+    dailyCommitmentMinutes: 30
 )
 
 private let sampleDiagnostic = CookedDiagnostic(
