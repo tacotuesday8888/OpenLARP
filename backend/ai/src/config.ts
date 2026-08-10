@@ -1,4 +1,4 @@
-export const DEFAULT_GEMINI_MODEL_ID = "gemini-3.1-flash-lite";
+export const DEFAULT_GEMINI_MODEL_ID = "gemini-3.5-flash";
 
 const OPENLARP_AI_PROVIDERS = ["firebase-ai-logic", "vertex-ai", "local-mock"] as const;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1200;
@@ -6,6 +6,7 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 1200;
 export type OpenLARPAIBackendConfig = {
   modelId: string;
   provider: typeof OPENLARP_AI_PROVIDERS[number];
+  vertexLocation: string;
   enableLiveGeneration: boolean;
   maxOutputTokens: number;
 };
@@ -23,6 +24,7 @@ export function configFromEnvironment(env: NodeJS.ProcessEnv = process.env): Ope
   return {
     modelId: env.OPENLARP_GEMINI_MODEL_ID ?? DEFAULT_GEMINI_MODEL_ID,
     provider,
+    vertexLocation: parseVertexLocation(env.OPENLARP_VERTEX_LOCATION),
     enableLiveGeneration: env.OPENLARP_ENABLE_LIVE_AI === "true",
     maxOutputTokens
   };
@@ -51,7 +53,7 @@ export function providerBudgetPolicyFromEnvironment(
 
 function parseProvider(value: string | undefined): OpenLARPAIBackendConfig["provider"] {
   if (value === undefined || value.length === 0) {
-    return "firebase-ai-logic";
+    return "vertex-ai";
   }
 
   if (OPENLARP_AI_PROVIDERS.includes(value as OpenLARPAIBackendConfig["provider"])) {
@@ -59,6 +61,16 @@ function parseProvider(value: string | undefined): OpenLARPAIBackendConfig["prov
   }
 
   throw new Error(`Unsupported OPENLARP_AI_PROVIDER: ${value}`);
+}
+
+function parseVertexLocation(value: string | undefined): string {
+  if (value === undefined || value.length === 0) {
+    return "global";
+  }
+  if (!/^[a-z][a-z0-9-]{0,62}$/.test(value)) {
+    throw new Error("OPENLARP_VERTEX_LOCATION must be a valid Google Cloud region or global.");
+  }
+  return value;
 }
 
 function parseMaxOutputTokens(value: string | undefined): number {

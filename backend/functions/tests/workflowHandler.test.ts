@@ -178,7 +178,7 @@ describe("handleOpenLARPWorkflowRequest", () => {
       metadata: {
         workflowKind: "cookedDiagnostic",
         providerRoute: "firebaseCallableGenkit",
-        provider: "firebase-ai-logic",
+        provider: "vertex-ai",
         liveModelCallsEnabled: false,
         estimatedInputTokens: expect.any(Number),
         maxOutputTokens: 1200,
@@ -200,6 +200,7 @@ describe("handleOpenLARPWorkflowRequest", () => {
       aiConfig: {
         modelId: "gemini-private-model-id",
         provider: "firebase-ai-logic",
+        vertexLocation: "global",
         enableLiveGeneration: true,
         maxOutputTokens: 1200
       },
@@ -239,6 +240,7 @@ describe("handleOpenLARPWorkflowRequest", () => {
       aiConfig: {
         modelId: "gemini-private-model-id",
         provider: "firebase-ai-logic",
+        vertexLocation: "global",
         enableLiveGeneration: true,
         maxOutputTokens: 1200
       },
