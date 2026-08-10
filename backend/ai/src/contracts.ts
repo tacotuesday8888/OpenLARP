@@ -56,7 +56,11 @@ export const careerGoalSchema = z.object({
   background: z.string().max(4000).default(""),
   existingProof: z.string().max(4000).default(""),
   confidence: z.number().int().min(1).max(5),
-  biggestBlocker: z.string().max(1000).default("")
+  biggestBlocker: z.string().max(1000).default(""),
+  outcomeType: z.enum(["job", "internship", "promotion", "careerChange"]).default("job"),
+  urgency: z.enum(["exploring", "steady", "urgent"]).default("steady"),
+  constraints: z.string().max(4000).default(""),
+  dailyCommitmentMinutes: z.number().int().min(5).max(180).default(25)
 });
 
 export const readinessMetricsSchema = z.object({

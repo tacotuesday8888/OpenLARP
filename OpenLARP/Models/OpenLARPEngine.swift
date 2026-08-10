@@ -9,9 +9,60 @@ enum OpenLARPEngine {
 
     static func confirmGoal(
         _ goal: CareerGoal,
+        understanding: CareerUnderstanding,
+        now: Date = Date()
+    ) throws -> OpenLARPState {
+        try confirmGoal(
+            goal,
+            understanding: understanding,
+            diagnostic: makeDiagnostic(for: goal),
+            plan: makeSevenDayPlan(for: goal),
+            now: now
+        )
+    }
+
+    static func confirmGoal(
+        _ goal: CareerGoal,
         diagnostic: CookedDiagnostic,
         plan: [Quest],
         now: Date = Date()
+    ) -> OpenLARPState {
+        let understanding = CareerIntakeDraft(goal: goal).makeApprovedUnderstanding(approvedAt: now)
+        return makeConfirmedGoalState(
+            goal,
+            understanding: understanding,
+            diagnostic: diagnostic,
+            plan: plan,
+            now: now
+        )
+    }
+
+    static func confirmGoal(
+        _ goal: CareerGoal,
+        understanding: CareerUnderstanding,
+        diagnostic: CookedDiagnostic,
+        plan: [Quest],
+        now: Date = Date()
+    ) throws -> OpenLARPState {
+        guard understanding.reviewState == .approved,
+              understanding.pendingHypotheses.isEmpty else {
+            throw OpenLARPError.careerUnderstandingNeedsReview
+        }
+        return makeConfirmedGoalState(
+            goal,
+            understanding: understanding,
+            diagnostic: diagnostic,
+            plan: plan,
+            now: now
+        )
+    }
+
+    private static func makeConfirmedGoalState(
+        _ goal: CareerGoal,
+        understanding: CareerUnderstanding,
+        diagnostic: CookedDiagnostic,
+        plan: [Quest],
+        now: Date
     ) -> OpenLARPState {
         let profile = AgentBriefFactory.makeProfile(for: goal, now: now)
         let targetRole = AgentBriefFactory.makeTargetRole(for: goal, now: now)
@@ -30,6 +81,7 @@ enum OpenLARPEngine {
         var state = OpenLARPState(
             userProfile: profile,
             goal: goal,
+            careerUnderstanding: understanding,
             targetRoles: [targetRole],
             diagnostic: diagnostic,
             plan: validatedInitialPlan(plan) ?? makeSevenDayPlan(for: goal),

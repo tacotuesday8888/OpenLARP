@@ -592,7 +592,7 @@ struct FallbackV0AIWorkflowService: V0AIWorkflowServicing {
 
     init(
         primary: any V0AIWorkflowServicing,
-        fallback: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService()
+        fallback: any V0AIWorkflowServicing
     ) {
         self.primary = primary
         self.fallback = fallback

@@ -297,7 +297,29 @@ Flow:
 
 Get enough context to produce a credible first quest without making the user feel interrogated.
 
+### Rich V0 Review Boundary
+
+The implemented first-run flow uses four short stages: name the outcome, describe the current reality, choose a realistic commitment, and review OpenLARP's understanding. Service-enabled beta builds may first offer Apple, Google, or device-only entry; local-only public builds begin the career questions directly.
+
+The review is a product trust boundary, not a cosmetic summary:
+
+- User-entered facts remain pending until the person approves the understanding.
+- AI suggestions must appear separately as hypotheses and require explicit confirm, edit, or reject action.
+- Missing optional information stays visibly unknown; OpenLARP must not fill it with a plausible story.
+- A goal, readiness check, and plan become durable only after approval.
+- The exact reviewed records—and their identifiers, provenance, edits, confirmations, and rejections—cross the approval boundary; approval must not regenerate a cleaner replacement summary.
+- If the service is unavailable, the same approved facts feed the deterministic local readiness and plan fallback.
+- Account-enabled builds resolve the active protected workspace before accepting answers and clear an unfinished draft if the workspace owner changes.
+
+Legacy saved goals migrate conservatively. Facts that existed in the old goal remain attributed to migration, while fields introduced later—such as urgency or daily commitment—remain unknown until reviewed.
+
+Cloud mapping follows the same knownness rule. A compatibility default may keep old local behavior running, but it is omitted from downstream career-goal fields until the provenanced understanding says the user confirmed it.
+
+Live adaptive questioning is the next service milestone. The client-side provenance contract is ready for it, but the current first-run questions are guided and deterministic.
+
 ### Recommended Onboarding Steps
+
+The stages below describe the fuller product direction. Rich V0 combines them into the shorter reviewable flow above so the first quest remains reachable without a long intake.
 
 #### Step 1: Promise
 
@@ -395,11 +417,14 @@ This hierarchy matters because it prevents the app from becoming a random pile o
 ### Journey 1: New User
 
 1. Hears "Am I Cooked?"
-2. Completes intake.
-3. Receives diagnosis.
-4. Gets first quest.
-5. Submits proof.
-6. Sees first gap movement.
+2. Chooses account-backed or device-only storage when the build supports accounts.
+3. Completes the short guided intake.
+4. Reviews confirmed facts, hypotheses, and unknowns.
+5. Approves OpenLARP's understanding.
+6. Receives diagnosis.
+7. Gets first quest.
+8. Submits proof.
+9. Sees first gap movement.
 
 ### Journey 2: Daily Return
 
@@ -484,4 +509,3 @@ The iOS app should not be a career toolbox. It should be a daily transformation 
 The first screen should always answer:
 
 > What should I do today, and how does it make me less cooked?
-

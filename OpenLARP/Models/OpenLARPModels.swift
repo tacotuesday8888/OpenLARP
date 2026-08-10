@@ -20,6 +20,66 @@ struct CareerGoal: Codable, Equatable {
     var confidence: Int
     var biggestBlocker: String
 
+    var outcomeType: CareerOutcomeType
+    var urgency: CareerUrgency
+    var constraints: String
+    var dailyCommitmentMinutes: Int
+
+    init(
+        currentStatus: CurrentStatus,
+        targetRole: String,
+        timeline: String,
+        background: String,
+        existingProof: String,
+        confidence: Int,
+        biggestBlocker: String,
+        outcomeType: CareerOutcomeType = .job,
+        urgency: CareerUrgency = .steady,
+        constraints: String = "",
+        dailyCommitmentMinutes: Int = 25
+    ) {
+        self.currentStatus = currentStatus
+        self.targetRole = targetRole
+        self.timeline = timeline
+        self.background = background
+        self.existingProof = existingProof
+        self.confidence = confidence
+        self.biggestBlocker = biggestBlocker
+        self.outcomeType = outcomeType
+        self.urgency = urgency
+        self.constraints = constraints
+        self.dailyCommitmentMinutes = dailyCommitmentMinutes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case currentStatus
+        case targetRole
+        case timeline
+        case background
+        case existingProof
+        case confidence
+        case biggestBlocker
+        case outcomeType
+        case urgency
+        case constraints
+        case dailyCommitmentMinutes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        currentStatus = try container.decode(CurrentStatus.self, forKey: .currentStatus)
+        targetRole = try container.decode(String.self, forKey: .targetRole)
+        timeline = try container.decode(String.self, forKey: .timeline)
+        background = try container.decode(String.self, forKey: .background)
+        existingProof = try container.decode(String.self, forKey: .existingProof)
+        confidence = try container.decode(Int.self, forKey: .confidence)
+        biggestBlocker = try container.decode(String.self, forKey: .biggestBlocker)
+        outcomeType = try container.decodeIfPresent(CareerOutcomeType.self, forKey: .outcomeType) ?? .job
+        urgency = try container.decodeIfPresent(CareerUrgency.self, forKey: .urgency) ?? .steady
+        constraints = try container.decodeIfPresent(String.self, forKey: .constraints) ?? ""
+        dailyCommitmentMinutes = try container.decodeIfPresent(Int.self, forKey: .dailyCommitmentMinutes) ?? 25
+    }
+
     static let empty = CareerGoal(
         currentStatus: .student,
         targetRole: "",
@@ -27,7 +87,11 @@ struct CareerGoal: Codable, Equatable {
         background: "",
         existingProof: "",
         confidence: 3,
-        biggestBlocker: ""
+        biggestBlocker: "",
+        outcomeType: .job,
+        urgency: .steady,
+        constraints: "",
+        dailyCommitmentMinutes: 25
     )
 }
 
@@ -1402,11 +1466,13 @@ struct SkippedTodayState: Codable, Equatable {
 }
 
 struct OpenLARPState: Codable, Equatable {
-    static let currentSchemaVersion = 10
+    static let currentSchemaVersion = 11
 
     var schemaVersion: Int
     var userProfile: CareerUserProfile?
     var goal: CareerGoal?
+    var careerUnderstanding: CareerUnderstanding
+    var onboardingFunnel: OnboardingFunnelState
     var targetRoles: [TargetRole]
     var diagnostic: CookedDiagnostic?
     var plan: [Quest]
@@ -1431,6 +1497,8 @@ struct OpenLARPState: Codable, Equatable {
         schemaVersion: Int = OpenLARPState.currentSchemaVersion,
         userProfile: CareerUserProfile? = nil,
         goal: CareerGoal?,
+        careerUnderstanding: CareerUnderstanding = .empty,
+        onboardingFunnel: OnboardingFunnelState = .empty,
         targetRoles: [TargetRole] = [],
         diagnostic: CookedDiagnostic?,
         plan: [Quest],
@@ -1454,6 +1522,8 @@ struct OpenLARPState: Codable, Equatable {
         self.schemaVersion = schemaVersion
         self.userProfile = userProfile
         self.goal = goal
+        self.careerUnderstanding = careerUnderstanding
+        self.onboardingFunnel = onboardingFunnel
         self.targetRoles = targetRoles
         self.diagnostic = diagnostic
         self.plan = plan
@@ -1479,6 +1549,8 @@ struct OpenLARPState: Codable, Equatable {
         schemaVersion: OpenLARPState.currentSchemaVersion,
         userProfile: nil,
         goal: nil,
+        careerUnderstanding: .empty,
+        onboardingFunnel: .empty,
         targetRoles: [],
         diagnostic: nil,
         plan: [],
@@ -1505,6 +1577,8 @@ extension OpenLARPState {
         case schemaVersion
         case userProfile
         case goal
+        case careerUnderstanding
+        case onboardingFunnel
         case targetRoles
         case diagnostic
         case plan
@@ -1534,13 +1608,31 @@ extension OpenLARPState {
         }
         schemaVersion = Self.currentSchemaVersion
         userProfile = try container.decodeIfPresent(CareerUserProfile.self, forKey: .userProfile)
-        goal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
+        let decodedGoal = try container.decodeIfPresent(CareerGoal.self, forKey: .goal)
+        let decodedUpdatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        goal = decodedGoal
+        updatedAt = decodedUpdatedAt
+        if let decodedUnderstanding = try container.decodeIfPresent(
+            CareerUnderstanding.self,
+            forKey: .careerUnderstanding
+        ) {
+            careerUnderstanding = decodedUnderstanding
+        } else if decodedSchemaVersion <= 10 {
+            careerUnderstanding = decodedGoal.map {
+                CareerUnderstanding.migratingLegacyGoal($0, updatedAt: decodedUpdatedAt)
+            } ?? .empty
+        } else {
+            throw OpenLARPPersistenceError.unrecoverableState
+        }
+        onboardingFunnel = try container.decodeIfPresent(
+            OnboardingFunnelState.self,
+            forKey: .onboardingFunnel
+        ) ?? .empty
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
         diagnostic = try container.decodeIfPresent(CookedDiagnostic.self, forKey: .diagnostic)
         plan = try container.decode([Quest].self, forKey: .plan)
         progress = try container.decode(ProgressState.self, forKey: .progress)
         agentBrief = try container.decodeIfPresent(AgentBrief.self, forKey: .agentBrief) ?? .empty
-        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         dailyCadence = try container.decodeIfPresent(DailyCadenceState.self, forKey: .dailyCadence) ?? .empty
         missedDayRecovery = try container.decodeIfPresent(MissedDayRecoveryState.self, forKey: .missedDayRecovery) ?? .empty
         skippedToday = try container.decodeIfPresent(SkippedTodayState.self, forKey: .skippedToday) ?? .empty
@@ -1565,6 +1657,8 @@ extension OpenLARPState {
         try container.encode(schemaVersion, forKey: .schemaVersion)
         try container.encodeIfPresent(userProfile, forKey: .userProfile)
         try container.encodeIfPresent(goal, forKey: .goal)
+        try container.encode(careerUnderstanding, forKey: .careerUnderstanding)
+        try container.encode(onboardingFunnel, forKey: .onboardingFunnel)
         try container.encode(targetRoles, forKey: .targetRoles)
         try container.encodeIfPresent(diagnostic, forKey: .diagnostic)
         try container.encode(plan, forKey: .plan)
@@ -1676,6 +1770,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
     case questNotAvailable
     case emptyProof
     case invalidQuestPlan
+    case careerUnderstandingNeedsReview
 
     var errorDescription: String? {
         switch self {
@@ -1683,6 +1778,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
         case .questNotAvailable: "This quest is not available yet."
         case .emptyProof: "Add a written note about what you did before checking your submission."
         case .invalidQuestPlan: "The generated plan was not usable, so OpenLARP switched to a local plan."
+        case .careerUnderstandingNeedsReview: "Review and approve OpenLARP's understanding before creating your plan."
         }
     }
 }

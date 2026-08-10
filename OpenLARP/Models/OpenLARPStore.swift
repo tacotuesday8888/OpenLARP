@@ -37,6 +37,7 @@ final class OpenLARPStore {
     var isProofChecking = false
     var isPreparingCareerGraphSyncPreview = false
     var isRestoringAuthenticationSession = false
+    var didFinishInitialAuthenticationResolution = false
     var isSigningInWithGoogle = false
     var isSigningInWithApple = false
     var isSigningOutOfAccount = false
@@ -122,6 +123,7 @@ final class OpenLARPStore {
         self.isLocalDataAccessBlocked = localDataStartupError != nil
         self.proofImageProcessor = proofImageProcessor
         self.releaseConfiguration = releaseConfiguration
+        self.didFinishInitialAuthenticationResolution = !releaseConfiguration.runsAuthenticationLifecycle
         if releaseConfiguration.serviceMode == .localOnly {
             self.aiWorkflowService = LocalMockV0AIWorkflowService()
             self.agentService = MockCareerAgentService()
@@ -188,8 +190,77 @@ final class OpenLARPStore {
     }
 
     func confirmGoal(_ goal: CareerGoal) async {
-        guard !isGoalSetupRunning else { return }
-        guard requireSubscriptionAccess(for: .confirmGoal) else { return }
+        let requestedAt = now()
+        let understanding = CareerIntakeDraft(goal: goal)
+            .makeApprovedUnderstanding(approvedAt: requestedAt)
+        _ = await confirmGoal(
+            goal,
+            approvedUnderstanding: understanding,
+            requestedAt: requestedAt,
+            recordsUnderstandingApproval: false
+        )
+    }
+
+    @discardableResult
+    func approveCareerUnderstanding(
+        _ reviewingUnderstanding: CareerUnderstanding,
+        goal: CareerGoal,
+        expectedOwnerScope: String
+    ) async -> Bool {
+        guard expectedOwnerScope == onboardingOwnerScope else {
+            errorMessage = "Your account changed. Review these answers again before continuing."
+            return false
+        }
+        let requestedAt = now()
+        var understanding = reviewingUnderstanding
+        do {
+            try understanding.approve(at: requestedAt)
+        } catch {
+            errorMessage = OpenLARPError.careerUnderstandingNeedsReview.localizedDescription
+            return false
+        }
+        return await confirmGoal(
+            goal,
+            approvedUnderstanding: understanding,
+            requestedAt: requestedAt,
+            recordsUnderstandingApproval: true
+        )
+    }
+
+    func recordOnboardingStarted() {
+        guard state.needsGoalSetup, !state.onboardingFunnel.didRecordStart else { return }
+        let originalState = state
+        state.onboardingFunnel.didRecordStart = true
+        recordBetaEvent(.onboardingStarted)
+        if !save() {
+            state = originalState
+        }
+    }
+
+    func recordCareerUnderstandingReviewed() {
+        guard state.needsGoalSetup,
+              !state.onboardingFunnel.didRecordUnderstandingReview else { return }
+        let originalState = state
+        if !state.onboardingFunnel.didRecordStart {
+            state.onboardingFunnel.didRecordStart = true
+            recordBetaEvent(.onboardingStarted)
+        }
+        state.onboardingFunnel.didRecordUnderstandingReview = true
+        recordBetaEvent(.careerUnderstandingReviewed)
+        if !save() {
+            state = originalState
+        }
+    }
+
+    private func confirmGoal(
+        _ goal: CareerGoal,
+        approvedUnderstanding: CareerUnderstanding,
+        requestedAt: Date,
+        recordsUnderstandingApproval: Bool
+    ) async -> Bool {
+        guard !isGoalSetupRunning else { return false }
+        guard requireSubscriptionAccess(for: .confirmGoal) else { return false }
+        let originalState = state
         let previousProfile = state.userProfile
         let previousOutcomeLog = state.outcomeLog
         let previousBetaEvents = state.betaEvents
@@ -198,17 +269,17 @@ final class OpenLARPStore {
         let previousSubscriptionState = state.subscriptionState
         let previousPrivateEvidenceBackupCleanupResult = state.privateEvidenceBackupCleanupResult
         let previousAccountDeletionResult = state.accountDeletionResult
+        let previousOnboardingFunnel = state.onboardingFunnel
         var completedAIWorkflowRuns: [V0AIWorkflowRun] = []
-        let requestedAt = now()
         let ownerContext = captureLocalOwnerOperationContext()
         isGoalSetupRunning = true
         defer { isGoalSetupRunning = false }
-        guard discardProofDraft() else { return }
+        guard discardProofDraft() else { return false }
         do {
             let diagnosticResponse = try await aiWorkflowService.generateDiagnostic(
                 V0DiagnosticRequest(goal: goal, requestedAt: requestedAt)
             )
-            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
             completedAIWorkflowRuns.append(diagnosticResponse.run)
             let planResponse = try await aiWorkflowService.generateQuestPlan(
                 V0QuestPlanRequest(
@@ -217,21 +288,30 @@ final class OpenLARPStore {
                     requestedAt: requestedAt
                 )
             )
-            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
             completedAIWorkflowRuns.append(planResponse.run)
             guard let plan = OpenLARPEngine.validatedInitialPlan(planResponse.quests) else {
                 throw OpenLARPError.invalidQuestPlan
             }
-            state = OpenLARPEngine.confirmGoal(
+            state = try OpenLARPEngine.confirmGoal(
                 goal,
+                understanding: approvedUnderstanding,
                 diagnostic: diagnosticResponse.diagnostic,
                 plan: plan,
                 now: requestedAt
             )
             errorMessage = nil
         } catch {
-            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
-            state = OpenLARPEngine.confirmGoal(goal, now: requestedAt)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+            guard let fallbackState = try? OpenLARPEngine.confirmGoal(
+                goal,
+                understanding: approvedUnderstanding,
+                now: requestedAt
+            ) else {
+                errorMessage = OpenLARPError.careerUnderstandingNeedsReview.localizedDescription
+                return false
+            }
+            state = fallbackState
             errorMessage = "OpenLARP built a local plan on this device because the agent service was unavailable."
         }
         if let previousProfile, var refreshedProfile = state.userProfile {
@@ -254,6 +334,7 @@ final class OpenLARPStore {
         }
         state.privateEvidenceBackupCleanupResult = previousPrivateEvidenceBackupCleanupResult
         state.accountDeletionResult = previousAccountDeletionResult
+        state.onboardingFunnel = previousOnboardingFunnel
         let currentSession = currentBackendSession()
         if currentSession.isAuthenticated {
             applyAuthenticatedAccount(currentSession)
@@ -272,12 +353,21 @@ final class OpenLARPStore {
         recordBetaEvent(.goalConfirmed, occurredAt: requestedAt)
         recordBetaEvent(.diagnosticShown, occurredAt: requestedAt)
         recordFreeSprintStartedIfNeeded(at: requestedAt)
+        if recordsUnderstandingApproval,
+           !state.onboardingFunnel.didRecordUnderstandingApproval {
+            state.onboardingFunnel.didRecordUnderstandingApproval = true
+            recordBetaEvent(.careerUnderstandingApproved, occurredAt: requestedAt)
+        }
         state.agentBrief = AgentBriefFactory.makeBrief(for: state, generatedAt: requestedAt)
         pendingProof = nil
         pendingQualityResult = nil
         clearCareerGraphSyncPreview()
         clearPersistedProofDraft()
-        save()
+        guard save() else {
+            state = originalState
+            return false
+        }
+        return true
     }
 
     func resetGoal() {
@@ -308,6 +398,7 @@ final class OpenLARPStore {
         pendingQualityResult = nil
         clearCareerGraphSyncPreview()
         clearPersistedProofDraft()
+        state.onboardingFunnel = .empty
         save()
     }
 
@@ -1070,7 +1161,10 @@ final class OpenLARPStore {
         guard !isRestoringAuthenticationSession else { return }
         guard !isAccountDataOperationInFlight else { return }
         isRestoringAuthenticationSession = true
-        defer { isRestoringAuthenticationSession = false }
+        defer {
+            isRestoringAuthenticationSession = false
+            didFinishInitialAuthenticationResolution = true
+        }
 
         let result = await authenticationService.restorePreviousSession(for: state)
         await applyAuthenticationResult(result, shouldSurfaceMessage: false)
@@ -1613,6 +1707,11 @@ final class OpenLARPStore {
 
     func currentBackendSessionSnapshot() -> BackendUserSession {
         currentBackendSession()
+    }
+
+    var onboardingOwnerScope: String {
+        let session = currentBackendSession()
+        return "\(activeLocalOwnerKey):\(localOwnerRevision):\(session.ownerUserID)"
     }
 
     @discardableResult
