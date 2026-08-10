@@ -1747,7 +1747,7 @@ final class V0EngineTests: XCTestCase {
 
         let decoded = try decoder.decode(OpenLARPState.self, from: oldData)
 
-        XCTAssertEqual(decoded.schemaVersion, 10)
+        XCTAssertEqual(decoded.schemaVersion, OpenLARPState.currentSchemaVersion)
         XCTAssertTrue(decoded.outcomeLog.isEmpty)
     }
 

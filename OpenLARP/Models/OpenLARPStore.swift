@@ -797,6 +797,13 @@ final class OpenLARPStore {
             return false
         }
 
+        let hasDraftState = pendingProof != nil ||
+            pendingQualityResult != nil ||
+            state.proofDraft != nil ||
+            state.proofDraftQuestID != nil ||
+            state.proofDraftQualityResult != nil
+        guard hasDraftState else { return true }
+
         let discardedProof = pendingProof ?? state.proofDraft
         let previousState = state
         let previousProof = pendingProof
