@@ -339,6 +339,7 @@ struct CloudProofRecordDocument: Codable, Equatable {
     var attachments: [CloudProofAttachmentDocument]
     var submittedAt: Date
     var quality: QualityCheckResult?
+    var evidenceCard: EvidenceCard
     var collectionPath: String
     var documentPath: String
 
@@ -351,6 +352,7 @@ struct CloudProofRecordDocument: Codable, Equatable {
         case link
         case submittedAt
         case quality
+        case evidenceCard
         case collectionPath
         case documentPath
     }
@@ -372,6 +374,7 @@ struct CloudProofRecordDocument: Codable, Equatable {
         }
         submittedAt = proof.submittedAt
         quality = proof.quality
+        evidenceCard = proof.evidenceCard
         collectionPath = "users/\(ownerUserID)/proofRecords"
         documentPath = "\(collectionPath)/\(proof.id.uuidString)"
     }
@@ -387,6 +390,14 @@ struct CloudProofRecordDocument: Codable, Equatable {
         attachments = []
         submittedAt = try container.decode(Date.self, forKey: .submittedAt)
         quality = try container.decodeIfPresent(QualityCheckResult.self, forKey: .quality)
+        evidenceCard = try container.decodeIfPresent(EvidenceCard.self, forKey: .evidenceCard) ?? EvidenceCard.legacyReceipt(
+            proofID: UUID(uuidString: metadata.localID) ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+            questID: UUID(uuidString: questID) ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+            questTitle: questTitle,
+            kind: kind,
+            text: text,
+            submittedAt: submittedAt
+        )
         collectionPath = try container.decode(String.self, forKey: .collectionPath)
         documentPath = try container.decode(String.self, forKey: .documentPath)
     }

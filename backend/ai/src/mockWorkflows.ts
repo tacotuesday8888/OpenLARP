@@ -271,20 +271,34 @@ export function checkProofQuality(payload: ProofQualityPayload) {
   const proofText = payload.proof.text.trim();
   const hasLink = payload.proof.link.trim().length > 0;
   const hasAttachment = payload.proof.attachments.length > 0;
-  const qualityScore = Math.min(94, proofText.length >= 80 ? 78 + (hasLink ? 7 : 0) + (hasAttachment ? 6 : 0) : 46);
-  const isAccepted = qualityScore >= 65;
+  const isSelfReport = payload.proof.kind === "selfReport";
+  const qualityScore = isSelfReport
+    ? 48
+    : Math.min(94, proofText.length >= 80 ? 78 : 46);
+  const isAccepted = !isSelfReport && qualityScore >= 65;
   const response = {
     isAccepted,
     qualityScore,
-    label: isAccepted ? "Credible proof" : "Needs stronger evidence",
-    reason: isAccepted
+    label: isSelfReport ? "Self-report coaching" : isAccepted ? "Credible written account" : "Needs more context",
+    reason: isSelfReport
+      ? "The reflection records progress, but it remains a self-report rather than inspected evidence."
+      : isAccepted
       ? "The proof describes a concrete action and can be tied to the target role."
-      : "The submission is still too thin to support a strong career claim.",
-    improvement: isAccepted
+      : "The written description is still too thin to document meaningful progress.",
+    improvement: isSelfReport
+      ? "Add what changed and connect it to a concrete result or role requirement."
+      : isAccepted
       ? "Add one measurable detail or a linkable artifact next."
       : "Describe what you actually made, sent, analyzed, or improved.",
     xpEarned: isAccepted ? 120 : 40,
-    readinessDelta: isAccepted ? 6 : 1
+    readinessDelta: isAccepted ? 6 : 1,
+    inspectionScope: {
+      didInspectWrittenText: proofText.length > 0,
+      didInspectLinkFormat: hasLink,
+      didInspectLinkedDestination: false as const,
+      didInspectAttachmentMetadata: hasAttachment,
+      didInspectAttachmentContents: false as const
+    }
   };
   assertSafeGeneratedText(JSON.stringify(response));
   return response;

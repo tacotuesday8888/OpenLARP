@@ -21,7 +21,9 @@
 - Day 7 adapts the second chapter from grounded counters and proof-quality metadata; private proof bodies, links, and attachment data remain on device.
 - Day 14 creates a durable sprint report. Changing goals or starting another sprint preserves earned evidence and history.
 - V0 accepts text, links, photos, and screenshots as proof.
-- V0 uses AI for diagnostics, quests, proof quality checks, and progress summaries.
+- V0 uses AI for diagnostics, quests, proof coaching, and progress summaries.
+- Proof acceptance, XP, readiness impact, and claimed inspection scope are deterministic; AI may improve coaching language but cannot grant rewards or claim it inspected linked pages or local attachment contents.
+- Every claimed proof creates an editable evidence card while preserving an immutable proof receipt. Private notes and local attachments remain private by default and follow the user's explicit evidence-sync choice.
 - There is no human review in the product flow.
 - Users get one main quest with a limited swap option.
 - Quest difficulty adapts over time.
@@ -54,7 +56,7 @@
 
 ## Roadmap Decisions
 
-- V0: iOS career level-up beta with goal setup, cooked diagnostic, Today quest, seven-day map, proof/self-report, AI proof check, XP, streaks, badges, progress, push notifications, share cards, waitlist, and creator application.
+- V0: iOS career level-up beta with goal setup, cooked diagnostic, Today quest, seven-day map, proof/self-report, AI proof coaching, deterministic rewards, XP, streaks, badges, progress, push notifications, share cards, waitlist, and creator application.
 - V1: Quest-linked resume and LinkedIn help based on real proof.
 - V2: Interview prep and cloud agent search.
 - V2 search defaults to courses, certificates, and projects.

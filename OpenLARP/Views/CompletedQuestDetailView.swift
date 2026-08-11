@@ -4,6 +4,7 @@ struct CompletedQuestDetailView: View {
     let quest: Quest
     let proofs: [ProofRecord]
     let attachmentURL: (ProofAttachment) -> URL
+    let updateEvidenceCard: EvidenceCardUpdateAction
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedProof: ProofRecord?
@@ -33,7 +34,11 @@ struct CompletedQuestDetailView: View {
                 }
             }
             .sheet(item: $selectedProof) { proof in
-                ProofDetailView(proof: proof, attachmentURL: attachmentURL)
+                ProofDetailView(
+                    proof: proof,
+                    attachmentURL: attachmentURL,
+                    updateEvidenceCard: updateEvidenceCard
+                )
             }
         }
     }

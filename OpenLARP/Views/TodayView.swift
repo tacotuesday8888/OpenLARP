@@ -42,9 +42,13 @@ struct TodayView: View {
             }
         }
         .sheet(item: $selectedProof) { proof in
-            ProofDetailView(proof: proof) { attachment in
-                store.localURL(for: attachment)
-            }
+            ProofDetailView(
+                proof: proof,
+                attachmentURL: { attachment in
+                    store.localURL(for: attachment)
+                },
+                updateEvidenceCard: updateEvidenceCard
+            )
         }
         .sheet(item: $pendingDiagnosticResult) { content in
             DiagnosticResultBridgeView(
@@ -116,6 +120,22 @@ struct TodayView: View {
         } message: {
             Text(store.errorMessage ?? "")
         }
+    }
+
+    private func updateEvidenceCard(
+        proofID: UUID,
+        actionCompleted: String,
+        userNote: String,
+        privateNote: String,
+        potentialCareerUse: String
+    ) -> Bool {
+        store.updateEvidenceCard(
+            proofID: proofID,
+            actionCompleted: actionCompleted,
+            userNote: userNote,
+            privateNote: privateNote,
+            potentialCareerUse: potentialCareerUse
+        )
     }
 
     @ViewBuilder
@@ -1391,6 +1411,10 @@ private struct QualityResultCard: View {
                 .foregroundStyle(Color.openLARPInk)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Label(result.coachingSource.disclosure, systemImage: "sparkles")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.openLARPSoftInk)
+
             if let disclosure {
                 Label(disclosure.reviewedText, systemImage: "text.magnifyingglass")
                     .font(.caption.weight(.semibold))
@@ -1420,19 +1444,24 @@ private struct QualityResultCard: View {
                 Button {
                     store.improvePendingProofDraft()
                 } label: {
-                    Label("Improve Proof", systemImage: "pencil")
+                    Label("Correct or Resubmit", systemImage: "pencil")
                 }
                 .buttonStyle(PrimaryButtonStyle())
+
+                Text("Edit your description or evidence, then run a new review. The current result will not be claimed.")
+                    .font(.caption)
+                    .foregroundStyle(Color.openLARPSoftInk)
 
                 Button {
                     store.claimPendingQualityResult()
                 } label: {
-                    Label("Accept Lower XP", systemImage: "bolt.circle.fill")
+                    Label("Accept Partial Credit", systemImage: "bolt.circle.fill")
                 }
                 .buttonStyle(SecondaryButtonStyle())
             }
         }
     }
+
 }
 
 private struct ScoreRing: View {

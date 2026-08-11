@@ -121,7 +121,9 @@ Supported proof types:
 - Reflection.
 - Voice recording later.
 
-The MVP version can start with text and link proof only.
+Rich V0 supports written descriptions, links, screenshots, photos, and explicit self-reports. Image bytes remain app-private and are not transmitted to the AI review workflow; the review can use only the written description, link format, and attachment metadata. The receipt always discloses what was and was not inspected. AI contributes bounded coaching, while deterministic client rules own rewards and readiness.
+
+After a submission is claimed, its receipt remains immutable and an editable evidence card is created. Users may refine the completed-action wording, a reusable future-use note, a personal note, and a private note. Quest identity, readiness gap, source proof, confirmation state, timestamp, and provenance cannot be silently rewritten.
 
 ### 4. Progress
 
@@ -245,7 +247,7 @@ Flow:
 8. App creates the first seven-day chapter within the approved daily commitment.
 9. Completing day 7 pauses the daily cadence for a grounded checkpoint report.
 10. The app creates days 8–14 from readiness, counters, generated quest metadata, and proof quality scores only; private proof bodies, links, and attachment data stay on device.
-11. Completing day 14 creates a durable sprint report. Starting another sprint or changing the goal preserves earned XP, proof receipts, readiness history, outcomes, and archived sprint summaries.
+11. Completing day 14 creates a durable sprint report. Starting another sprint or changing the goal preserves earned XP, proof receipts, editable evidence cards, readiness history, outcomes, and archived sprint summaries.
 
 Output:
 

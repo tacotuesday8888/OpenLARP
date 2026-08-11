@@ -3,6 +3,7 @@ import SwiftUI
 struct QuestMapView: View {
     let state: OpenLARPState
     let attachmentURL: (ProofAttachment) -> URL
+    let updateEvidenceCard: EvidenceCardUpdateAction
     let viewToday: () -> Void
     @State private var selectedSheet: MapQuestSheet?
 
@@ -94,7 +95,8 @@ struct QuestMapView: View {
                 CompletedQuestDetailView(
                     quest: quest,
                     proofs: state.progress.recentProof,
-                    attachmentURL: attachmentURL
+                    attachmentURL: attachmentURL,
+                    updateEvidenceCard: updateEvidenceCard
                 )
             case .preview(let quest):
                 QuestPreviewView(quest: quest, openToday: viewToday)

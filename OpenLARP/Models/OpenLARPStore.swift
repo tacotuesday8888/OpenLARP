@@ -1194,7 +1194,10 @@ final class OpenLARPStore {
                 return
             }
 
-            let result = try providerIndependentProofReviewResult(for: proof)
+            let result = try providerIndependentProofReviewResult(
+                for: proof,
+                response: response
+            )
             pendingProof = proof
             pendingQualityResult = result
             recordBackendEvent(
@@ -1226,7 +1229,7 @@ final class OpenLARPStore {
             // A response from an owner that is no longer active must remain silent.
             // Its persisted draft stays in that owner's container for later recovery.
             guard isCurrentLocalOwnerOperation(ownerContext) else { return }
-            errorMessage = error.localizedDescription
+            errorMessage = "Proof review could not finish. Your draft is still saved; try again when ready."
         }
     }
 
@@ -1299,6 +1302,38 @@ final class OpenLARPStore {
 
     func discardPendingQualityResult() {
         _ = discardProofDraft()
+    }
+
+    @discardableResult
+    func updateEvidenceCard(
+        proofID: UUID,
+        actionCompleted: String,
+        userNote: String,
+        privateNote: String,
+        potentialCareerUse: String
+    ) -> Bool {
+        let previousState = state
+        do {
+            state = try OpenLARPEngine.updateEvidenceCard(
+                proofID: proofID,
+                actionCompleted: actionCompleted,
+                userNote: userNote,
+                privateNote: privateNote,
+                potentialCareerUse: potentialCareerUse,
+                in: state,
+                now: now()
+            )
+            clearCareerGraphSyncPreview()
+            errorMessage = nil
+            guard save() else {
+                throw OpenLARPError.invalidEvidenceCard
+            }
+            return true
+        } catch {
+            state = previousState
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     @discardableResult
@@ -2734,7 +2769,8 @@ final class OpenLARPStore {
     }
 
     private func providerIndependentProofReviewResult(
-        for proof: ProofSubmission
+        for proof: ProofSubmission,
+        response: V0ProofReviewResponse
     ) throws -> QualityCheckResult {
         guard let quest = state.currentQuest else {
             throw OpenLARPError.noCurrentQuest
@@ -2744,7 +2780,46 @@ final class OpenLARPStore {
         // but it does not provide image bytes or verifiable linked-page inspection.
         // Keep all user-visible claims and progress rewards client-owned until a
         // versioned evidence-review contract can prove those capabilities.
-        return try OpenLARPEngine.checkProof(proof, for: quest)
+        var result = try OpenLARPEngine.checkProof(proof, for: quest)
+        let source: ProofCoachingSource
+        if response.run.usedFallback {
+            source = .localFallback
+        } else if response.run.providerRoute == .localMock {
+            source = .deterministic
+        } else {
+            source = .liveAI
+        }
+
+        guard source != .deterministic,
+              isSafeProofCoaching(response.result) else {
+            return result
+        }
+        result.reason = response.result.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        result.improvement = response.result.improvement.trimmingCharacters(in: .whitespacesAndNewlines)
+        result.coachingSource = source
+        return result
+    }
+
+    private func isSafeProofCoaching(_ candidate: QualityCheckResult) -> Bool {
+        let reason = candidate.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let improvement = candidate.improvement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reason.isEmpty,
+              reason.count <= 500,
+              !improvement.isEmpty,
+              improvement.count <= 500,
+              !candidate.inspectionScope.didInspectSubmittedEvidence else {
+            return false
+        }
+
+        let text = "\(reason) \(improvement)".lowercased()
+        let inspectionVerbs = [
+            "inspect", "opened", "viewed", "reviewed", "read the", "fetched", "accessed", "verified"
+        ]
+        let untransmittedTargets = [
+            "link", "attachment", "screenshot", "photo", "image", "file", "page"
+        ]
+        return !(inspectionVerbs.contains { text.contains($0) } &&
+            untransmittedTargets.contains { text.contains($0) })
     }
 
     private func activeProofDraft(id draftID: UUID) throws -> ProofSubmission {

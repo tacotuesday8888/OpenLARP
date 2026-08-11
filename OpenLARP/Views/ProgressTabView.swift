@@ -33,6 +33,7 @@ struct ProgressTabView: View {
     let logOutcome: OutcomeLogSaveAction
     let updateOutcome: OutcomeLogUpdateAction
     let deleteOutcome: OutcomeLogDeleteAction
+    let updateEvidenceCard: EvidenceCardUpdateAction
     @State private var selectedProof: ProofRecord?
     @State private var showingProofArchive = false
     @State private var outcomeSheetDestination: OutcomeSheetDestination?
@@ -43,7 +44,8 @@ struct ProgressTabView: View {
         improveWeakestArea: @escaping () -> Void,
         logOutcome: @escaping OutcomeLogSaveAction = { _, _, _, _, _, _ in },
         updateOutcome: @escaping OutcomeLogUpdateAction = { _, _, _, _, _, _, _ in },
-        deleteOutcome: @escaping OutcomeLogDeleteAction = { _ in }
+        deleteOutcome: @escaping OutcomeLogDeleteAction = { _ in },
+        updateEvidenceCard: @escaping EvidenceCardUpdateAction = { _, _, _, _, _ in false }
     ) {
         self.state = state
         self.attachmentURL = attachmentURL
@@ -51,6 +53,7 @@ struct ProgressTabView: View {
         self.logOutcome = logOutcome
         self.updateOutcome = updateOutcome
         self.deleteOutcome = deleteOutcome
+        self.updateEvidenceCard = updateEvidenceCard
     }
 
     var body: some View {
@@ -93,12 +96,17 @@ struct ProgressTabView: View {
         .navigationTitle("Progress")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedProof) { proof in
-            ProofDetailView(proof: proof, attachmentURL: attachmentURL)
+            ProofDetailView(
+                proof: proof,
+                attachmentURL: attachmentURL,
+                updateEvidenceCard: updateEvidenceCard
+            )
         }
         .sheet(isPresented: $showingProofArchive) {
             ProofArchiveView(
                 proofs: state.progress.recentProof,
-                attachmentURL: attachmentURL
+                attachmentURL: attachmentURL,
+                updateEvidenceCard: updateEvidenceCard
             )
         }
         .sheet(item: $outcomeSheetDestination) { destination in

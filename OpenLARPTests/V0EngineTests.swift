@@ -3417,6 +3417,88 @@ final class V0EngineTests: XCTestCase {
         XCTAssertFalse(store.state.progress.badges.contains(.strongProof))
     }
 
+    @MainActor
+    func testStoreUsesSafeRemoteCoachingWithoutTrustingModelControlledRewards() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: SafeCoachingProofReviewService()
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        let questReward = try XCTUnwrap(store.state.currentQuest?.xpReward)
+        let draftID = try XCTUnwrap(store.prepareProofDraft())
+        try store.updateProofDraftText(
+            "I compared three role descriptions, mapped repeated requirements, and turned the strongest gap into a concrete project improvement.",
+            draftID: draftID
+        )
+
+        await store.checkPendingProof(draftID: draftID)
+
+        let result = try XCTUnwrap(store.pendingQualityResult)
+        XCTAssertEqual(
+            result.reason,
+            "Your description identifies the action, the repeated requirements, and the resulting project decision."
+        )
+        XCTAssertEqual(
+            result.improvement,
+            "Add one measurable before-and-after detail so this example is easier to reuse."
+        )
+        XCTAssertEqual(result.coachingSource, .liveAI)
+        XCTAssertTrue(result.isAccepted)
+        XCTAssertEqual(result.qualityScore, 78)
+        XCTAssertEqual(result.label, "Well-documented submission")
+        XCTAssertEqual(result.xpEarned, questReward)
+        XCTAssertEqual(result.readinessDelta, 7)
+        XCTAssertFalse(result.inspectionScope.didInspectSubmittedEvidence)
+    }
+
+    @MainActor
+    func testStoreEditsEvidenceCardWithoutChangingImmutableReceiptProvenance() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+
+        await store.confirmGoal(goal)
+        store.startCurrentQuest()
+        await store.checkProof(
+            kind: .proof,
+            text: "I compared three internship descriptions, mapped the repeated requirements, and documented the exact project change I will make.",
+            link: ""
+        )
+        store.claimPendingQualityResult()
+        let receipt = try XCTUnwrap(store.state.progress.recentProof.first)
+        let originalEvidence = receipt.evidenceCard
+
+        store.updateEvidenceCard(
+            proofID: receipt.id,
+            actionCompleted: "Compared three internship descriptions and chose one project improvement.",
+            userNote: "This is the clearest example of how I prioritize requirements.",
+            privateNote: "Mention the UIKit-to-SwiftUI tradeoff only if asked.",
+            potentialCareerUse: "Use as an application example of requirement analysis."
+        )
+
+        let edited = try XCTUnwrap(store.state.progress.recentProof.first?.evidenceCard)
+        XCTAssertEqual(edited.actionCompleted, "Compared three internship descriptions and chose one project improvement.")
+        XCTAssertEqual(edited.userNote, "This is the clearest example of how I prioritize requirements.")
+        XCTAssertEqual(edited.privateNote, "Mention the UIKit-to-SwiftUI tradeoff only if asked.")
+        XCTAssertEqual(edited.potentialCareerUse, "Use as an application example of requirement analysis.")
+        XCTAssertEqual(edited.relatedQuestID, originalEvidence.relatedQuestID)
+        XCTAssertEqual(edited.sourceProofID, originalEvidence.sourceProofID)
+        XCTAssertEqual(edited.provenance, originalEvidence.provenance)
+        XCTAssertGreaterThanOrEqual(edited.updatedAt, originalEvidence.updatedAt)
+
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.progress.recentProof.first?.evidenceCard, edited)
+    }
+
     func testBackendEventRecordCreatesPrivacySafeOutboxReceipt() throws {
         let timestamp = Date(timeIntervalSince1970: 15_500)
         let proofID = UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!
@@ -4603,7 +4685,7 @@ extension V0EngineTests {
 
         let migrated = try decoder.decode(OpenLARPState.self, from: legacyData)
 
-        XCTAssertEqual(migrated.schemaVersion, 13)
+        XCTAssertEqual(migrated.schemaVersion, OpenLARPState.currentSchemaVersion)
         XCTAssertEqual(migrated.activeSprint?.phase, .chapterOneReview)
         XCTAssertEqual(migrated.currentSprintCompletedQuestCount, 7)
         XCTAssertEqual(migrated.progress.proofCount, state.progress.proofCount)
@@ -5005,6 +5087,44 @@ private struct UnsupportedInspectionProofReviewService: V0AIWorkflowServicing {
         response.result.readinessDelta = 99
         response.result.label = "Verified artifact"
         response.result.reason = "The model inspected the linked page and image contents."
+        response.result.inspectionScope = .notDocumented
+        return response
+    }
+
+    func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse {
+        try await LocalMockV0AIWorkflowService().summarizeProgress(request)
+    }
+}
+
+private struct SafeCoachingProofReviewService: V0AIWorkflowServicing {
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        try await LocalMockV0AIWorkflowService().generateAdaptiveCareerIntake(request)
+    }
+
+    func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
+        try await LocalMockV0AIWorkflowService().generateDiagnostic(request)
+    }
+
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        try await LocalMockV0AIWorkflowService().generateMissionBrief(request)
+    }
+
+    func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
+        try await LocalMockV0AIWorkflowService().generateQuestPlan(request)
+    }
+
+    func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse {
+        var response = try await LocalMockV0AIWorkflowService().reviewProof(request)
+        response.run.providerRoute = .cloudRunGenkit
+        response.result.isAccepted = false
+        response.result.qualityScore = 1
+        response.result.label = "Model-controlled label"
+        response.result.xpEarned = 999
+        response.result.readinessDelta = 20
+        response.result.reason = "Your description identifies the action, the repeated requirements, and the resulting project decision."
+        response.result.improvement = "Add one measurable before-and-after detail so this example is easier to reuse."
         response.result.inspectionScope = .notDocumented
         return response
     }

@@ -35,14 +35,22 @@ struct ProfileView: View {
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedProof) { proof in
-            ProofDetailView(proof: proof) { attachment in
-                store.localURL(for: attachment)
-            }
+            ProofDetailView(
+                proof: proof,
+                attachmentURL: { attachment in
+                    store.localURL(for: attachment)
+                },
+                updateEvidenceCard: updateEvidenceCard
+            )
         }
         .sheet(isPresented: $showingProofArchive) {
-            ProofArchiveView(proofs: store.state.progress.recentProof) { attachment in
-                store.localURL(for: attachment)
-            }
+            ProofArchiveView(
+                proofs: store.state.progress.recentProof,
+                attachmentURL: { attachment in
+                    store.localURL(for: attachment)
+                },
+                updateEvidenceCard: updateEvidenceCard
+            )
         }
         .sheet(item: $outcomeSheetDestination) { destination in
             outcomeSheet(for: destination)
@@ -138,6 +146,22 @@ struct ProfileView: View {
             Text(store.errorMessage ?? "")
         }
         .background(authenticationPresentationAnchorReader)
+    }
+
+    private func updateEvidenceCard(
+        proofID: UUID,
+        actionCompleted: String,
+        userNote: String,
+        privateNote: String,
+        potentialCareerUse: String
+    ) -> Bool {
+        store.updateEvidenceCard(
+            proofID: proofID,
+            actionCompleted: actionCompleted,
+            userNote: userNote,
+            privateNote: privateNote,
+            potentialCareerUse: potentialCareerUse
+        )
     }
 
     @ViewBuilder
