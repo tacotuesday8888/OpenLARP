@@ -74,6 +74,7 @@ private extension AppLifecycleOperation {
         case .restoreAuthentication: "restoreAuthentication"
         case .refreshSubscription: "refreshSubscription"
         case .syncBackendEvents: "syncBackendEvents"
+        case .reconcileQuestReminders: "reconcileQuestReminders"
         }
     }
 }
