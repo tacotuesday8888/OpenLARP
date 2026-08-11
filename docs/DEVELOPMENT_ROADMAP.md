@@ -12,11 +12,12 @@ OpenLARP currently has:
 - A native SwiftUI iOS app shell with Today, Map, Progress, and Profile tabs
 - Guided four-step career onboarding with explicit fact confirmation, at most one material adaptive follow-up, and final approval
 - Durable career understanding that separates user-confirmed facts, unconfirmed AI hypotheses, rejected suggestions, and explicit unknowns
-- Backward-compatible schema-12 migration that preserves legacy facts and synthesizes an approved mission for existing active plans without presenting new defaults as prior user claims
+- Backward-compatible schema-13 migration that preserves legacy facts, synthesizes an approved mission for existing active plans, and derives the correct active sprint phase without presenting new defaults as prior user claims
 - Knownness-aware cloud goal mapping that omits newer legacy defaults when the provenanced understanding still marks them unknown
 - Grounded "Am I Cooked?" evaluation with signals, gaps, missing information, uncertainty, and a first legitimate action
 - An editable mission brief that keeps confirmed facts and ethical boundaries immutable and requires explicit approval before any quest exists
 - Complete seven-day chapter-one quest generation bounded by the user's approved daily commitment
+- A durable 14-day lifecycle with a grounded Day 7 report, metadata-only adaptive days 8–14, a Day 14 report, preserved sprint history, and a next-sprint path
 - Local quest start, proof/self-report, mock quality check, XP, streak, badge, and readiness rules
 - JSON persistence in the app documents directory
 - Local text/link proof and app-private screenshot/photo attachment storage
@@ -125,7 +126,7 @@ Success criteria:
 
 Goal: connect AI to narrow, controlled V0 jobs.
 
-Status: partially complete. Narrow grounded Genkit/Gemini workflows, strict schemas, post-generation safety validation, a private Cloud Run service, authenticated Firebase callable routing, per-user quota, provider budget controls, expiring workflow policy, deterministic fallbacks, adversarial truthfulness evals, redacted smoke tooling, and CI gates are implemented locally. Adaptive intake is integrated into first-run review with a one-question limit, explicit unknown handling, and confirm/edit/reject decisions for AI hypotheses. Cooked evaluation now feeds an editable, explicitly approved mission; trusted inputs are exact-echo validated, and only approval can create a complete seven-day first chapter. Live service behavior still requires deployment and authenticated development smoke validation.
+Status: partially complete. Narrow grounded Genkit/Gemini workflows, strict schemas, post-generation safety validation, a private Cloud Run service, authenticated Firebase callable routing, per-user quota, provider budget controls, expiring workflow policy, deterministic fallbacks, adversarial truthfulness evals, redacted smoke tooling, and CI gates are implemented locally. Adaptive intake is integrated into first-run review with a one-question limit, explicit unknown handling, and confirm/edit/reject decisions for AI hypotheses. Cooked evaluation now feeds an editable, explicitly approved mission; trusted inputs are exact-echo validated, and only approval can create a complete seven-day first chapter. Day 7 produces a grounded checkpoint and an adaptive second chapter using counters and proof-quality metadata without transmitting private proof bodies, links, or attachment data; Day 14 produces a durable sprint report. Live service behavior still requires deployment and authenticated development smoke validation.
 
 Work:
 

@@ -3,9 +3,10 @@ import {
   adaptiveCareerIntakePayloadSchema,
   diagnosticPayloadSchema,
   missionBriefPayloadSchema,
-  proofQualityPayloadSchema
+  proofQualityPayloadSchema,
+  questPlanPayloadSchema
 } from "../src/contracts.js";
-import { makeDiagnostic, makeMissionBrief, checkProofQuality } from "../src/mockWorkflows.js";
+import { makeDiagnostic, makeMissionBrief, makeQuestPlan, checkProofQuality } from "../src/mockWorkflows.js";
 import { validateGeneratedWorkflowResult } from "../src/postValidation.js";
 
 const goal = {
@@ -43,6 +44,39 @@ const context = {
 };
 
 describe("validateGeneratedWorkflowResult", () => {
+  it("rejects a chapter-two plan with the wrong day range", () => {
+    const payload = questPlanPayloadSchema.parse({
+      goal: { ...goal, dailyCommitmentMinutes: 25 },
+      diagnostic: {
+        score: 62, label: "Recoverable", mainGap: "Needs proof", strongestSignal: "One class app",
+        fastestFix: "Create one walkthrough", readinessBaseline: 48
+      },
+      chapterTwoContext: {
+        sprintID: "11111111-1111-4111-8111-111111111111",
+        checkpointSummary: "Seven focused actions completed.",
+        nextFocus: "Use the strongest proof in applications.",
+        readiness: context.progress.readiness,
+        completedQuestCount: 7,
+        proofCount: 7,
+        outcomeCount: 0,
+        completedQuestEvidence: Array.from({ length: 7 }, (_, index) => ({
+          questTitle: `Quest ${index + 1}`, gap: "proofStrength", qualityScore: 80
+        }))
+      }
+    });
+    const candidate = makeQuestPlan(payload);
+    const firstQuest = candidate.quests.at(0);
+    if (!firstQuest) {
+      throw new Error("Expected the generated plan to contain quests.");
+    }
+    firstQuest.day = 1;
+
+    expect(validateGeneratedWorkflowResult("questPlan", payload, candidate)).toEqual({
+      ok: false,
+      reason: "invalidOutput"
+    });
+  });
+
   it("accepts a schema-valid grounded Cooked result", () => {
     const payload = diagnosticPayloadSchema.parse({ goal });
     expect(validateGeneratedWorkflowResult("cookedDiagnostic", payload, makeDiagnostic(payload)))

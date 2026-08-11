@@ -53,6 +53,7 @@ final class OpenLARPStore {
     var isGoalSetupRunning = false
     var isAdaptiveIntakeRunning = false
     var isMissionApprovalRunning = false
+    var isSprintTransitionRunning = false
     var isProofChecking = false
     var isPreparingCareerGraphSyncPreview = false
     var isRestoringAuthenticationSession = false
@@ -91,8 +92,10 @@ final class OpenLARPStore {
         let privateEvidenceBackupCleanupResult: PrivateEvidenceBackupCleanupResult?
         let accountDeletionResult: AccountDeletionResult?
         let onboardingFunnel: OnboardingFunnelState
+        let progress: ProgressState
+        let sprintHistory: [CareerSprintArchive]
 
-        init(state: OpenLARPState) {
+        init(state: OpenLARPState, now: Date = Date()) {
             profile = state.userProfile
             outcomeLog = state.outcomeLog
             betaEvents = state.betaEvents
@@ -102,6 +105,8 @@ final class OpenLARPStore {
             privateEvidenceBackupCleanupResult = state.privateEvidenceBackupCleanupResult
             accountDeletionResult = state.accountDeletionResult
             onboardingFunnel = state.onboardingFunnel
+            progress = state.progress
+            sprintHistory = OpenLARPEngine.sprintHistoryIncludingGoalChange(in: state, now: now)
         }
 
         func restore(into state: inout OpenLARPState) {
@@ -110,7 +115,6 @@ final class OpenLARPStore {
                 refreshedProfile.accountID = profile.accountID
                 refreshedProfile.email = profile.email
                 refreshedProfile.displayName = profile.displayName
-                refreshedProfile.minutesPerDay = profile.minutesPerDay
                 refreshedProfile.networkingComfort = profile.networkingComfort
                 refreshedProfile.privacy = profile.privacy
                 refreshedProfile.createdAt = profile.createdAt
@@ -126,6 +130,20 @@ final class OpenLARPStore {
             state.privateEvidenceBackupCleanupResult = privateEvidenceBackupCleanupResult
             state.accountDeletionResult = accountDeletionResult
             state.onboardingFunnel = onboardingFunnel
+            let newBaselineHistory = state.progress.readinessHistory
+            let newBadges = state.progress.badges
+            state.progress.xp = progress.xp
+            state.progress.xpGoal = max(state.progress.xpGoal, progress.xpGoal)
+            state.progress.streakCount = 0
+            state.progress.completedQuestCount = progress.completedQuestCount
+            state.progress.proofCount = progress.proofCount
+            state.progress.badges = progress.badges
+            for badge in newBadges where !state.progress.badges.contains(badge) {
+                state.progress.badges.append(badge)
+            }
+            state.progress.readinessHistory = progress.readinessHistory + newBaselineHistory
+            state.progress.recentProof = progress.recentProof
+            state.sprintHistory = sprintHistory
         }
     }
 
@@ -543,7 +561,7 @@ final class OpenLARPStore {
             }
         }
 
-        let continuity = GoalTransitionContinuity(state: state)
+        let continuity = GoalTransitionContinuity(state: state, now: requestedAt)
         state = preparedState
         continuity.restore(into: &state)
         let currentSession = currentBackendSession()
@@ -578,7 +596,7 @@ final class OpenLARPStore {
         guard !isGoalSetupRunning else { return false }
         guard requireSubscriptionAccess(for: .confirmGoal) else { return false }
         let originalState = state
-        let continuity = GoalTransitionContinuity(state: state)
+        let continuity = GoalTransitionContinuity(state: state, now: requestedAt)
         var completedAIWorkflowRuns: [V0AIWorkflowRun] = []
         let ownerContext = captureLocalOwnerOperationContext()
         isGoalSetupRunning = true
@@ -659,8 +677,218 @@ final class OpenLARPStore {
         return true
     }
 
+    @discardableResult
+    func continueToChapterTwo() async -> Bool {
+        guard !isSprintTransitionRunning,
+              state.activeSprint?.phase == .chapterOneReview,
+              let goal = state.goal,
+              let diagnostic = state.diagnostic else { return false }
+        let originalState = state
+        let ownerContext = captureLocalOwnerOperationContext()
+        let requestedAt = now()
+        isSprintTransitionRunning = true
+        defer { isSprintTransitionRunning = false }
+
+        var summaryState = state
+        summaryState.progress.completedQuestCount = state.currentSprintCompletedQuestCount
+        summaryState.progress.proofCount = state.currentSprintProofCount
+        let summaryRequest = V0ProgressSummaryRequest(state: summaryState, requestedAt: requestedAt)
+        let summaryResponse: V0ProgressSummaryResponse
+        do {
+            summaryResponse = try await aiWorkflowService.summarizeProgress(summaryRequest)
+        } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+            do {
+                var fallback = try await LocalMockV0AIWorkflowService().summarizeProgress(summaryRequest)
+                fallback.run = fallback.run.markedAsFallback(failureMessage: String(describing: error))
+                summaryResponse = fallback
+            } catch {
+                errorMessage = OpenLARPError.invalidSprintLifecycle.localizedDescription
+                return false
+            }
+        }
+        guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+
+        do {
+            let report = try OpenLARPEngine.makeSprintCheckpointReport(
+                checkpointDay: 7,
+                summary: summaryResponse.summary,
+                nextFocus: OpenLARPEngine.recommendedSprintFocus(in: state),
+                providerRoute: summaryResponse.run.providerRoute,
+                usedFallback: summaryResponse.run.usedFallback,
+                in: state,
+                now: requestedAt
+            )
+            let chapterContext = try V0ChapterTwoPlanContext(state: state, report: report)
+            let planRequest = V0QuestPlanRequest(
+                goal: goal,
+                diagnostic: diagnostic,
+                mission: state.mission,
+                chapterTwoContext: chapterContext,
+                requestedAt: requestedAt
+            )
+            let completedPlanRun: V0AIWorkflowRun
+            do {
+                let response = try await aiWorkflowService.generateQuestPlan(planRequest)
+                guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+                state = try OpenLARPEngine.continueToChapterTwo(
+                    report: report,
+                    chapterTwoPlan: response.quests,
+                    in: state,
+                    now: requestedAt,
+                    calendar: calendar
+                )
+                completedPlanRun = response.run
+            } catch {
+                guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+                var fallback = try await LocalMockV0AIWorkflowService().generateQuestPlan(planRequest)
+                fallback.run = fallback.run.markedAsFallback(failureMessage: String(describing: error))
+                state = try OpenLARPEngine.continueToChapterTwo(
+                    report: report,
+                    chapterTwoPlan: fallback.quests,
+                    in: state,
+                    now: requestedAt,
+                    calendar: calendar
+                )
+                completedPlanRun = fallback.run
+            }
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+            recordAIWorkflowRuns([summaryResponse.run, completedPlanRun])
+            recordBetaEvent(.chapterTwoStarted, occurredAt: requestedAt)
+            errorMessage = completedPlanRun.usedFallback
+                ? "OpenLARP adapted Chapter Two on this device because the agent service was unavailable."
+                : nil
+            guard save() else {
+                state = originalState
+                return false
+            }
+            return true
+        } catch {
+            state = originalState
+            errorMessage = OpenLARPError.invalidSprintLifecycle.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func completeSprintReview() async -> Bool {
+        guard !isSprintTransitionRunning,
+              state.activeSprint?.phase == .finalReview else { return false }
+        let originalState = state
+        let ownerContext = captureLocalOwnerOperationContext()
+        let requestedAt = now()
+        isSprintTransitionRunning = true
+        defer { isSprintTransitionRunning = false }
+
+        var summaryState = state
+        summaryState.progress.completedQuestCount = state.currentSprintCompletedQuestCount
+        summaryState.progress.proofCount = state.currentSprintProofCount
+        let request = V0ProgressSummaryRequest(state: summaryState, requestedAt: requestedAt)
+        let response: V0ProgressSummaryResponse
+        do {
+            response = try await aiWorkflowService.summarizeProgress(request)
+        } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+            do {
+                var fallback = try await LocalMockV0AIWorkflowService().summarizeProgress(request)
+                fallback.run = fallback.run.markedAsFallback(failureMessage: String(describing: error))
+                response = fallback
+            } catch {
+                errorMessage = OpenLARPError.invalidSprintLifecycle.localizedDescription
+                return false
+            }
+        }
+        guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+        do {
+            let report = try OpenLARPEngine.makeSprintCheckpointReport(
+                checkpointDay: 14,
+                summary: response.summary,
+                nextFocus: OpenLARPEngine.recommendedSprintFocus(in: state),
+                providerRoute: response.run.providerRoute,
+                usedFallback: response.run.usedFallback,
+                in: state,
+                now: requestedAt
+            )
+            state = try OpenLARPEngine.completeSprint(report: report, in: state, now: requestedAt)
+            recordAIWorkflowRun(response.run)
+            recordBetaEvent(.sprintCompleted, occurredAt: requestedAt)
+            errorMessage = response.run.usedFallback
+                ? "OpenLARP created this sprint report on this device because the agent service was unavailable."
+                : nil
+            guard save() else {
+                state = originalState
+                return false
+            }
+            return true
+        } catch {
+            state = originalState
+            errorMessage = OpenLARPError.invalidSprintLifecycle.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func startAnotherSprint() async -> Bool {
+        guard !isSprintTransitionRunning,
+              state.activeSprint?.phase == .completed,
+              let goal = state.goal,
+              let diagnostic = state.diagnostic,
+              requireSubscriptionAccess(for: .confirmGoal) else { return false }
+        let originalState = state
+        let ownerContext = captureLocalOwnerOperationContext()
+        let requestedAt = now()
+        isSprintTransitionRunning = true
+        defer { isSprintTransitionRunning = false }
+
+        let request = V0QuestPlanRequest(
+            goal: goal,
+            diagnostic: diagnostic,
+            mission: state.mission,
+            requestedAt: requestedAt
+        )
+        let response: V0QuestPlanResponse
+        do {
+            response = try await aiWorkflowService.generateQuestPlan(request)
+        } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+            do {
+                var fallback = try await LocalMockV0AIWorkflowService().generateQuestPlan(request)
+                fallback.run = fallback.run.markedAsFallback(failureMessage: String(describing: error))
+                response = fallback
+            } catch {
+                errorMessage = OpenLARPError.invalidQuestPlan.localizedDescription
+                return false
+            }
+        }
+        guard isCurrentLocalOwnerOperation(ownerContext) else { return false }
+        do {
+            state = try OpenLARPEngine.startAnotherSprint(
+                plan: response.quests,
+                in: state,
+                now: requestedAt
+            )
+            recordAIWorkflowRun(response.run)
+            recordBetaEvent(.nextSprintStarted, occurredAt: requestedAt)
+            errorMessage = response.run.usedFallback
+                ? "OpenLARP created the next sprint on this device because the agent service was unavailable."
+                : nil
+            guard save() else {
+                state = originalState
+                return false
+            }
+            return true
+        } catch {
+            state = originalState
+            errorMessage = OpenLARPError.invalidQuestPlan.localizedDescription
+            return false
+        }
+    }
+
     func resetGoal() {
-        guard !isGoalSetupRunning, !isAdaptiveIntakeRunning, !isMissionApprovalRunning else {
+        guard !isGoalSetupRunning,
+              !isAdaptiveIntakeRunning,
+              !isMissionApprovalRunning,
+              !isSprintTransitionRunning else {
             errorMessage = "Wait for the current career setup step to finish before changing the goal."
             return
         }
@@ -668,25 +896,12 @@ final class OpenLARPStore {
             errorMessage = "Wait for the proof check to finish before resetting your goal."
             return
         }
-        var existingProfile = state.userProfile
-        existingProfile?.updatedAt = now()
-        let existingOutcomeLog = state.outcomeLog
-        let existingBetaEvents = state.betaEvents
-        let existingAIWorkflowRuns = state.aiWorkflowRuns
-        let existingBackendEvents = state.backendEvents
-        let existingSubscriptionState = state.subscriptionState
-        let existingPrivateEvidenceBackupCleanupResult = state.privateEvidenceBackupCleanupResult
-        let existingAccountDeletionResult = state.accountDeletionResult
+        let resetAt = now()
+        let continuity = GoalTransitionContinuity(state: state, now: resetAt)
         guard discardProofDraft() else { return }
-        state = OpenLARPEngine.resetGoal(now: now())
-        state.userProfile = existingProfile
-        state.outcomeLog = existingOutcomeLog
-        state.betaEvents = existingBetaEvents
-        state.aiWorkflowRuns = existingAIWorkflowRuns
-        state.backendEvents = existingBackendEvents
-        state.subscriptionState = existingSubscriptionState
-        state.privateEvidenceBackupCleanupResult = existingPrivateEvidenceBackupCleanupResult
-        state.accountDeletionResult = existingAccountDeletionResult
+        state = OpenLARPEngine.resetGoal(now: resetAt)
+        continuity.restore(into: &state)
+        state.userProfile?.updatedAt = resetAt
         pendingProof = nil
         pendingQualityResult = nil
         clearCareerGraphSyncPreview()

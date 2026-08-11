@@ -11,10 +11,10 @@ struct QuestMapView: View {
             VStack(alignment: .leading, spacing: 18) {
                 OpenLARPHeroCard(
                     feature: .path,
-                    eyebrow: "Week",
+                    eyebrow: "14 days",
                     title: "Comeback Map",
-                    subtitle: state.goal == nil ? "Set a goal first. The quest map appears after the cooked diagnostic." : "A short proof path keeps the goal visible without making the whole career feel impossible.",
-                    stat: "\(state.progress.completedQuestCount)/7"
+                    subtitle: state.goal == nil ? "Set a goal first. The quest map appears after the cooked diagnostic." : "Chapter One builds real proof. Chapter Two adapts days 8–14 from the first checkpoint.",
+                    stat: "\(state.currentSprintCompletedQuestCount)/14"
                 )
 
                 if state.plan.isEmpty {
@@ -35,17 +35,17 @@ struct QuestMapView: View {
                 } else {
                     Card {
                         VStack(alignment: .leading, spacing: 12) {
-                            SectionHeader(feature: .quest, eyebrow: "Proof Sprint", title: "Next 7 days")
+                            SectionHeader(feature: .quest, eyebrow: "Proof Sprint", title: "Two focused chapters")
 
-                            SprintStrip(completed: state.progress.completedQuestCount)
+                            SprintStrip(completed: state.currentSprintCompletedQuestCount, total: 14)
 
                             HStack(spacing: 8) {
                                 SummaryTile(value: "\(state.progress.streakCount)", label: "Streak", color: .openLARPCoral)
-                                SummaryTile(value: "\(state.progress.completedQuestCount)/7", label: "Complete", color: .openLARPGreen)
+                                SummaryTile(value: "\(state.currentSprintCompletedQuestCount)/14", label: "Complete", color: .openLARPGreen)
                                 SummaryTile(value: "\(state.progress.xp)", label: "XP", color: .openLARPBlue)
                             }
 
-                            ProgressView(value: Double(state.progress.completedQuestCount), total: 7)
+                            ProgressView(value: Double(state.currentSprintCompletedQuestCount), total: 14)
                                 .tint(.openLARPGreen)
 
                             if let recovery = MissedDayRecoveryContent(state: state) {
@@ -59,6 +59,16 @@ struct QuestMapView: View {
 
                     VStack(spacing: 12) {
                         ForEach(state.plan) { quest in
+                            if quest.day == 1 || quest.day == 8 {
+                                HStack {
+                                    Text(quest.day == 1 ? "Chapter One · Build proof" : "Chapter Two · Apply proof")
+                                        .font(.caption.weight(.black))
+                                        .foregroundStyle(Color.openLARPSoftInk)
+                                        .textCase(.uppercase)
+                                    Spacer()
+                                }
+                                .padding(.top, quest.day == 1 ? 0 : 8)
+                            }
                             QuestDayRow(
                                 quest: quest,
                                 openCompletedQuest: {

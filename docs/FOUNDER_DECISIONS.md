@@ -17,7 +17,9 @@
 - The first app experience starts with goal setup.
 - The core loop is goal -> cooked diagnostic -> daily quest -> proof/self-report -> XP/streak/progress -> next quest.
 - V0 progress emphasizes goal readiness.
-- V0 includes Today quest and a seven-day map.
+- V0 includes Today quest and a 14-day map split into two seven-day chapters.
+- Day 7 adapts the second chapter from grounded counters and proof-quality metadata; private proof bodies, links, and attachment data remain on device.
+- Day 14 creates a durable sprint report. Changing goals or starting another sprint preserves earned evidence and history.
 - V0 accepts text, links, photos, and screenshots as proof.
 - V0 uses AI for diagnostics, quests, proof quality checks, and progress summaries.
 - There is no human review in the product flow.

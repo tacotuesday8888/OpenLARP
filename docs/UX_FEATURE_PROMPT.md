@@ -56,7 +56,7 @@ The user starts by choosing a career goal.
 Goal setup controls almost everything else in the app:
 - The cooked diagnostic
 - The daily quest plan
-- The 7-day map
+- The two-chapter 14-day map
 - Progress categories
 - AI feedback
 - Share cards
@@ -102,7 +102,7 @@ How it connects:
 - The biggest gap determines the first quest.
 - The readiness score becomes the progress baseline.
 - The result can generate a share card.
-- The diagnostic creates the first 7-day quest map.
+- The approved mission creates Chapter One; the Day 7 checkpoint creates the adaptive second chapter.
 
 Interaction logic:
 - User completes goal setup.
@@ -175,17 +175,18 @@ UX requirement:
 Today should feel like the user's daily mission control.
 It should not feel like a dashboard full of random widgets.
 
-4. 7-Day Quest Map
+4. Two-Chapter 14-Day Quest Map
 
 The map shows the short-term comeback plan.
 
 It turns the product from "one AI answer" into a program.
 
-The 7-day map should include:
+The 14-day map should include:
 - Today's quest
 - Upcoming quest themes
 - Locked/flexible future quests
 - Weekly milestone
+- A grounded Day 7 checkpoint and Day 14 report
 - Expected readiness improvement
 - Streak status
 
@@ -273,7 +274,7 @@ How it connects:
 - Updates XP
 - Updates streak
 - Updates readiness
-- Updates the 7-day map
+- Updates the 14-day map
 - May unlock badge
 - May generate share card
 - May affect tomorrow's quest
@@ -572,7 +573,7 @@ Today:
 Daily quest and main action.
 
 Map:
-7-day plan and streak recovery.
+Two seven-day chapters and streak recovery.
 
 Progress:
 Readiness, XP, proof strength, badges.
@@ -699,7 +700,7 @@ Also produce a feature interaction map showing how these features connect:
 - Goal setup
 - Cooked diagnostic
 - Today quest
-- 7-day map
+- Two-chapter 14-day map
 - Proof submission
 - AI quality check
 - Self-report

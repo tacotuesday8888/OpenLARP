@@ -243,6 +243,9 @@ Flow:
 6. App proposes an editable 14-day, two-chapter mission using only confirmed facts and clearly labeled diagnostic advice.
 7. User reviews and explicitly approves the mission; target facts and ethical boundaries cannot be silently rewritten.
 8. App creates the first seven-day chapter within the approved daily commitment.
+9. Completing day 7 pauses the daily cadence for a grounded checkpoint report.
+10. The app creates days 8–14 from readiness, counters, generated quest metadata, and proof quality scores only; private proof bodies, links, and attachment data stay on device.
+11. Completing day 14 creates a durable sprint report. Starting another sprint or changing the goal preserves earned XP, proof receipts, readiness history, outcomes, and archived sprint summaries.
 
 Output:
 
@@ -251,7 +254,7 @@ Output:
 - Risk level.
 - Best target.
 - Backup targets.
-- First 7 days.
+- First seven-day chapter, adaptive second chapter, and Day 7/Day 14 reports.
 - First daily quest.
 - Explicit mission approval state.
 
@@ -293,6 +296,18 @@ Flow:
 - Normalize the event.
 - Identify whether it was targeting, proof, resume, networking, interview, or market issue.
 - Assign a recovery quest.
+
+## Native Implementation Architecture
+
+OpenLARP uses a deliberately small unidirectional architecture:
+
+1. SwiftUI views render state and send user intent to `OpenLARPStore`.
+2. The app owns one observable store as the UI source of truth. Temporary presentation state stays local to the view.
+3. `OpenLARPEngine` contains synchronous state transitions and validation that can be tested without SwiftUI, Firebase, or a model provider.
+4. Narrow protocols isolate AI, authentication, subscriptions, persistence, attachments, and backend sync so deterministic local behavior remains available.
+5. Codable state uses explicit schema versions and conservative migrations; durable user facts, proof, readiness history, and sprint history are never reconstructed from model guesses.
+
+This structure is intentionally not split into a view model and repository for every screen. Add a new layer only when it owns a real boundary, independently testable policy, or replaceable dependency. Keep network/model credentials and provider-specific behavior behind the server boundary, and keep business logic out of SwiftUI view bodies.
 
 ## Onboarding Architecture
 

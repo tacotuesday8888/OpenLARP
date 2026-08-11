@@ -79,14 +79,14 @@ V0 is intentionally narrow, but native iOS, AI diagnostics, proof uploads, push 
 
 - A fast answer to "Am I cooked for this goal?"
 - A clear daily quest instead of vague career advice.
-- A visible path for the next seven days.
+- A visible 14-day path in two focused seven-day chapters.
 - Proof that the user is becoming more credible.
 - A game-like sense of momentum through XP, streaks, and badges.
 - Career preparation that feels funny at the hook but serious when it matters.
 
 ### Retention Impact
 
-V0 should create habit through Today quests, a seven-day map, forgiving streaks, and progress toward goal readiness. The product should not judge success by app opens alone.
+V0 should create habit through Today quests, a two-chapter 14-day map, forgiving streaks, grounded Day 7 and Day 14 reviews, and progress toward goal readiness. The product should not judge success by app opens alone.
 
 The first-month priority is:
 

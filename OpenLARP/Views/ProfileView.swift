@@ -59,7 +59,7 @@ struct ProfileView: View {
         } message: {
             Text(store.state.needsMissionApproval
                 ? "This replaces the unapproved mission and readiness baseline so you can set a new target."
-                : "This clears the local diagnostic and questline so you can set a new target.")
+                : "This closes the active sprint and clears its current diagnostic and questline. Earned XP, proof receipts, readiness history, outcomes, and sprint history stay saved.")
         }
         .confirmationDialog(
             "Erase all on-device data?",
@@ -254,7 +254,7 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(feature: .quest, eyebrow: "Sprint", title: "Momentum")
 
-                SprintStrip(completed: store.state.progress.completedQuestCount)
+                SprintStrip(completed: store.state.currentSprintCompletedQuestCount, total: 14)
 
                 HStack(spacing: 8) {
                     SummaryTile(value: "\(store.state.progress.proofCount)", label: "Proof", color: .openLARPGreen)
@@ -956,6 +956,43 @@ struct ProfileView: View {
                         Pill(title: "\(store.state.progress.proofCount) proof items", systemImage: "checkmark.seal", color: .openLARPGreen)
                     }
 
+                    if let sprint = store.state.activeSprint {
+                        ProfileDetailRow(title: "Sprint phase", value: sprintPhaseLabel(sprint.phase))
+                        ProfileDetailRow(
+                            title: "Current sprint",
+                            value: "\(store.state.currentSprintCompletedQuestCount) of 14 quests complete"
+                        )
+                    }
+
+                    if !store.state.sprintHistory.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Sprint history")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Color.openLARPSoftInk)
+                                .textCase(.uppercase)
+
+                            ForEach(store.state.sprintHistory.prefix(3)) { sprint in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(sprint.targetRoleTitle)
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundStyle(Color.openLARPInk)
+                                        Text("\(sprint.completedQuestCount) quests · \(sprint.proofCount) proof · \(sprint.endReason == .completed ? "Completed" : "Goal changed")")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.openLARPSoftInk)
+                                    }
+                                    Spacer()
+                                    Text("\(sprint.endReadiness.overall)%")
+                                        .font(.headline.weight(.black))
+                                        .foregroundStyle(Color.openLARPBlue)
+                                }
+                                .padding(10)
+                                .background(Color.openLARPBackground)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                        }
+                    }
+
                     VStack(alignment: .leading, spacing: 8) {
                         if let targetRole = store.state.targetRoles.first {
                             ProfileDetailRow(title: "Role family", value: targetRole.roleFamily.rawValue)
@@ -980,6 +1017,16 @@ struct ProfileView: View {
                         .foregroundStyle(Color.openLARPSoftInk)
                 }
             }
+        }
+    }
+
+    private func sprintPhaseLabel(_ phase: CareerSprintPhase) -> String {
+        switch phase {
+        case .chapterOne: "Chapter One"
+        case .chapterOneReview: "Day 7 review"
+        case .chapterTwo: "Chapter Two"
+        case .finalReview: "Day 14 review"
+        case .completed: "Complete"
         }
     }
 

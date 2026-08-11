@@ -34,6 +34,9 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
     case accountSignedOut
     case syncPreviewPrepared
     case freeSprintStarted
+    case chapterTwoStarted
+    case sprintCompleted
+    case nextSprintStarted
     case subscriptionStatusChecked
     case subscriptionPaywallViewed
     case subscriptionOfferingLoaded
@@ -79,6 +82,9 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
         case .accountSignedOut: "Account signed out"
         case .syncPreviewPrepared: "Sync preview prepared"
         case .freeSprintStarted: "Free sprint started"
+        case .chapterTwoStarted: "Chapter two started"
+        case .sprintCompleted: "Sprint completed"
+        case .nextSprintStarted: "Next sprint started"
         case .subscriptionStatusChecked: "Subscription status checked"
         case .subscriptionPaywallViewed: "Subscription paywall viewed"
         case .subscriptionOfferingLoaded: "Subscription offering loaded"

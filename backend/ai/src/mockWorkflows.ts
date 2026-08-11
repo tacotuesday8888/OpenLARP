@@ -100,6 +100,62 @@ export function makeQuestPlan(payload: QuestPlanPayload) {
   const targetRole = payload.goal.targetRole;
   const dailyCommitmentMinutes = payload.mission?.dailyCommitmentMinutes ?? payload.goal.dailyCommitmentMinutes;
   const duration = (suggestedMinutes: number) => Math.max(5, Math.min(suggestedMinutes, dailyCommitmentMinutes));
+  if (payload.chapterTwoContext) {
+    return {
+      quests: [
+        {
+          day: 8,
+          title: "Choose the strongest proof from chapter one",
+          purpose: `Use the reviewed evidence to focus the next move: ${payload.chapterTwoContext.nextFocus}`,
+          timeEstimateMinutes: duration(20), difficulty: "Adaptive", gap: "proofStrength",
+          proofRequired: "Name the proof, its target-role connection, and one honest limitation.", xpReward: 120,
+          steps: ["Review the seven evidence scores.", "Choose the strongest proof.", "Record what it proves and does not prove."]
+        },
+        {
+          day: 9, title: "Turn the proof into a concise portfolio story",
+          purpose: "Make real work usable in applications and interviews without exaggeration.",
+          timeEstimateMinutes: duration(25), difficulty: "Adaptive", gap: "confidence",
+          proofRequired: "Save the problem, action, tradeoff, result, and limitation story.", xpReward: 130,
+          steps: ["State the real problem.", "Describe only your actions.", "Add the result and one limitation."]
+        },
+        {
+          day: 10, title: `Match the proof to one ${targetRole} requirement`,
+          purpose: "Focused evidence is more credible than a generic claim of fit.",
+          timeEstimateMinutes: duration(25), difficulty: "Adaptive", gap: "applicationExecution",
+          proofRequired: "Save the requirement and exact evidence connection.", xpReward: 130,
+          steps: ["Choose one current role description.", "Select one requirement.", "Explain the match without exaggeration."]
+        },
+        {
+          day: 11, title: "Improve one weak edge in the proof",
+          purpose: "Make one targeted revision instead of expanding the project without evidence.",
+          timeEstimateMinutes: duration(30), difficulty: "Adaptive", gap: "skillProof",
+          proofRequired: "Document the before, focused revision, and after.", xpReward: 140,
+          steps: ["Choose one limitation.", "Make one bounded improvement.", "Record what changed."]
+        },
+        {
+          day: 12, title: "Use the proof in one honest outreach draft",
+          purpose: "Specific work gives a networking message a real reason to exist.",
+          timeEstimateMinutes: duration(20), difficulty: "Adaptive", gap: "networkStrength",
+          proofRequired: "Save or send a concise message referencing the real artifact.", xpReward: 130,
+          steps: ["Choose one relevant person.", "Reference the proof briefly.", "Ask one low-pressure question."]
+        },
+        {
+          day: 13, title: "Use the proof in one focused application action",
+          purpose: "Connect evidence to a real opportunity while keeping submission user-controlled.",
+          timeEstimateMinutes: duration(25), difficulty: "Adaptive", gap: "applicationExecution",
+          proofRequired: "Save the tailored bullet, receipt, or final application-ready draft.", xpReward: 140,
+          steps: ["Choose one relevant opportunity.", "Tailor one truthful section.", "Submit or save the final ready-to-send version."]
+        },
+        {
+          day: 14, title: "Run the 14-day evidence review",
+          purpose: "Show what changed and choose the next honest focus.",
+          timeEstimateMinutes: duration(15), difficulty: "Review", gap: "consistency",
+          proofRequired: "Write the strongest result, readiness change, outcome signal, and next focus.", xpReward: 160,
+          steps: ["Review all fourteen quests.", "Name the strongest evidence and outcome.", "Choose the next sprint focus."]
+        }
+      ]
+    };
+  }
   return {
     quests: [
       {
