@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { InternalWorkflowRequest } from "../../ai/src/internalServiceContracts.js";
 import { makeQuotaGuard } from "./quotaTestHelpers.js";
+import type { AIRuntimePolicyReader } from "../src/aiRuntimePolicy.js";
+import type { AIServiceClient } from "../src/aiServiceClient.js";
+import type { ProviderBudgetGuard } from "../src/providerBudgetGuard.js";
 import { handleOpenLARPWorkflowRequest, type OpenLARPWorkflowCallableResponse } from "../src/workflowHandler.js";
 
 const privacy = {
@@ -134,6 +138,96 @@ function opportunity() {
   };
 }
 
+const liveConfig = {
+  modelId: "gemini-private-model-id",
+  provider: "vertex-ai",
+  vertexLocation: "global",
+  enableLiveGeneration: true,
+  maxOutputTokens: 1200
+} as const;
+
+const liveBudgetPolicy = {
+  inputTokenMicrosPerThousand: 20,
+  outputTokenMicrosPerThousand: 80,
+  dailyBudgetMicros: 1_000_000
+} as const;
+
+function runtimePolicy(enabled = true): AIRuntimePolicyReader {
+  return {
+    async read() {
+      return {
+        enabled,
+        policyRevision: "beta-2026-08-10",
+        timeoutMs: 15_000,
+        maxOutputTokens: 1200,
+        fallbackReason: enabled ? null : "policy"
+      };
+    }
+  };
+}
+
+function budgetGuard(options: { exhausted?: boolean; alreadyReserved?: boolean } = {}) {
+  const reservations: Array<{ requestID: string; estimatedCostMicros: number; dailyBudgetMicros: number; occurredAt: Date }> = [];
+  const reconciliations: Array<{ requestID: string; actualCostMicros: number; occurredAt: Date }> = [];
+  const guard: ProviderBudgetGuard = {
+    async reserve(input) {
+      reservations.push(input);
+      return options.exhausted
+        ? { ok: false, reason: "budget" }
+        : { ok: true, alreadyReserved: options.alreadyReserved ?? false };
+    },
+    async reconcile(input) {
+      reconciliations.push(input);
+    }
+  };
+  return { guard, reservations, reconciliations };
+}
+
+function liveDiagnostic() {
+  return {
+    score: 54,
+    label: "Grounded live result",
+    mainGap: "Role-specific proof is still thin.",
+    strongestSignal: "One class project is confirmed.",
+    fastestFix: "Create one small role-specific artifact.",
+    readinessBaseline: 48,
+    strongestSignals: ["One class project is confirmed."],
+    readinessGaps: ["No role-specific artifact is confirmed."],
+    missingInformation: ["The project outcome is unknown."],
+    uncertaintyExplanation: "This result uses only confirmed information.",
+    firstAction: "Map repeated requirements from two role descriptions."
+  };
+}
+
+function liveService(options: { fail?: boolean } = {}) {
+  const requests: Array<Omit<InternalWorkflowRequest, "schemaVersion">> = [];
+  const service: AIServiceClient = {
+    async run(request) {
+      requests.push(request);
+      if (options.fail) throw new Error("private provider detail");
+      return {
+        ok: true,
+        schemaVersion: 1,
+        requestID: request.envelope.run.requestID,
+        kind: request.envelope.run.kind,
+        externalActionTaken: false,
+        result: liveDiagnostic(),
+        execution: {
+          schemaVersion: 1,
+          liveModelCallsEnabled: true,
+          liveModelUsed: true,
+          usedFallback: false,
+          fallbackReason: null,
+          promptVersion: "openlarp.cooked.v1",
+          policyRevision: request.policy.policyRevision,
+          usage: { inputTokens: 120, outputTokens: 80, latencyBucket: "under5s" }
+        }
+      };
+    }
+  };
+  return { service, requests };
+}
+
 describe("handleOpenLARPWorkflowRequest", () => {
   it("requires Firebase Auth before dispatch", async () => {
     const response = await handleOpenLARPWorkflowRequest({
@@ -154,6 +248,15 @@ describe("handleOpenLARPWorkflowRequest", () => {
       ok: false,
       code: "invalid-argument"
     });
+  });
+
+  it("rejects internal and local provider routes at the public callable boundary", async () => {
+    for (const providerRoute of ["cloudRunGenkit", "localMock"]) {
+      const response = await authed(envelope("cookedDiagnostic", goalPayload(), {
+        run: { providerRoute }
+      }));
+      expect(response).toMatchObject({ ok: false, code: "invalid-argument" });
+    }
   });
 
   it("records per-user callable quota before dispatching safe workflows", async () => {
@@ -192,7 +295,190 @@ describe("handleOpenLARPWorkflowRequest", () => {
     expect(JSON.stringify(charges)).not.toContain("AI product engineer");
   });
 
-  it("blocks live AI when provider pricing and budget config are missing", async () => {
+  it("dispatches enabled live workflows privately and reconciles actual provider usage", async () => {
+    const { guard: quotaGuard } = makeQuotaGuard();
+    const budget = budgetGuard();
+    const live = liveService();
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      aiConfig: liveConfig,
+      budgetPolicy: liveBudgetPolicy,
+      runtimePolicyReader: runtimePolicy(),
+      providerBudgetGuard: budget.guard,
+      aiServiceClient: live.service,
+      quotaGuard,
+      now: () => new Date("2026-06-18T12:00:00.000Z")
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      providerRoute: "firebaseCallableGenkit",
+      liveModelCallsEnabled: true,
+      liveModelUsed: true,
+      usedFallback: false,
+      fallbackReason: null,
+      promptVersion: "openlarp.cooked.v1",
+      policyRevision: "beta-2026-08-10",
+      externalActionTaken: false,
+      result: { label: "Grounded live result" }
+    });
+    expect(live.requests).toHaveLength(1);
+    expect(live.requests[0]?.envelope.run.providerRoute).toBe("cloudRunGenkit");
+    expect(budget.reservations).toHaveLength(1);
+    expect(budget.reconciliations).toEqual([{
+      requestID: "11111111-1111-4111-8111-111111111111",
+      actualCostMicros: 10,
+      occurredAt: new Date("2026-06-18T12:00:00.000Z")
+    }]);
+    expect(JSON.stringify(response)).not.toMatch(/gemini-private-model-id|cloudRunGenkit|a\.run\.app/);
+  });
+
+  it("uses an explicit deterministic fallback when runtime policy disables a live workflow", async () => {
+    const { guard: quotaGuard } = makeQuotaGuard();
+    const budget = budgetGuard();
+    const live = liveService();
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      aiConfig: liveConfig,
+      budgetPolicy: liveBudgetPolicy,
+      runtimePolicyReader: runtimePolicy(false),
+      providerBudgetGuard: budget.guard,
+      aiServiceClient: live.service,
+      quotaGuard
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      liveModelCallsEnabled: false,
+      liveModelUsed: false,
+      usedFallback: true,
+      fallbackReason: "policy",
+      policyRevision: "beta-2026-08-10"
+    });
+    expect(live.requests).toEqual([]);
+    expect(budget.reservations).toEqual([]);
+  });
+
+  it("falls back without leaking provider details when private live dispatch fails", async () => {
+    const budget = budgetGuard();
+    const live = liveService({ fail: true });
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      aiConfig: liveConfig,
+      budgetPolicy: liveBudgetPolicy,
+      runtimePolicyReader: runtimePolicy(),
+      providerBudgetGuard: budget.guard,
+      aiServiceClient: live.service
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      liveModelCallsEnabled: true,
+      liveModelUsed: false,
+      usedFallback: true,
+      fallbackReason: "provider",
+      result: { label: "Some proof, not enough signal" }
+    });
+    expect(budget.reconciliations).toEqual([expect.objectContaining({ actualCostMicros: 0 })]);
+    expect(JSON.stringify(response)).not.toContain("private provider detail");
+  });
+
+  it("falls back without dispatch when the atomic daily budget reservation is refused", async () => {
+    const budget = budgetGuard({ exhausted: true });
+    const live = liveService();
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      aiConfig: liveConfig,
+      budgetPolicy: liveBudgetPolicy,
+      runtimePolicyReader: runtimePolicy(),
+      providerBudgetGuard: budget.guard,
+      aiServiceClient: live.service
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      liveModelCallsEnabled: true,
+      liveModelUsed: false,
+      usedFallback: true,
+      fallbackReason: "budget"
+    });
+    expect(live.requests).toEqual([]);
+    expect(budget.reconciliations).toEqual([]);
+  });
+
+  it("does not duplicate a provider call when a retried request ID already has a reservation", async () => {
+    const budget = budgetGuard({ alreadyReserved: true });
+    const live = liveService();
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      aiConfig: liveConfig,
+      budgetPolicy: liveBudgetPolicy,
+      runtimePolicyReader: runtimePolicy(),
+      providerBudgetGuard: budget.guard,
+      aiServiceClient: live.service
+    });
+
+    expect(response).toMatchObject({ ok: true, usedFallback: true, fallbackReason: "budget" });
+    expect(live.requests).toEqual([]);
+    expect(budget.reconciliations).toEqual([]);
+  });
+
+  it("releases a new reservation when the private AI service is not configured", async () => {
+    const budget = budgetGuard();
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      aiConfig: liveConfig,
+      budgetPolicy: liveBudgetPolicy,
+      runtimePolicyReader: runtimePolicy(),
+      providerBudgetGuard: budget.guard,
+      aiServiceClient: null
+    });
+
+    expect(response).toMatchObject({ ok: true, usedFallback: true, fallbackReason: "provider" });
+    expect(budget.reconciliations).toEqual([expect.objectContaining({ actualCostMicros: 0 })]);
+  });
+
+  it("releases a reservation and falls back when the callable quota store is unavailable", async () => {
+    const budget = budgetGuard();
+    const live = liveService();
+
+    const response = await handleOpenLARPWorkflowRequest({
+      auth: { uid: "user_123" },
+      data: envelope("cookedDiagnostic", goalPayload())
+    }, {
+      aiConfig: liveConfig,
+      budgetPolicy: liveBudgetPolicy,
+      runtimePolicyReader: runtimePolicy(),
+      providerBudgetGuard: budget.guard,
+      aiServiceClient: live.service,
+      quotaGuard: { async checkAndRecord() { throw new Error("private Firestore detail"); } }
+    });
+
+    expect(response).toMatchObject({ ok: true, usedFallback: true, fallbackReason: "quota" });
+    expect(live.requests).toEqual([]);
+    expect(budget.reconciliations).toEqual([expect.objectContaining({ actualCostMicros: 0 })]);
+    expect(JSON.stringify(response)).not.toContain("private Firestore detail");
+  });
+
+  it("falls back deterministically when provider pricing and budget config are missing", async () => {
     const response = await handleOpenLARPWorkflowRequest({
       auth: { uid: "user_123" },
       data: envelope("cookedDiagnostic", goalPayload())
@@ -205,23 +491,22 @@ describe("handleOpenLARPWorkflowRequest", () => {
         maxOutputTokens: 1200
       },
       budgetPolicy: null,
+      runtimePolicyReader: runtimePolicy(),
       now: () => new Date("2026-06-18T12:00:00.000Z")
     });
 
     expect(response).toMatchObject({
-      ok: false,
-      code: "failed-precondition",
-      details: {
-        schemaVersion: 1,
-        provider: "firebase-ai-logic",
-        workflowKind: "cookedDiagnostic",
-        maxOutputTokens: 1200
-      }
+      ok: true,
+      liveModelCallsEnabled: true,
+      liveModelUsed: false,
+      usedFallback: true,
+      fallbackReason: "budget",
+      policyRevision: "beta-2026-08-10"
     });
     expect(JSON.stringify(response)).not.toContain("gemini-private-model-id");
   });
 
-  it("blocks live AI before dispatch when the estimated provider budget would be exceeded", async () => {
+  it("falls back before live dispatch when the estimated provider budget would be exceeded", async () => {
     const { guard, charges } = makeQuotaGuard();
 
     const response = await handleOpenLARPWorkflowRequest({
@@ -249,39 +534,40 @@ describe("handleOpenLARPWorkflowRequest", () => {
         outputTokenMicrosPerThousand: 80,
         dailyBudgetMicros: 50
       },
+      runtimePolicyReader: runtimePolicy(),
       quotaGuard: guard,
       now: () => new Date("2026-06-18T12:00:00.000Z")
     });
 
     expect(response).toMatchObject({
-      ok: false,
-      code: "resource-exhausted",
-      details: {
-        schemaVersion: 1,
-        provider: "firebase-ai-logic",
-        workflowKind: "proofQualityCheck",
-        dailyBudgetMicros: 50
-      }
+      ok: true,
+      liveModelCallsEnabled: true,
+      liveModelUsed: false,
+      usedFallback: true,
+      fallbackReason: "budget"
     });
-    expect(charges).toEqual([]);
+    expect(charges).toHaveLength(1);
     expect(JSON.stringify(response)).not.toContain("Private proof text");
     expect(JSON.stringify(response)).not.toContain("gemini-private-model-id");
   });
 
-  it("returns resource-exhausted before workflow dispatch when quota is exhausted", async () => {
+  it("uses an explicit deterministic fallback when live-workflow quota is exhausted", async () => {
     const { guard, charges } = makeQuotaGuard({ exhausted: true });
 
     const response = await handleOpenLARPWorkflowRequest({
       auth: { uid: "user_123" },
-      data: envelope("cookedDiagnostic", {})
+      data: envelope("cookedDiagnostic", goalPayload())
     }, {
       quotaGuard: guard,
       now: () => new Date("2026-06-18T12:00:00.000Z")
     });
 
     expect(response).toMatchObject({
-      ok: false,
-      code: "resource-exhausted"
+      ok: true,
+      liveModelCallsEnabled: false,
+      liveModelUsed: false,
+      usedFallback: true,
+      fallbackReason: "quota"
     });
     expect(charges).toHaveLength(1);
   });
@@ -331,6 +617,13 @@ describe("handleOpenLARPWorkflowRequest", () => {
       label: "Some proof, not enough signal",
       readinessBaseline: 48
     });
+    expect(response).toMatchObject({
+      liveModelCallsEnabled: false,
+      liveModelUsed: false,
+      usedFallback: true,
+      fallbackReason: "disabled",
+      policyRevision: "environment-disabled"
+    });
   });
 
   it("dispatches bounded deterministic adaptive intake when live AI is unavailable", async () => {
@@ -351,6 +644,7 @@ describe("handleOpenLARPWorkflowRequest", () => {
       ],
       hypotheses: []
     });
+    expect(response).toMatchObject({ usedFallback: true, fallbackReason: "disabled" });
   });
 
   it("dispatches deterministic workflows for every implemented kind", async () => {
@@ -385,6 +679,9 @@ describe("handleOpenLARPWorkflowRequest", () => {
       expectSuccess(response, kind);
       expect(response.liveModelCallsEnabled).toBe(false);
       expect(response.externalActionTaken).toBe(false);
+      const isLiveWorkflow = ["questPlan", "proofQualityCheck", "progressSummary"].includes(kind);
+      expect(response.usedFallback).toBe(isLiveWorkflow);
+      expect(response.fallbackReason).toBe(isLiveWorkflow ? "disabled" : null);
     }
   });
 });

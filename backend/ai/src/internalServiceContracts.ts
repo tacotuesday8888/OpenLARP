@@ -1,11 +1,16 @@
 import { z } from "zod";
 import {
   adaptiveCareerIntakePayloadSchema,
+  adaptiveCareerIntakeResponseSchema,
   diagnosticPayloadSchema,
+  diagnosticResponseSchema,
   executionMetadataSchema,
   progressSummaryPayloadSchema,
+  progressSummaryResponseSchema,
   proofQualityPayloadSchema,
+  proofQualityResponseSchema,
   questPlanPayloadSchema,
+  questPlanResponseSchema,
   requestEnvelopeSchema
 } from "./contracts.js";
 
@@ -40,6 +45,15 @@ export const internalWorkflowSuccessSchema = z.object({
   externalActionTaken: z.literal(false),
   result: z.unknown(),
   execution: executionMetadataSchema
+}).superRefine((response, context) => {
+  const schema = liveResultSchema(response.kind);
+  if (!schema || !schema.safeParse(response.result).success) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["result"],
+      message: "Result did not match the declared live workflow."
+    });
+  }
 });
 
 export type InternalWorkflowRequest = z.infer<typeof internalWorkflowRequestSchema>;
@@ -52,6 +66,17 @@ function livePayloadSchema(kind: string): z.ZodTypeAny | null {
     case "questPlan": return questPlanPayloadSchema;
     case "proofQualityCheck": return proofQualityPayloadSchema;
     case "progressSummary": return progressSummaryPayloadSchema;
+    default: return null;
+  }
+}
+
+function liveResultSchema(kind: string): z.ZodTypeAny | null {
+  switch (kind) {
+    case "adaptiveCareerIntake": return adaptiveCareerIntakeResponseSchema;
+    case "cookedDiagnostic": return diagnosticResponseSchema;
+    case "questPlan": return questPlanResponseSchema;
+    case "proofQualityCheck": return proofQualityResponseSchema;
+    case "progressSummary": return progressSummaryResponseSchema;
     default: return null;
   }
 }

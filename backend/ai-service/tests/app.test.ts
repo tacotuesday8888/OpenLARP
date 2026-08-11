@@ -46,7 +46,19 @@ const validRequest = {
 };
 
 const executionResult = {
-  result: { label: "Grounded result" },
+  result: {
+    score: 54,
+    label: "Some proof, not enough signal",
+    mainGap: "Role-specific proof is still thin.",
+    strongestSignal: "One class app is confirmed.",
+    fastestFix: "Create one small role-specific artifact.",
+    readinessBaseline: 48,
+    strongestSignals: ["One class app is confirmed."],
+    readinessGaps: ["No role-specific artifact is confirmed."],
+    missingInformation: ["The app outcome is unknown."],
+    uncertaintyExplanation: "This result uses only confirmed information.",
+    firstAction: "Map repeated requirements from two role descriptions."
+  },
   execution: {
     schemaVersion: 1,
     liveModelCallsEnabled: true,
@@ -97,7 +109,7 @@ describe("handleAIServiceRequest", () => {
       requestID: "11111111-1111-4111-8111-111111111111",
       kind: "cookedDiagnostic",
       externalActionTaken: false,
-      result: { label: "Grounded result" },
+      result: { label: "Some proof, not enough signal" },
       execution: { liveModelUsed: true }
     });
     expect(response.body).not.toContain("iOS engineer");

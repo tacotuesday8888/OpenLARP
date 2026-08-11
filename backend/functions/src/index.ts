@@ -7,7 +7,10 @@ import {
   rejectIfAccountDeletionRequested
 } from "./accountDeletionGuard.js";
 import { adminCallableQuotaGuard } from "./callableQuotaGuard.js";
+import { adminAIRuntimePolicyReader } from "./aiRuntimePolicy.js";
+import { aiServiceClientFromEnvironment } from "./aiServiceClient.js";
 import { toHttpsError } from "./errors.js";
+import { adminProviderBudgetGuard } from "./providerBudgetGuard.js";
 import {
   adminProofUploadPromotionDependencies,
   handleProofUploadPromotionRequest
@@ -41,6 +44,9 @@ setGlobalOptions({
 
 const callableQuotaGuard = adminCallableQuotaGuard();
 const accountDeletionStatusReader = adminAccountDeletionStatusReader();
+const aiRuntimePolicyReader = adminAIRuntimePolicyReader();
+const aiServiceClient = aiServiceClientFromEnvironment();
+const providerBudgetGuard = adminProviderBudgetGuard();
 
 async function throwIfAccountDeletionRequested(userID: string | undefined) {
   if (!userID) {
@@ -65,7 +71,10 @@ export const runOpenLARPWorkflow = onCall(
       auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : null,
       data: request.data
     }, {
-      quotaGuard: callableQuotaGuard
+      quotaGuard: callableQuotaGuard,
+      runtimePolicyReader: aiRuntimePolicyReader,
+      aiServiceClient,
+      providerBudgetGuard
     });
 
     if (!response.ok) {

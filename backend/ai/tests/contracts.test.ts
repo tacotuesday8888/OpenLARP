@@ -4,7 +4,7 @@ import {
   configFromEnvironment,
   providerBudgetPolicyFromEnvironment
 } from "../src/config.js";
-import { estimateProviderUsage, providerUsageMetadata } from "../src/costAccounting.js";
+import { estimateProviderUsage, providerCostMicros, providerUsageMetadata } from "../src/costAccounting.js";
 import {
   adaptiveCareerIntakePayloadSchema,
   adaptiveCareerIntakeResponseSchema,
@@ -220,6 +220,27 @@ describe("OpenLARP AI backend contracts", () => {
     expect(JSON.stringify(estimate)).not.toContain("langqi@example.com");
     expect(JSON.stringify(estimate)).not.toContain("sk-test-secret");
     expect(JSON.stringify(metadata)).not.toContain(DEFAULT_GEMINI_MODEL_ID);
+  });
+
+  it("reconciles provider cost from actual token counts using ceiling-safe integer micros", () => {
+    expect(providerCostMicros({
+      inputTokens: 1_001,
+      outputTokens: 501,
+      budgetPolicy: {
+        inputTokenMicrosPerThousand: 20,
+        outputTokenMicrosPerThousand: 80,
+        dailyBudgetMicros: 50_000
+      }
+    })).toBe(62);
+    expect(() => providerCostMicros({
+      inputTokens: -1,
+      outputTokens: 1,
+      budgetPolicy: {
+        inputTokenMicrosPerThousand: 20,
+        outputTokenMicrosPerThousand: 80,
+        dailyBudgetMicros: 50_000
+      }
+    })).toThrow(/token counts/);
   });
 
   it("validates backend-safe request envelopes and safety rules", () => {

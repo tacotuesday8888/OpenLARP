@@ -53,6 +53,17 @@ describe("Firebase Functions deploy runtime", () => {
     expect(quotaGuard).toContain("resource-exhausted");
   });
 
+  it("wires live workflow policy, private dispatch, and provider budget dependencies only on the server", () => {
+    const entrypoint = readText("src/index.ts");
+
+    expect(entrypoint).toContain("const aiRuntimePolicyReader = adminAIRuntimePolicyReader()");
+    expect(entrypoint).toContain("const aiServiceClient = aiServiceClientFromEnvironment()");
+    expect(entrypoint).toContain("const providerBudgetGuard = adminProviderBudgetGuard()");
+    expect(entrypoint).toContain("runtimePolicyReader: aiRuntimePolicyReader");
+    expect(entrypoint).toContain("aiServiceClient");
+    expect(entrypoint).toContain("providerBudgetGuard");
+  });
+
   it("keeps the deployable Functions package free of Genkit runtime dependencies", () => {
     const packageJson = JSON.parse(readText("package.json")) as {
       dependencies?: Record<string, string>;
@@ -60,6 +71,7 @@ describe("Firebase Functions deploy runtime", () => {
     };
 
     expect(packageJson.dependencies).not.toHaveProperty("genkit");
+    expect(packageJson.dependencies).toHaveProperty("google-auth-library", "9.15.1");
     expect(packageJson.dependencies).toHaveProperty("zod", "3.25.76");
     expect(packageJson.scripts?.build).not.toContain("external:genkit");
   });
