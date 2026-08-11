@@ -1,4 +1,6 @@
 import SwiftUI
+
+typealias EvidenceCardUpdateAction = (UUID, String, String, String, String) -> Bool
 import UIKit
 
 struct ProofReceiptRow: View {
@@ -96,9 +98,33 @@ struct ProofReceiptRow: View {
 struct ProofDetailView: View {
     let proof: ProofRecord
     let attachmentURL: (ProofAttachment) -> URL
+    let updateEvidenceCard: EvidenceCardUpdateAction?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @State private var evidenceCard: EvidenceCard
+    @State private var showingEvidenceEditor = false
+
+    init(
+        proof: ProofRecord,
+        attachmentURL: @escaping (ProofAttachment) -> URL
+    ) {
+        self.proof = proof
+        self.attachmentURL = attachmentURL
+        updateEvidenceCard = nil
+        _evidenceCard = State(initialValue: proof.evidenceCard)
+    }
+
+    init(
+        proof: ProofRecord,
+        attachmentURL: @escaping (ProofAttachment) -> URL,
+        updateEvidenceCard: @escaping EvidenceCardUpdateAction
+    ) {
+        self.proof = proof
+        self.attachmentURL = attachmentURL
+        self.updateEvidenceCard = updateEvidenceCard
+        _evidenceCard = State(initialValue: proof.evidenceCard)
+    }
 
     private var content: ProofDetailContent {
         ProofDetailContent(proof: proof)
@@ -109,6 +135,7 @@ struct ProofDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     headerCard
+                    evidenceCardView
                     qualityCard
                     proofTextCard
                     proofLinkCard
@@ -126,6 +153,21 @@ struct ProofDetailView: View {
                         dismiss()
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $showingEvidenceEditor) {
+            EvidenceCardEditorView(card: evidenceCard) { updatedCard in
+                guard updateEvidenceCard?(
+                    proof.id,
+                    updatedCard.actionCompleted,
+                    updatedCard.userNote,
+                    updatedCard.privateNote,
+                    updatedCard.potentialCareerUse
+                ) == true else {
+                    return false
+                }
+                evidenceCard = updatedCard
+                return true
             }
         }
     }
@@ -173,8 +215,62 @@ struct ProofDetailView: View {
 
                 ProofDetailTextBlock(title: "Assessment", bodyText: content.reason)
                 ProofDetailTextBlock(title: "Next improvement", bodyText: content.improvement)
+                if let coachingSource = proof.quality?.coachingSource {
+                    Label(coachingSource.disclosure, systemImage: "sparkles")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 ProofDetailTextBlock(title: "Reviewed", bodyText: content.reviewedText)
                 ProofDetailTextBlock(title: "Not inspected", bodyText: content.notInspectedText)
+            }
+        }
+    }
+
+    private var evidenceCardView: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Evidence card")
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPInk)
+                        Text(evidenceCard.confirmationState.label)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(evidenceCard.confirmationState == .userConfirmed ? Color.openLARPGreen : Color.openLARPCoral)
+                            .textCase(.uppercase)
+                    }
+
+                    Spacer()
+
+                    if updateEvidenceCard != nil {
+                        Button {
+                            showingEvidenceEditor = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                }
+
+                ProofDetailTextBlock(title: "Action completed", bodyText: evidenceCard.actionCompleted)
+                ProofDetailTextBlock(title: "Gap affected", bodyText: evidenceCard.gap.title)
+                ProofDetailTextBlock(title: "Potential future use", bodyText: evidenceCard.potentialCareerUse)
+
+                if !evidenceCard.userNote.isEmpty {
+                    ProofDetailTextBlock(title: "Your note", bodyText: evidenceCard.userNote)
+                }
+                if !evidenceCard.privateNote.isEmpty {
+                    ProofDetailTextBlock(title: "Private note", bodyText: evidenceCard.privateNote)
+                }
+
+                Label(
+                    "\(evidenceCard.source.label) · \(evidenceCard.provenance.label)",
+                    systemImage: "point.3.connected.trianglepath.dotted"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.openLARPSoftInk)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -243,6 +339,95 @@ struct ProofDetailView: View {
 
     private var submittedDateText: String {
         content.submittedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private struct EvidenceCardEditorView: View {
+    let originalCard: EvidenceCard
+    let save: (EvidenceCard) -> Bool
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var actionCompleted: String
+    @State private var userNote: String
+    @State private var privateNote: String
+    @State private var potentialCareerUse: String
+
+    init(card: EvidenceCard, save: @escaping (EvidenceCard) -> Bool) {
+        originalCard = card
+        self.save = save
+        _actionCompleted = State(initialValue: card.actionCompleted)
+        _userNote = State(initialValue: card.userNote)
+        _privateNote = State(initialValue: card.privateNote)
+        _potentialCareerUse = State(initialValue: card.potentialCareerUse)
+    }
+
+    private var canSave: Bool {
+        !actionCompleted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            actionCompleted.count <= 4_000 &&
+            userNote.count <= 2_000 &&
+            privateNote.count <= 4_000 &&
+            !potentialCareerUse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            potentialCareerUse.count <= 1_000
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Completed action") {
+                    TextEditor(text: $actionCompleted)
+                        .frame(minHeight: 110)
+                        .accessibilityLabel("Completed action")
+                }
+
+                Section("How you may use it") {
+                    TextEditor(text: $potentialCareerUse)
+                        .frame(minHeight: 90)
+                        .accessibilityLabel("Potential career use")
+                }
+
+                Section("Your note") {
+                    TextEditor(text: $userNote)
+                        .frame(minHeight: 90)
+                        .accessibilityLabel("Evidence note")
+                }
+
+                Section("Private note") {
+                    TextEditor(text: $privateNote)
+                        .frame(minHeight: 90)
+                        .accessibilityLabel("Private evidence note")
+                    Text("Kept on this device unless you explicitly enable private-evidence sync.")
+                        .font(.caption)
+                }
+
+                Section("Recorded provenance") {
+                    LabeledContent("Quest", value: originalCard.relatedQuestTitle)
+                    LabeledContent("Gap", value: originalCard.gap.title)
+                    LabeledContent("Source", value: originalCard.source.label)
+                    LabeledContent("Confirmation", value: originalCard.confirmationState.label)
+                }
+            }
+            .navigationTitle("Edit evidence")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        var updated = originalCard
+                        updated.actionCompleted = actionCompleted.trimmingCharacters(in: .whitespacesAndNewlines)
+                        updated.userNote = userNote.trimmingCharacters(in: .whitespacesAndNewlines)
+                        updated.privateNote = privateNote.trimmingCharacters(in: .whitespacesAndNewlines)
+                        updated.potentialCareerUse = potentialCareerUse.trimmingCharacters(in: .whitespacesAndNewlines)
+                        updated.updatedAt = Date()
+                        if save(updated) {
+                            dismiss()
+                        }
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
     }
 }
 

@@ -450,6 +450,156 @@ enum ProofKind: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum EvidenceCardSource: String, Codable, Equatable {
+    case questProof
+    case questSelfReport
+
+    var label: String {
+        switch self {
+        case .questProof: "Quest proof"
+        case .questSelfReport: "Quest self-report"
+        }
+    }
+}
+
+enum EvidenceConfirmationState: String, Codable, Equatable {
+    case userConfirmed
+    case selfReported
+
+    var label: String {
+        switch self {
+        case .userConfirmed: "User-submitted proof"
+        case .selfReported: "User self-report"
+        }
+    }
+}
+
+enum EvidenceCardProvenance: String, Codable, Equatable {
+    case questCompletion
+    case legacyProofReceipt
+
+    var label: String {
+        switch self {
+        case .questCompletion: "Created from a completed quest"
+        case .legacyProofReceipt: "Migrated from an earlier proof receipt"
+        }
+    }
+}
+
+struct EvidenceCard: Codable, Equatable {
+    var actionCompleted: String
+    var relatedQuestID: UUID
+    var relatedQuestTitle: String
+    var gap: CareerGap
+    var userNote: String
+    var privateNote: String
+    var source: EvidenceCardSource
+    var timestamp: Date
+    var proofType: ProofKind
+    var confirmationState: EvidenceConfirmationState
+    var provenance: EvidenceCardProvenance
+    var sourceProofID: UUID
+    var potentialCareerUse: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        actionCompleted: String,
+        relatedQuestID: UUID,
+        relatedQuestTitle: String,
+        gap: CareerGap,
+        userNote: String = "",
+        privateNote: String = "",
+        source: EvidenceCardSource,
+        timestamp: Date,
+        proofType: ProofKind,
+        confirmationState: EvidenceConfirmationState,
+        provenance: EvidenceCardProvenance,
+        sourceProofID: UUID,
+        potentialCareerUse: String,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.actionCompleted = actionCompleted
+        self.relatedQuestID = relatedQuestID
+        self.relatedQuestTitle = relatedQuestTitle
+        self.gap = gap
+        self.userNote = userNote
+        self.privateNote = privateNote
+        self.source = source
+        self.timestamp = timestamp
+        self.proofType = proofType
+        self.confirmationState = confirmationState
+        self.provenance = provenance
+        self.sourceProofID = sourceProofID
+        self.potentialCareerUse = potentialCareerUse
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    static func questCompletion(
+        proof: ProofSubmission,
+        quest: Quest,
+        createdAt: Date
+    ) -> EvidenceCard {
+        EvidenceCard(
+            actionCompleted: proof.text.trimmingCharacters(in: .whitespacesAndNewlines),
+            relatedQuestID: quest.id,
+            relatedQuestTitle: quest.title,
+            gap: quest.gap,
+            source: proof.kind == .proof ? .questProof : .questSelfReport,
+            timestamp: proof.submittedAt,
+            proofType: proof.kind,
+            confirmationState: proof.kind == .proof ? .userConfirmed : .selfReported,
+            provenance: .questCompletion,
+            sourceProofID: proof.id,
+            potentialCareerUse: potentialCareerUse(for: quest.gap),
+            createdAt: createdAt,
+            updatedAt: createdAt
+        )
+    }
+
+    static func legacyReceipt(
+        proofID: UUID,
+        questID: UUID,
+        questTitle: String,
+        kind: ProofKind,
+        text: String,
+        submittedAt: Date
+    ) -> EvidenceCard {
+        EvidenceCard(
+            actionCompleted: text.trimmingCharacters(in: .whitespacesAndNewlines),
+            relatedQuestID: questID,
+            relatedQuestTitle: questTitle,
+            gap: .proofStrength,
+            source: kind == .proof ? .questProof : .questSelfReport,
+            timestamp: submittedAt,
+            proofType: kind,
+            confirmationState: kind == .proof ? .userConfirmed : .selfReported,
+            provenance: .legacyProofReceipt,
+            sourceProofID: proofID,
+            potentialCareerUse: potentialCareerUse(for: .proofStrength),
+            createdAt: submittedAt,
+            updatedAt: submittedAt
+        )
+    }
+
+    private static func potentialCareerUse(for gap: CareerGap) -> String {
+        switch gap {
+        case .targetClarity:
+            "Use this to explain why the target role fits your real experience and priorities."
+        case .proofStrength:
+            "Use this as a concrete example in future application materials or career conversations."
+        case .confidence:
+            "Use this as a specific example of progress when describing what you can now do."
+        case .consistency:
+            "Use this to show a repeatable working habit and follow-through."
+        case .networking:
+            "Use this as grounded context for a future networking conversation."
+        }
+    }
+}
+
 struct ProofAttachment: Codable, Equatable, Identifiable {
     var id: UUID
     var fileName: String
@@ -623,6 +773,23 @@ struct ProofInspectionScope: Codable, Equatable {
     }
 }
 
+enum ProofCoachingSource: String, Codable, Equatable {
+    case deterministic
+    case liveAI
+    case localFallback
+
+    var disclosure: String {
+        switch self {
+        case .deterministic:
+            "On-device review; rewards were rule-based"
+        case .liveAI:
+            "Grounded AI coaching; rewards were rule-based"
+        case .localFallback:
+            "On-device fallback coaching; rewards were rule-based"
+        }
+    }
+}
+
 struct QualityCheckResult: Codable, Equatable {
     var isAccepted: Bool
     var qualityScore: Int
@@ -632,6 +799,7 @@ struct QualityCheckResult: Codable, Equatable {
     var xpEarned: Int
     var readinessDelta: Int
     var inspectionScope: ProofInspectionScope
+    var coachingSource: ProofCoachingSource
 
     init(
         isAccepted: Bool,
@@ -641,7 +809,8 @@ struct QualityCheckResult: Codable, Equatable {
         improvement: String,
         xpEarned: Int,
         readinessDelta: Int,
-        inspectionScope: ProofInspectionScope = .notDocumented
+        inspectionScope: ProofInspectionScope = .notDocumented,
+        coachingSource: ProofCoachingSource = .deterministic
     ) {
         self.isAccepted = isAccepted
         self.qualityScore = qualityScore
@@ -651,6 +820,7 @@ struct QualityCheckResult: Codable, Equatable {
         self.xpEarned = xpEarned
         self.readinessDelta = readinessDelta
         self.inspectionScope = inspectionScope
+        self.coachingSource = coachingSource
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -662,6 +832,7 @@ struct QualityCheckResult: Codable, Equatable {
         case xpEarned
         case readinessDelta
         case inspectionScope
+        case coachingSource
     }
 
     init(from decoder: Decoder) throws {
@@ -674,6 +845,7 @@ struct QualityCheckResult: Codable, Equatable {
         xpEarned = try container.decode(Int.self, forKey: .xpEarned)
         readinessDelta = try container.decode(Int.self, forKey: .readinessDelta)
         inspectionScope = try container.decodeIfPresent(ProofInspectionScope.self, forKey: .inspectionScope) ?? .notDocumented
+        coachingSource = try container.decodeIfPresent(ProofCoachingSource.self, forKey: .coachingSource) ?? .deterministic
     }
 }
 
@@ -739,6 +911,7 @@ struct ProofRecord: Codable, Equatable, Identifiable {
     var attachments: [ProofAttachment]
     var submittedAt: Date
     var quality: QualityCheckResult?
+    var evidenceCard: EvidenceCard
 
     var attachmentSummary: String {
         let imageCount = attachments.filter(\.isImage).count
@@ -756,6 +929,7 @@ struct ProofRecord: Codable, Equatable, Identifiable {
         case attachments
         case submittedAt
         case quality
+        case evidenceCard
     }
 
     init(
@@ -767,7 +941,8 @@ struct ProofRecord: Codable, Equatable, Identifiable {
         link: String,
         attachments: [ProofAttachment] = [],
         submittedAt: Date,
-        quality: QualityCheckResult?
+        quality: QualityCheckResult?,
+        evidenceCard: EvidenceCard? = nil
     ) {
         self.id = id
         self.questID = questID
@@ -778,6 +953,14 @@ struct ProofRecord: Codable, Equatable, Identifiable {
         self.attachments = attachments
         self.submittedAt = submittedAt
         self.quality = quality
+        self.evidenceCard = evidenceCard ?? EvidenceCard.legacyReceipt(
+            proofID: id,
+            questID: questID,
+            questTitle: questTitle,
+            kind: kind,
+            text: text,
+            submittedAt: submittedAt
+        )
     }
 
     init(from decoder: Decoder) throws {
@@ -791,6 +974,14 @@ struct ProofRecord: Codable, Equatable, Identifiable {
         attachments = try container.decodeIfPresent([ProofAttachment].self, forKey: .attachments) ?? []
         submittedAt = try container.decode(Date.self, forKey: .submittedAt)
         quality = try container.decodeIfPresent(QualityCheckResult.self, forKey: .quality)
+        evidenceCard = try container.decodeIfPresent(EvidenceCard.self, forKey: .evidenceCard) ?? EvidenceCard.legacyReceipt(
+            proofID: id,
+            questID: questID,
+            questTitle: questTitle,
+            kind: kind,
+            text: text,
+            submittedAt: submittedAt
+        )
     }
 }
 
@@ -1572,7 +1763,7 @@ struct CareerSprintArchive: Codable, Equatable, Identifiable {
 }
 
 struct OpenLARPState: Codable, Equatable {
-    static let currentSchemaVersion = 13
+    static let currentSchemaVersion = 14
 
     var schemaVersion: Int
     var userProfile: CareerUserProfile?
@@ -2018,6 +2209,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
     case invalidMissionBrief
     case invalidSprintLifecycle
     case careerUnderstandingNeedsReview
+    case invalidEvidenceCard
 
     var errorDescription: String? {
         switch self {
@@ -2028,6 +2220,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
         case .invalidMissionBrief: "Review a valid mission brief before OpenLARP creates the sprint."
         case .invalidSprintLifecycle: "This sprint step is not ready yet. Refresh and try again."
         case .careerUnderstandingNeedsReview: "Review and approve OpenLARP's understanding before creating your plan."
+        case .invalidEvidenceCard: "Keep the completed action and future use concise and non-empty."
         }
     }
 }

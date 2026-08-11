@@ -78,7 +78,9 @@ export function buildLiveWorkflowPrompt(envelope: RequestEnvelope): LiveWorkflow
           "Evaluate only the submitted proof text and declared metadata.",
           "No link contents were fetched or inspected.",
           "No attachment bytes or images were transmitted or inspected; attachments are attachment metadata only.",
-          "Do not imply visual, file, or link inspection. Give specific coaching the user can act on."
+          "Do not imply visual, file, or link inspection. Give specific coaching the user can act on.",
+          "Return only a coaching reason and one actionable improvement. The server applies acceptance, score, label, rewards, and inspection scope separately.",
+          "Treat selfReport as honest user context with reduced confidence, never as inspected evidence."
         ],
         proofQualityPayloadSchema.parse(envelope.payload)
       );

@@ -5,7 +5,7 @@ import {
   WorkflowExecutionCancelledError,
   executeWorkflow
 } from "../src/workflowExecution.js";
-import { makeDiagnostic } from "../src/mockWorkflows.js";
+import { checkProofQuality, makeDiagnostic } from "../src/mockWorkflows.js";
 
 const envelope = requestEnvelopeSchema.parse({
   schemaVersion: 1,
@@ -50,6 +50,46 @@ const policy = {
 
 const validDiagnostic = makeDiagnostic(envelope.payload as Parameters<typeof makeDiagnostic>[0]);
 
+const proofEnvelope = requestEnvelopeSchema.parse({
+  ...envelope,
+  run: {
+    ...envelope.run,
+    kind: "proofQualityCheck",
+    requestID: "22222222-2222-4222-8222-222222222222"
+  },
+  payload: {
+    context: {
+      schemaVersion: 1,
+      targetRoleTitle: "iOS engineer",
+      currentQuest: null,
+      progress: {
+        readiness: {
+          overall: 40,
+          proofStrength: 30,
+          confidence: 50,
+          consistency: 35,
+          skillProof: 30,
+          networkStrength: 20
+        },
+        completedQuestCount: 0,
+        proofCount: 0,
+        streakCount: 0,
+        xp: 0,
+        xpGoal: 1000
+      },
+      privacy: envelope.run.privacy,
+      allowsLongTermMemoryWrite: true
+    },
+    proof: {
+      kind: "proof",
+      text: "I compared three role requirements and turned the repeated gap into a concrete project improvement plan.",
+      link: "",
+      attachments: []
+    },
+    targetRoleTitle: "iOS engineer"
+  }
+});
+
 describe("executeWorkflow", () => {
   it("returns a post-validated live result with privacy-safe metadata", async () => {
     const generator = {
@@ -69,6 +109,31 @@ describe("executeWorkflow", () => {
       usage: { inputTokens: 120, outputTokens: 80 }
     });
     expect(JSON.stringify(result.execution)).not.toContain("iOS engineer");
+  });
+
+  it("asks the model only for proof coaching and attaches server-owned review fields", async () => {
+    const coaching = {
+      reason: "The written description identifies a concrete comparison and resulting decision.",
+      improvement: "Add one measurable before-and-after detail."
+    };
+    const generator = {
+      generate: vi.fn(async ({ schema }) => {
+        expect(schema.safeParse(coaching).success).toBe(true);
+        expect(schema.safeParse(checkProofQuality(proofEnvelope.payload as Parameters<typeof checkProofQuality>[0])).success)
+          .toBe(false);
+        return { output: coaching, inputTokens: 90, outputTokens: 35 };
+      })
+    };
+
+    const result = await executeWorkflow({ envelope: proofEnvelope, policy, generator });
+    const expected = checkProofQuality(proofEnvelope.payload as Parameters<typeof checkProofQuality>[0]);
+
+    expect(result.result).toEqual({ ...expected, ...coaching });
+    expect(result.execution).toMatchObject({
+      liveModelUsed: true,
+      usedFallback: false,
+      promptVersion: "openlarp.proof-quality.v1"
+    });
   });
 
   it("returns deterministic output when live generation is disabled", async () => {

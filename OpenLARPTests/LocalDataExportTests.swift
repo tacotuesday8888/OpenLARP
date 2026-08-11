@@ -21,7 +21,8 @@ final class LocalDataExportTests: XCTestCase {
             byteCount: draftBytes.count,
             localRelativePath: "ProofAttachmentDrafts/33333333-3333-3333-3333-333333333333/draft.png"
         )
-        let state = state(committedAttachments: [committed], draftAttachments: [draft])
+        var state = state(committedAttachments: [committed], draftAttachments: [draft])
+        state.progress.recentProof[0].evidenceCard.privateNote = "Private evidence note included in my data export"
         let exportedAt = Date(timeIntervalSince1970: 1_735_689_600)
         let bytesByID = [committed.id: committedBytes, draft.id: draftBytes]
         let exporter = OpenLARPLocalDataExporter { attachment in
@@ -33,6 +34,10 @@ final class LocalDataExportTests: XCTestCase {
 
         XCTAssertEqual(archive.archiveVersion, OpenLARPLocalDataExportArchive.currentArchiveVersion)
         XCTAssertEqual(archive.exportedAt, exportedAt)
+        XCTAssertEqual(
+            archive.state.progress.recentProof.first?.evidenceCard.privateNote,
+            "Private evidence note included in my data export"
+        )
         XCTAssertEqual(archive.attachments.count, 2)
         XCTAssertEqual(
             archive.attachments.map(\.attachmentID),

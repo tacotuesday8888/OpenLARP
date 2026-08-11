@@ -9,6 +9,7 @@ import {
   missionBriefResponseSchema,
   progressSummaryPayloadSchema,
   progressSummaryResponseSchema,
+  proofCoachingResponseSchema,
   proofQualityPayloadSchema,
   proofQualityResponseSchema,
   questPlanPayloadSchema,
@@ -165,7 +166,7 @@ function responseSchemaForLiveWorkflow(kind: RequestEnvelope["run"]["kind"]): z.
     case "cookedDiagnostic": return diagnosticResponseSchema;
     case "missionBrief": return missionBriefResponseSchema;
     case "questPlan": return questPlanResponseSchema;
-    case "proofQualityCheck": return proofQualityResponseSchema;
+    case "proofQualityCheck": return proofCoachingResponseSchema;
     case "progressSummary": return progressSummaryResponseSchema;
     default: throw new Error(`Workflow ${kind} does not have a live response schema.`);
   }

@@ -3,6 +3,7 @@ import SwiftUI
 struct ProofArchiveView: View {
     let proofs: [ProofRecord]
     let attachmentURL: (ProofAttachment) -> URL
+    let updateEvidenceCard: EvidenceCardUpdateAction?
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedProof: ProofRecord?
@@ -16,6 +17,25 @@ struct ProofArchiveView: View {
         return count == 1 ? "1 proof" : "\(count) proofs"
     }
 
+    init(
+        proofs: [ProofRecord],
+        attachmentURL: @escaping (ProofAttachment) -> URL
+    ) {
+        self.proofs = proofs
+        self.attachmentURL = attachmentURL
+        updateEvidenceCard = nil
+    }
+
+    init(
+        proofs: [ProofRecord],
+        attachmentURL: @escaping (ProofAttachment) -> URL,
+        updateEvidenceCard: @escaping EvidenceCardUpdateAction
+    ) {
+        self.proofs = proofs
+        self.attachmentURL = attachmentURL
+        self.updateEvidenceCard = updateEvidenceCard
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -23,8 +43,8 @@ struct ProofArchiveView: View {
                     OpenLARPHeroCard(
                         feature: .proof,
                         eyebrow: "Proof",
-                        title: "Evidence bank",
-                        subtitle: "Saved receipts from completed quests, newest first.",
+                        title: "Evidence library",
+                        subtitle: "Editable evidence cards backed by saved quest receipts.",
                         stat: heroStat
                     )
                     headerCard
@@ -44,7 +64,15 @@ struct ProofArchiveView: View {
                 }
             }
             .sheet(item: $selectedProof) { proof in
-                ProofDetailView(proof: proof, attachmentURL: attachmentURL)
+                if let updateEvidenceCard {
+                    ProofDetailView(
+                        proof: proof,
+                        attachmentURL: attachmentURL,
+                        updateEvidenceCard: updateEvidenceCard
+                    )
+                } else {
+                    ProofDetailView(proof: proof, attachmentURL: attachmentURL)
+                }
             }
         }
     }
@@ -52,13 +80,13 @@ struct ProofArchiveView: View {
     private var headerCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(feature: .proof, eyebrow: "Archive", title: "All proof receipts")
+                SectionHeader(feature: .proof, eyebrow: "Library", title: "Evidence and receipts")
 
                 Text(content.countText)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.openLARPGreen)
 
-                Text("Saved quest proof, newest first.")
+                Text("Open a card to edit your notes and future use without changing its source or receipt history.")
                     .font(.body)
                     .foregroundStyle(Color.openLARPSoftInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -71,7 +99,7 @@ struct ProofArchiveView: View {
         if content.receipts.isEmpty {
             Card {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("No proof receipts yet")
+                    Text("No evidence cards yet")
                         .font(.headline)
                         .foregroundStyle(Color.openLARPInk)
 

@@ -109,8 +109,8 @@ describe("validateGeneratedWorkflowResult", () => {
       targetRoleTitle: "iOS engineer"
     });
     const result = {
-      ...checkProofQuality(payload),
-      reason: "I inspected the screenshot and opened the link; both prove the work."
+      reason: "I inspected the screenshot and opened the link; both prove the work.",
+      improvement: "Keep it."
     };
 
     expect(validateGeneratedWorkflowResult("proofQualityCheck", payload, result)).toEqual({
@@ -128,6 +128,53 @@ describe("validateGeneratedWorkflowResult", () => {
     const result = { ...checkProofQuality(payload), xpEarned: 999, readinessDelta: 20 };
 
     expect(validateGeneratedWorkflowResult("proofQualityCheck", payload, result)).toEqual({
+      ok: false,
+      reason: "invalidOutput"
+    });
+  });
+
+  it("attaches server-owned proof fields to valid model coaching", () => {
+    const payload = proofQualityPayloadSchema.parse({
+      context,
+      proof: { kind: "proof", text: "A concrete comparison of three requirements with next steps.", link: "", attachments: [] },
+      targetRoleTitle: "iOS engineer"
+    });
+    const expected = checkProofQuality(payload);
+
+    expect(validateGeneratedWorkflowResult("proofQualityCheck", payload, {
+      reason: "The written description identifies a concrete comparison and a next step.",
+      improvement: "Add one measurable result to make the example easier to reuse."
+    })).toEqual({
+      ok: true,
+      result: {
+        ...expected,
+        reason: "The written description identifies a concrete comparison and a next step.",
+        improvement: "Add one measurable result to make the example easier to reuse."
+      }
+    });
+  });
+
+  it("rejects model-controlled claims that attachment contents were inspected", () => {
+    const payload = proofQualityPayloadSchema.parse({
+      context,
+      proof: {
+        kind: "proof",
+        text: "A concrete comparison of three requirements with next steps.",
+        link: "",
+        attachments: [{ contentType: "image/png", byteCount: 12000 }]
+      },
+      targetRoleTitle: "iOS engineer"
+    });
+    const result = checkProofQuality(payload);
+    const candidate = {
+      ...result,
+      inspectionScope: {
+        ...result.inspectionScope,
+        didInspectAttachmentContents: true
+      }
+    };
+
+    expect(validateGeneratedWorkflowResult("proofQualityCheck", payload, candidate)).toEqual({
       ok: false,
       reason: "invalidOutput"
     });

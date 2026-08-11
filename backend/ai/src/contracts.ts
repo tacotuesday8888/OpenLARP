@@ -368,8 +368,20 @@ export const proofQualityResponseSchema = z.object({
   reason: z.string().min(1).max(500),
   improvement: z.string().min(1).max(500),
   xpEarned: z.number().int().min(0).max(1000),
-  readinessDelta: z.number().int().min(0).max(20)
+  readinessDelta: z.number().int().min(0).max(20),
+  inspectionScope: z.object({
+    didInspectWrittenText: z.boolean(),
+    didInspectLinkFormat: z.boolean(),
+    didInspectLinkedDestination: z.literal(false),
+    didInspectAttachmentMetadata: z.boolean(),
+    didInspectAttachmentContents: z.literal(false)
+  })
 });
+
+export const proofCoachingResponseSchema = z.object({
+  reason: z.string().min(1).max(500),
+  improvement: z.string().min(1).max(500)
+}).strict();
 
 export const progressSummaryResponseSchema = z.object({
   summary: z.string().min(1).max(800),

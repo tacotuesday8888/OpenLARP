@@ -106,6 +106,7 @@ describe("buildLiveWorkflowPrompt", () => {
     expect(prompt.systemInstruction).toContain("No link contents were fetched or inspected");
     expect(prompt.systemInstruction).toContain("No attachment bytes or images were transmitted or inspected");
     expect(prompt.systemInstruction).toContain("attachment metadata only");
+    expect(prompt.systemInstruction).toContain("The server applies acceptance, score, label, rewards, and inspection scope separately");
   });
 
   it("does not include client safety prose, credentials, budgets, or unrelated memory", () => {

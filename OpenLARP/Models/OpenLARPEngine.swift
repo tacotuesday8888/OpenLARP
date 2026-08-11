@@ -322,7 +322,12 @@ enum OpenLARPEngine {
             link: proof.link,
             attachments: proof.attachments,
             submittedAt: proof.submittedAt,
-            quality: result
+            quality: result,
+            evidenceCard: EvidenceCard.questCompletion(
+                proof: proof,
+                quest: quest,
+                createdAt: now
+            )
         )
         next.progress.recentProof.insert(record, at: 0)
         next.progress.readinessHistory.append(
@@ -344,6 +349,39 @@ enum OpenLARPEngine {
         )
         advanceSprintPhaseAfterClaim(in: &next)
         next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
+        next.updatedAt = now
+        return next
+    }
+
+    static func updateEvidenceCard(
+        proofID: UUID,
+        actionCompleted: String,
+        userNote: String,
+        privateNote: String,
+        potentialCareerUse: String,
+        in state: OpenLARPState,
+        now: Date = Date()
+    ) throws -> OpenLARPState {
+        let action = actionCompleted.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = userNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let privateContext = privateNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let futureUse = potentialCareerUse.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !action.isEmpty,
+              action.count <= 4_000,
+              note.count <= 2_000,
+              privateContext.count <= 4_000,
+              !futureUse.isEmpty,
+              futureUse.count <= 1_000,
+              let proofIndex = state.progress.recentProof.firstIndex(where: { $0.id == proofID }) else {
+            throw OpenLARPError.invalidEvidenceCard
+        }
+
+        var next = state
+        next.progress.recentProof[proofIndex].evidenceCard.actionCompleted = action
+        next.progress.recentProof[proofIndex].evidenceCard.userNote = note
+        next.progress.recentProof[proofIndex].evidenceCard.privateNote = privateContext
+        next.progress.recentProof[proofIndex].evidenceCard.potentialCareerUse = futureUse
+        next.progress.recentProof[proofIndex].evidenceCard.updatedAt = now
         next.updatedAt = now
         return next
     }

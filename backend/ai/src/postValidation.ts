@@ -5,6 +5,8 @@ import {
   missionBriefPayloadSchema,
   missionBriefResponseSchema,
   progressSummaryResponseSchema,
+  proofCoachingResponseSchema,
+  proofQualityPayloadSchema,
   proofQualityResponseSchema,
   questPlanPayloadSchema,
   questPlanResponseSchema,
@@ -109,14 +111,20 @@ export function validateGeneratedWorkflowResult(
   }
 
   if (kind === "proofQualityCheck") {
-    const expectedReward = checkProofQuality(payload as Parameters<typeof checkProofQuality>[0]);
-    const proofResult = proofQualityResponseSchema.parse(parsed.data);
-    if (
-      proofResult.xpEarned !== expectedReward.xpEarned ||
-      proofResult.readinessDelta !== expectedReward.readinessDelta
-    ) {
+    const proofPayload = proofQualityPayloadSchema.safeParse(payload);
+    if (!proofPayload.success) {
       return { ok: false, reason: "invalidOutput" };
     }
+    const coaching = proofCoachingResponseSchema.parse(parsed.data);
+    const expectedResult = proofQualityResponseSchema.parse(checkProofQuality(proofPayload.data));
+    return {
+      ok: true,
+      result: {
+        ...expectedResult,
+        reason: coaching.reason,
+        improvement: coaching.improvement
+      }
+    };
   }
 
   return { ok: true, result: parsed.data };
@@ -133,7 +141,7 @@ function responseSchemaFor(kind: WorkflowKind) {
     case "questPlan":
       return questPlanResponseSchema;
     case "proofQualityCheck":
-      return proofQualityResponseSchema;
+      return proofCoachingResponseSchema;
     case "progressSummary":
       return progressSummaryResponseSchema;
     default:

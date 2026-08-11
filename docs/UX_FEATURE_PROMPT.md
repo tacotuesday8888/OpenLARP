@@ -231,7 +231,7 @@ How it connects:
 - Proof feeds AI quality check.
 - Strong proof increases readiness more.
 - Weak proof gives lower XP or asks for improvement.
-- Proof becomes part of the user's career evidence over time.
+- Claiming proof creates an editable evidence card while preserving the immutable receipt, review scope, source, confirmation state, and provenance.
 - Proof can later feed resume help, interview prep, and agent memory.
 
 Interaction logic:
@@ -289,14 +289,14 @@ Interaction logic:
 
 Required buttons:
 - If accepted: "Claim XP"
-- If weak: "Improve Proof"
-- If weak: "Accept Lower XP"
+- If weak: "Correct or Resubmit"
+- If weak: "Accept Partial Credit"
 - After claiming: "See Progress"
 - After claiming: "Share Win"
 - After claiming: "Preview Tomorrow"
 
 UX requirement:
-Weak proof must not become a dead end.
+Weak proof must not become a dead end. Let the user correct or strengthen the saved draft and request a new review, or knowingly accept partial credit. A failed review keeps the draft available for retry.
 The user should always know how to recover.
 
 7. Self-Report
@@ -606,8 +606,8 @@ Good labels:
 - "Submit Proof"
 - "Check My Proof"
 - "Claim XP"
-- "Improve Proof"
-- "Accept Lower XP"
+- "Correct or Resubmit"
+- "Accept Partial Credit"
 - "Save My Streak"
 - "Preview Tomorrow"
 - "Share Card"

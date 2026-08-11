@@ -97,6 +97,15 @@ struct AppRootView: View {
                     attachmentURL: { attachment in
                         store.localURL(for: attachment)
                     },
+                    updateEvidenceCard: { proofID, actionCompleted, userNote, privateNote, potentialCareerUse in
+                        store.updateEvidenceCard(
+                            proofID: proofID,
+                            actionCompleted: actionCompleted,
+                            userNote: userNote,
+                            privateNote: privateNote,
+                            potentialCareerUse: potentialCareerUse
+                        )
+                    },
                     viewToday: {
                         selectedTab = .today
                     }
@@ -135,6 +144,15 @@ struct AppRootView: View {
                     },
                     deleteOutcome: { id in
                         store.deleteOutcome(id: id)
+                    },
+                    updateEvidenceCard: { proofID, actionCompleted, userNote, privateNote, potentialCareerUse in
+                        store.updateEvidenceCard(
+                            proofID: proofID,
+                            actionCompleted: actionCompleted,
+                            userNote: userNote,
+                            privateNote: privateNote,
+                            potentialCareerUse: potentialCareerUse
+                        )
                     }
                 )
             }

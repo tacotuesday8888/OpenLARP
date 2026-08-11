@@ -69,6 +69,9 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
         XCTAssertEqual(result.uploadReceipts.first?.storageBucket, "openlarp-test.appspot.com")
         let proofRecordWrite = try XCTUnwrap(writer.writes.first { $0.documentType == .proofRecord })
         XCTAssertFalse(proofRecordWrite.merge)
+        let evidenceCard = try XCTUnwrap(proofRecordWrite.data["evidenceCard"] as? [String: Any])
+        XCTAssertEqual(evidenceCard["privateNote"] as? String, "Private evidence context")
+        XCTAssertEqual(evidenceCard["provenance"] as? String, EvidenceCardProvenance.legacyProofReceipt.rawValue)
         let attachmentWrite = try XCTUnwrap(writer.writes.first { $0.documentType == .proofAttachment })
         XCTAssertTrue(attachmentWrite.merge)
         XCTAssertEqual(attachmentWrite.data["uploadStatus"] as? String, CareerGraphSyncUploadStatus.uploaded.rawValue)
@@ -511,7 +514,7 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
             createdAt: now,
             localRelativePath: "ProofAttachments/proof-upload.png"
         )
-        let proof = ProofRecord(
+        var proof = ProofRecord(
             id: UUID(uuidString: "E2E2E2E2-E2E2-E2E2-E2E2-E2E2E2E2E2E2")!,
             questID: UUID(uuidString: "E3E3E3E3-E3E3-E3E3-E3E3-E3E3E3E3E3E3")!,
             questTitle: "Map role requirements",
@@ -530,6 +533,7 @@ final class FirebaseCareerGraphSyncReadinessTests: XCTestCase {
                 readinessDelta: 8
             )
         )
+        proof.evidenceCard.privateNote = "Private evidence context"
         var state = OpenLARPEngine.confirmGoal(goal, now: now)
         state.progress.recentProof = [proof]
         state.progress.proofCount = 1

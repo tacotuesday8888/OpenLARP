@@ -160,6 +160,70 @@ final class ProofReviewIntegrityTests: XCTestCase {
         XCTAssertTrue(state.progress.badges.contains(.strongProof))
     }
 
+    func testClaimCreatesEditableEvidenceCardWithTruthfulProvenance() throws {
+        let goal = CareerGoal(
+            currentStatus: .student,
+            targetRole: "iOS engineer",
+            timeline: "30 days",
+            background: "Learning Swift through real projects.",
+            existingProof: "One class project.",
+            confidence: 3,
+            biggestBlocker: "Need clearer written proof of progress."
+        )
+        var state = OpenLARPEngine.confirmGoal(goal)
+        let quest = try XCTUnwrap(state.currentQuest)
+        let submittedAt = Date(timeIntervalSince1970: 22_000)
+        let submission = ProofSubmission(
+            kind: .proof,
+            text: "I compared three internship descriptions and converted the repeated requirements into a concrete project improvement plan.",
+            submittedAt: submittedAt
+        )
+        let result = try OpenLARPEngine.checkProof(submission, in: state)
+
+        state = try OpenLARPEngine.claim(result, proof: submission, in: state, now: submittedAt)
+
+        let record = try XCTUnwrap(state.progress.recentProof.first)
+        let evidence = record.evidenceCard
+        XCTAssertEqual(evidence.actionCompleted, submission.text)
+        XCTAssertEqual(evidence.relatedQuestID, quest.id)
+        XCTAssertEqual(evidence.relatedQuestTitle, quest.title)
+        XCTAssertEqual(evidence.gap, quest.gap)
+        XCTAssertEqual(evidence.source, .questProof)
+        XCTAssertEqual(evidence.timestamp, submittedAt)
+        XCTAssertEqual(evidence.proofType, .proof)
+        XCTAssertEqual(evidence.confirmationState, .userConfirmed)
+        XCTAssertEqual(evidence.provenance, .questCompletion)
+        XCTAssertEqual(evidence.sourceProofID, submission.id)
+        XCTAssertFalse(evidence.potentialCareerUse.isEmpty)
+        XCTAssertEqual(evidence.userNote, "")
+        XCTAssertEqual(evidence.privateNote, "")
+    }
+
+    func testSelfReportEvidenceCardStaysExplicitlySelfReported() throws {
+        let goal = CareerGoal(
+            currentStatus: .student,
+            targetRole: "iOS engineer",
+            timeline: "30 days",
+            background: "Learning Swift through real projects.",
+            existingProof: "One class project.",
+            confidence: 3,
+            biggestBlocker: "Need clearer written proof of progress."
+        )
+        var state = OpenLARPEngine.confirmGoal(goal)
+        let submission = ProofSubmission(
+            kind: .selfReport,
+            text: "I completed the planned comparison and recorded what I learned, but I do not have an artifact to attach."
+        )
+        let result = try OpenLARPEngine.checkProof(submission, in: state)
+
+        state = try OpenLARPEngine.claim(result, proof: submission, in: state)
+
+        let evidence = try XCTUnwrap(state.progress.recentProof.first?.evidenceCard)
+        XCTAssertEqual(evidence.source, .questSelfReport)
+        XCTAssertEqual(evidence.confirmationState, .selfReported)
+        XCTAssertEqual(evidence.proofType, .selfReport)
+    }
+
     func testLegacyQualityResultDecodesWithInspectionNotDocumented() throws {
         let data = Data(
             #"{"isAccepted":true,"qualityScore":88,"label":"Strong proof","reason":"Legacy result","improvement":"Add detail","xpEarned":120,"readinessDelta":7}"#.utf8
@@ -173,6 +237,32 @@ final class ProofReviewIntegrityTests: XCTestCase {
         XCTAssertFalse(result.inspectionScope.didInspectLinkedDestination)
         XCTAssertFalse(result.inspectionScope.didInspectAttachmentMetadata)
         XCTAssertFalse(result.inspectionScope.didInspectAttachmentContents)
+    }
+
+    func testLegacyProofReceiptMigratesToEditableEvidenceCard() throws {
+        let proofID = UUID(uuidString: "A2000000-0000-0000-0000-000000000001")!
+        let questID = UUID(uuidString: "A2000000-0000-0000-0000-000000000002")!
+        let submittedAt = Date(timeIntervalSince1970: 23_000)
+        let legacyJSON = """
+        {
+          "id":"\(proofID.uuidString)",
+          "questID":"\(questID.uuidString)",
+          "questTitle":"Document the work",
+          "kind":"proof",
+          "text":"I documented the concrete work and what changed.",
+          "link":"",
+          "attachments":[],
+          "submittedAt":\(submittedAt.timeIntervalSinceReferenceDate)
+        }
+        """
+
+        let proof = try JSONDecoder().decode(ProofRecord.self, from: Data(legacyJSON.utf8))
+
+        XCTAssertEqual(proof.evidenceCard.sourceProofID, proofID)
+        XCTAssertEqual(proof.evidenceCard.relatedQuestID, questID)
+        XCTAssertEqual(proof.evidenceCard.provenance, .legacyProofReceipt)
+        XCTAssertEqual(proof.evidenceCard.confirmationState, .userConfirmed)
+        XCTAssertEqual(proof.evidenceCard.actionCompleted, proof.text)
     }
 
     func testReviewDisclosureSeparatesReviewedMetadataFromUninspectedContent() throws {

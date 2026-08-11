@@ -126,7 +126,7 @@ Success criteria:
 
 Goal: connect AI to narrow, controlled V0 jobs.
 
-Status: partially complete. Narrow grounded Genkit/Gemini workflows, strict schemas, post-generation safety validation, a private Cloud Run service, authenticated Firebase callable routing, per-user quota, provider budget controls, expiring workflow policy, deterministic fallbacks, adversarial truthfulness evals, redacted smoke tooling, and CI gates are implemented locally. Adaptive intake is integrated into first-run review with a one-question limit, explicit unknown handling, and confirm/edit/reject decisions for AI hypotheses. Cooked evaluation now feeds an editable, explicitly approved mission; trusted inputs are exact-echo validated, and only approval can create a complete seven-day first chapter. Day 7 produces a grounded checkpoint and an adaptive second chapter using counters and proof-quality metadata without transmitting private proof bodies, links, or attachment data; Day 14 produces a durable sprint report. Live service behavior still requires deployment and authenticated development smoke validation.
+Status: partially complete. Narrow grounded Genkit/Gemini workflows, strict schemas, post-generation safety validation, a private Cloud Run service, authenticated Firebase callable routing, per-user quota, provider budget controls, expiring workflow policy, deterministic fallbacks, adversarial truthfulness evals, redacted smoke tooling, and CI gates are implemented locally. Adaptive intake is integrated into first-run review with a one-question limit, explicit unknown handling, and confirm/edit/reject decisions for AI hypotheses. Cooked evaluation now feeds an editable, explicitly approved mission; trusted inputs are exact-echo validated, and only approval can create a complete seven-day first chapter. Day 7 produces a grounded checkpoint and an adaptive second chapter using counters and proof-quality metadata without transmitting private proof bodies, links, or attachment data; Day 14 produces a durable sprint report. Proof review now uses safe live coaching without giving the model authority over rewards or inspection claims, keeps retryable drafts, supports correction/resubmission or partial credit, and turns claimed work into editable, provenanced evidence cards. Live service behavior still requires deployment and authenticated development smoke validation.
 
 Work:
 
@@ -134,7 +134,7 @@ Work:
 - Add cooked diagnostic generation
 - Add grounded editable mission generation and explicit approval
 - Add daily quest generation
-- Add proof quality check
+- Add grounded proof coaching with deterministic rewards and inspection scope
 - Add progress summary generation
 - Add safety rules against fake claims
 - Add fallback states when AI fails

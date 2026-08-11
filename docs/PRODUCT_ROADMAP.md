@@ -24,7 +24,8 @@ The V0 bet is growth first, then conversion. The first month should test whether
 - Seven-day quest map so the user can see the near-term path without being overwhelmed.
 - Daily proof and self-report flow.
 - Proof submission through text, links, photos, and screenshots.
-- AI quality check that gives lightweight feedback on submitted proof.
+- Grounded AI coaching on submitted written context, with explicit inspection disclosures and rule-based rewards.
+- Editable evidence cards backed by immutable proof receipts and honest self-report provenance.
 - Goal-readiness progress view using XP, streaks, proof, and gap movement.
 - Forgiving streaks with recovery quests or limited recovery mechanics.
 - Badges for streaks, proof milestones, and major outcomes.
