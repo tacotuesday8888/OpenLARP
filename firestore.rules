@@ -194,6 +194,11 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /careerState/{snapshotId} {
+        allow read: if isUser(userId);
+        allow create, update, delete: if false;
+      }
+
       match /{document=**} {
         allow read: if isUser(userId);
         allow create, update: if false;

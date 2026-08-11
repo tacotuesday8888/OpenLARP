@@ -34,6 +34,7 @@ describe("Firebase Functions deploy runtime", () => {
     expect(entrypoint).toContain("export const setPrivateEvidenceCloudSyncConsent = onCall");
     expect(entrypoint).toContain("export const acknowledgeBackendEvents = onCall");
     expect(entrypoint).toContain("export const deleteOpenLARPAccount = onCall");
+    expect(entrypoint).toContain("export const syncOpenLARPCareerState = onCall");
   });
 
   it("wires deployed callable exports through the Admin callable quota guard", () => {
