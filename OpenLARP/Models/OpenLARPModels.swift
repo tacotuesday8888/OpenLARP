@@ -1763,7 +1763,7 @@ struct CareerSprintArchive: Codable, Equatable, Identifiable {
 }
 
 struct OpenLARPState: Codable, Equatable {
-    static let currentSchemaVersion = 15
+    static let currentSchemaVersion = 16
 
     var schemaVersion: Int
     var userProfile: CareerUserProfile?
@@ -1778,6 +1778,7 @@ struct OpenLARPState: Codable, Equatable {
     var sprintHistory: [CareerSprintArchive]
     var progress: ProgressState
     var questReminders: QuestReminderPreferences
+    var careerStateSync: CareerStateSyncMetadata
     var agentBrief: AgentBrief
     var updatedAt: Date
     var dailyCadence: DailyCadenceState = .empty
@@ -1808,6 +1809,7 @@ struct OpenLARPState: Codable, Equatable {
         sprintHistory: [CareerSprintArchive] = [],
         progress: ProgressState,
         questReminders: QuestReminderPreferences = .off,
+        careerStateSync: CareerStateSyncMetadata = .empty,
         agentBrief: AgentBrief = .empty,
         updatedAt: Date,
         dailyCadence: DailyCadenceState = .empty,
@@ -1849,6 +1851,7 @@ struct OpenLARPState: Codable, Equatable {
         self.sprintHistory = sprintHistory
         self.progress = progress
         self.questReminders = questReminders
+        self.careerStateSync = careerStateSync
         self.agentBrief = agentBrief
         self.updatedAt = updatedAt
         self.dailyCadence = dailyCadence
@@ -1888,6 +1891,20 @@ struct OpenLARPState: Codable, Equatable {
 
     var needsCareerIntake: Bool {
         goal == nil || diagnostic == nil
+    }
+
+    var hasMeaningfulCareerData: Bool {
+        userProfile != nil ||
+            goal != nil ||
+            !careerUnderstanding.confirmedFacts.isEmpty ||
+            !targetRoles.isEmpty ||
+            diagnostic != nil ||
+            mission != nil ||
+            !plan.isEmpty ||
+            activeSprint != nil ||
+            !sprintHistory.isEmpty ||
+            progress != .empty ||
+            !outcomeLog.isEmpty
     }
 
     var needsMissionApproval: Bool {
@@ -1933,6 +1950,7 @@ extension OpenLARPState {
         case sprintHistory
         case progress
         case questReminders
+        case careerStateSync
         case agentBrief
         case updatedAt
         case dailyCadence
@@ -2000,6 +2018,10 @@ extension OpenLARPState {
             QuestReminderPreferences.self,
             forKey: .questReminders
         ) ?? .off
+        careerStateSync = try container.decodeIfPresent(
+            CareerStateSyncMetadata.self,
+            forKey: .careerStateSync
+        ) ?? .empty
         activeSprint = try container.decodeIfPresent(CareerSprintState.self, forKey: .activeSprint) ??
             Self.migratedActiveSprint(
                 goal: goal,
@@ -2044,6 +2066,7 @@ extension OpenLARPState {
         try container.encode(sprintHistory, forKey: .sprintHistory)
         try container.encode(progress, forKey: .progress)
         try container.encode(questReminders, forKey: .questReminders)
+        try container.encode(careerStateSync, forKey: .careerStateSync)
         try container.encode(agentBrief, forKey: .agentBrief)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(dailyCadence, forKey: .dailyCadence)

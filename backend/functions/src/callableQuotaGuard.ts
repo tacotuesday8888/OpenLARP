@@ -7,14 +7,16 @@ export type OpenLARPCallableName =
   | "promoteProofUploadReceipt"
   | "reconcileProofUploads"
   | "cleanupRevokedPrivateEvidenceUploads"
-  | "acknowledgeBackendEvents";
+  | "acknowledgeBackendEvents"
+  | "syncOpenLARPCareerState";
 
 export type CallableQuotaCategory =
   | "aiWorkflow"
   | "proofUpload"
   | "proofUploadRepair"
   | "privateEvidenceRetention"
-  | "backendEventSync";
+  | "backendEventSync"
+  | "careerStateSync";
 
 export type CallableQuotaMetadataValue = string | number | boolean;
 
@@ -76,6 +78,10 @@ export const CALLABLE_DAILY_QUOTA_LIMITS = {
   acknowledgeBackendEvents: {
     category: "backendEventSync",
     limitUnits: 500
+  },
+  syncOpenLARPCareerState: {
+    category: "careerStateSync",
+    limitUnits: 100
   }
 } as const satisfies Record<OpenLARPCallableName, CallableQuotaLimit>;
 

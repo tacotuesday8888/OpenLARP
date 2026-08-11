@@ -311,6 +311,8 @@ OpenLARP uses a deliberately small unidirectional architecture:
 
 This structure is intentionally not split into a view model and repository for every screen. Add a new layer only when it owns a real boundary, independently testable policy, or replaceable dependency. Keep network/model credentials and provider-specific behavior behind the server boundary, and keep business logic out of SwiftUI view bodies.
 
+Account-backed Rich V0 restore uses one versioned career-state snapshot rather than a repository per model. The Swift client removes device-only fields, account identifiers, notification settings, telemetry, drafts, subscription state, and attachment paths before sending it. Proof receipts, evidence cards, and private outcomes cross this boundary only with explicit private-evidence consent; attachment bytes remain in their existing Storage backup flow. An authenticated callable owns the Firestore snapshot revision and performs compare-and-set updates in a transaction. Empty devices restore automatically, unchanged bases accept the one changed side, and two changed copies produce an explicit “keep this iPhone” or “use cloud copy” decision. Network, decoding, ownership, or persistence failure leaves the protected local workspace intact.
+
 ## Onboarding Architecture
 
 ### Onboarding Goal

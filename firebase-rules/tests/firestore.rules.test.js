@@ -98,6 +98,34 @@ describe("Firestore rules", () => {
     await assertFails(deleteDoc(eventRef));
   });
 
+  it("keeps versioned career state snapshots server-authored and owner-readable", async () => {
+    const alice = testEnv.authenticatedContext("alice").firestore();
+    const bob = testEnv.authenticatedContext("bob").firestore();
+    const snapshotPath = "users/alice/careerState/current";
+    const snapshot = {
+      schemaVersion: 1,
+      ownerUserID: "alice",
+      revision: 3,
+      payloadHash: "a".repeat(64),
+      payload: {
+        schemaVersion: 1,
+        includesPrivateEvidence: false,
+        state: { schemaVersion: 16 }
+      },
+      createdAt: new Date("2026-08-11T00:00:00.000Z"),
+      updatedAt: new Date("2026-08-11T01:00:00.000Z")
+    };
+
+    await assertFails(setDoc(doc(alice, snapshotPath), snapshot));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), snapshotPath), snapshot);
+    });
+    await assertSucceeds(getDoc(doc(alice, snapshotPath)));
+    await assertFails(getDoc(doc(bob, snapshotPath)));
+    await assertFails(updateDoc(doc(alice, snapshotPath), { revision: 4 }));
+    await assertFails(deleteDoc(doc(alice, snapshotPath)));
+  });
+
   it("allows real career graph document contracts under the owner tree", async () => {
     const alice = testEnv.authenticatedContext("alice").firestore();
     const bob = testEnv.authenticatedContext("bob").firestore();

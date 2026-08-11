@@ -32,6 +32,10 @@ import {
   handleAccountDeletionRequest
 } from "./accountDeletion.js";
 import { handleOpenLARPWorkflowRequest } from "./workflowHandler.js";
+import {
+  adminCareerStateSyncDependencies,
+  handleCareerStateSyncRequest
+} from "./careerStateSync.js";
 
 if (getApps().length === 0) {
   initializeApp();
@@ -210,12 +214,41 @@ export const deleteOpenLARPAccount = onCall(
   }
 );
 
+export const syncOpenLARPCareerState = onCall(
+  {
+    cors: true,
+    timeoutSeconds: 60,
+    memory: "512MiB"
+  },
+  async (request) => {
+    await throwIfAccountDeletionRequested(request.auth?.uid);
+    const response = await handleCareerStateSyncRequest({
+      auth: request.auth ? { uid: request.auth.uid } : null,
+      data: request.data
+    }, {
+      ...adminCareerStateSyncDependencies(),
+      quotaGuard: callableQuotaGuard
+    });
+
+    if (!response.ok) {
+      throw toHttpsError(response);
+    }
+
+    return response;
+  }
+);
+
 export { handleAccountDeletionRequest } from "./accountDeletion.js";
 export {
   accountDeletionRequestPath,
   rejectIfAccountDeletionRequested
 } from "./accountDeletionGuard.js";
 export { handleBackendEventSyncRequest } from "./backendEventSync.js";
+export {
+  adminCareerStateSyncDependencies,
+  handleCareerStateSyncRequest,
+  hashCareerStatePayload
+} from "./careerStateSync.js";
 export {
   adminCallableQuotaGuard,
   callableQuotaDayPath,

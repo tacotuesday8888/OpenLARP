@@ -16,6 +16,8 @@ struct ProfileView: View {
     @State private var exportDocument: OpenLARPLocalDataExportDocument?
     @State private var showingDataExporter = false
     @State private var showingEraseAllConfirmation = false
+    @State private var showingKeepDeviceSyncConfirmation = false
+    @State private var showingUseCloudSyncConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -68,6 +70,30 @@ struct ProfileView: View {
             Text(store.state.needsMissionApproval
                 ? "This replaces the unapproved mission and readiness baseline so you can set a new target."
                 : "This closes the active sprint and clears its current diagnostic and questline. Earned XP, proof receipts, readiness history, outcomes, and sprint history stay saved.")
+        }
+        .confirmationDialog(
+            "Replace the cloud copy?",
+            isPresented: $showingKeepDeviceSyncConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Keep This iPhone", role: .destructive) {
+                Task { await store.resolveCareerStateConflictKeepingThisDevice() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This saves the progress on this iPhone as the next cloud revision. The conflicting cloud copy will be replaced.")
+        }
+        .confirmationDialog(
+            "Replace this iPhone’s career progress?",
+            isPresented: $showingUseCloudSyncConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Use Cloud Copy", role: .destructive) {
+                Task { await store.resolveCareerStateConflictUsingCloud() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This restores the cloud revision on this iPhone. Device-only reminders and unsynced private proof files stay local.")
         }
         .confirmationDialog(
             "Erase all on-device data?",
@@ -643,7 +669,7 @@ struct ProfileView: View {
                         .font(.caption.weight(.black))
                         .foregroundStyle(Color.openLARPBlue)
                     Pill(
-                        title: session.isAuthenticated ? "Firestore metadata" : "Local only",
+                        title: session.isAuthenticated ? "Cross-device sync" : "Local only",
                         systemImage: session.isAuthenticated ? "icloud.fill" : "lock.fill",
                         color: session.isAuthenticated ? .openLARPBlue : .openLARPGreen
                     )
@@ -664,12 +690,47 @@ struct ProfileView: View {
                     CareerGraphSyncPreviewSummary(content: CareerGraphSyncPreviewContent(preview: preview))
                 }
 
+                HStack(spacing: 8) {
+                    Image(systemName: careerStateSyncSystemImage)
+                        .foregroundStyle(careerStateSyncColor)
+                    Text(careerStateSyncSummary)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if store.careerStateSyncConflict != nil {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("This iPhone and the cloud both changed. Nothing was overwritten.")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color.openLARPInk)
+                        if let conflict = store.careerStateSyncConflict {
+                            Text(
+                                "This iPhone: \(store.state.updatedAt.formatted(date: .abbreviated, time: .shortened)) • " +
+                                    "Cloud revision \(conflict.revision): " +
+                                    "\((conflict.serverUpdatedAt ?? conflict.completedAt).formatted(date: .abbreviated, time: .shortened))"
+                            )
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.openLARPSoftInk)
+                        }
+                        Button("Keep This iPhone") {
+                            showingKeepDeviceSyncConfirmation = true
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        Button("Use Cloud Copy") {
+                            showingUseCloudSyncConfirmation = true
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                    }
+                    .accessibilityElement(children: .contain)
+                }
+
                 Button {
                     Task {
                         await store.prepareCareerGraphSyncPreview()
                     }
                 } label: {
-                    if store.isPreparingCareerGraphSyncPreview {
+                    if store.isPreparingCareerGraphSyncPreview || store.isSynchronizingCareerState {
                         HStack {
                             ProgressView()
                                 .tint(.white)
@@ -683,7 +744,11 @@ struct ProfileView: View {
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
-                .disabled(store.isPreparingCareerGraphSyncPreview || store.state.needsGoalSetup)
+                .disabled(
+                    store.isPreparingCareerGraphSyncPreview ||
+                        store.isSynchronizingCareerState ||
+                        store.state.needsGoalSetup
+                )
                 .opacity(store.state.needsGoalSetup ? 0.45 : 1)
 
                 Text(store.state.needsGoalSetup
@@ -693,6 +758,40 @@ struct ProfileView: View {
                     .foregroundStyle(Color.openLARPSoftInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private var careerStateSyncSummary: String {
+        switch store.state.careerStateSync.status {
+        case .neverSynced:
+            "Cross-device progress has not synced yet."
+        case .syncing:
+            "Syncing your versioned career progress…"
+        case .inSync:
+            store.state.careerStateSync.revision.map { "Career progress is in sync at revision \($0)." }
+                ?? "No cloud progress exists yet."
+        case .conflict:
+            "Choose which copy to keep; OpenLARP will never merge conflicting career claims silently."
+        case .failed:
+            "Your on-device progress is safe. Cloud sync needs another try."
+        }
+    }
+
+    private var careerStateSyncSystemImage: String {
+        switch store.state.careerStateSync.status {
+        case .inSync: "checkmark.icloud.fill"
+        case .conflict: "arrow.triangle.branch"
+        case .failed: "exclamationmark.icloud.fill"
+        case .syncing: "arrow.triangle.2.circlepath.icloud"
+        case .neverSynced: "icloud"
+        }
+    }
+
+    private var careerStateSyncColor: Color {
+        switch store.state.careerStateSync.status {
+        case .inSync: .openLARPGreen
+        case .conflict, .failed: .openLARPOrange
+        case .syncing, .neverSynced: .openLARPBlue
         }
     }
 
