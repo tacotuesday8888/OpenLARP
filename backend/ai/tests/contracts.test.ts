@@ -11,6 +11,8 @@ import {
   agentScanPayloadSchema,
   careerBriefPayloadSchema,
   careerGoalSchema,
+  contextualAssistantPayloadSchema,
+  contextualAssistantResponseSchema,
   diagnosticPayloadSchema,
   diagnosticResponseSchema,
   executionMetadataSchema,
@@ -24,6 +26,7 @@ import {
   safetyRulesSchema
 } from "../src/contracts.js";
 import {
+  answerContextualQuestion,
   makeAdaptiveCareerIntake,
   makeAgentScan,
   makeCareerBrief,
@@ -131,6 +134,62 @@ const confirmedMissionFacts = [{
   confirmationState: "confirmed",
   lastUpdatedAt: "2026-06-18T00:00:00.000Z"
 }];
+
+describe("contextual assistant contracts", () => {
+  it("accepts only confirmed, bounded, non-acting context and returns a concrete fallback", () => {
+    const payload = contextualAssistantPayloadSchema.parse({
+      surface: "proofPreparation",
+      question: "How can I make this proof clearer?",
+      goal: { targetRole: "iOS engineer", timeline: "12 weeks", outcomeType: "job" },
+      confirmedFacts: [{
+        id: "22222222-2222-4222-8222-222222222222",
+        kind: "experience",
+        value: "One shipped class app"
+      }],
+      mission: {
+        targetOutcome: "iOS engineer",
+        constraints: "Weeknights only",
+        mainReadinessGaps: ["Role-specific proof"],
+        firstMilestone: "Publish one honest walkthrough",
+        dailyCommitmentMinutes: 25
+      },
+      currentQuest: workflowContext.currentQuest,
+      relevantProof: {
+        kind: "proof",
+        text: "I mapped three repeated requirements.",
+        hasLink: true,
+        attachmentCount: 1
+      },
+      progress: workflowContext.progress,
+      allowsLongTermMemoryWrite: false,
+      externalActionsAllowed: false
+    });
+
+    const response = contextualAssistantResponseSchema.parse(answerContextualQuestion(payload));
+
+    expect(response.factIDsUsed).toEqual([]);
+    expect(response.advice).toHaveLength(1);
+    expect(response.nextAction.detail.length).toBeGreaterThan(0);
+    expect(response.suggestedDraft).toContain("[specific action]");
+    expect(JSON.stringify(payload)).not.toContain("https://");
+    expect(JSON.stringify(payload)).not.toContain("private-proof.png");
+  });
+
+  it("rejects memory writes and external actions", () => {
+    const base = {
+      surface: "questDetail",
+      question: "What should I do first?",
+      goal: { targetRole: "iOS engineer", timeline: "12 weeks", outcomeType: "job" },
+      confirmedFacts: [],
+      progress: workflowContext.progress,
+      allowsLongTermMemoryWrite: false,
+      externalActionsAllowed: false
+    };
+
+    expect(contextualAssistantPayloadSchema.safeParse({ ...base, allowsLongTermMemoryWrite: true }).success).toBe(false);
+    expect(contextualAssistantPayloadSchema.safeParse({ ...base, externalActionsAllowed: true }).success).toBe(false);
+  });
+});
 
 describe("mission brief contracts", () => {
   it("accepts a grounded two-chapter mission proposal", () => {
@@ -332,6 +391,7 @@ describe("OpenLARP AI backend contracts", () => {
       "questPlan",
       "proofQualityCheck",
       "progressSummary",
+      "contextualAssistant",
       "careerBrief",
       "safeShareCardText",
       "opportunityRanking",
@@ -593,6 +653,39 @@ describe("OpenLARP AI backend contracts", () => {
 
     expect(validateEnvelopeSafety(envelope).ok).toBe(false);
     expect(validateEnvelopeSafety(envelope).blockedReasons).toContain("long-term memory writes require cloud-ready memory mode");
+  });
+
+  it("allows cloud-ready users to run an ephemeral contextual exchange but rejects assistant memory writes", () => {
+    const contextualEnvelope = requestEnvelopeSchema.parse({
+      ...safeEnvelope,
+      run: {
+        ...safeEnvelope.run,
+        kind: "contextualAssistant",
+        privacy: {
+          ...safeEnvelope.run.privacy,
+          memoryMode: "cloudReady",
+          allowsLongTermMemoryWrite: false
+        }
+      },
+      payload: {
+        surface: "questDetail",
+        question: "Why this quest?",
+        goal: { targetRole: "iOS engineer", timeline: "12 weeks", outcomeType: "job" },
+        confirmedFacts: [],
+        progress: workflowContext.progress,
+        allowsLongTermMemoryWrite: false,
+        externalActionsAllowed: false
+      }
+    });
+
+    expect(validateEnvelopeSafety(contextualEnvelope).ok).toBe(true);
+    expect(validateEnvelopeSafety({
+      ...contextualEnvelope,
+      run: {
+        ...contextualEnvelope.run,
+        privacy: { ...contextualEnvelope.run.privacy, allowsLongTermMemoryWrite: true }
+      }
+    }).blockedReasons).toContain("contextual assistant exchanges cannot write long-term memory");
   });
 
   it("accepts normalized equivalent safety wording", () => {

@@ -2,6 +2,7 @@ import type {
   AdaptiveCareerIntakePayload,
   AgentScanPayload,
   CareerBriefPayload,
+  ContextualAssistantPayload,
   DiagnosticPayload,
   MissionBriefPayload,
   OpportunityRankingPayload,
@@ -313,6 +314,48 @@ export function summarizeProgress(payload: ProgressSummaryPayload) {
     nextQuestTitle
   };
   assertSafeGeneratedText(response.summary);
+  return response;
+}
+
+export function answerContextualQuestion(payload: ContextualAssistantPayload) {
+  const quest = payload.currentQuest;
+  const firstGap = payload.mission?.mainReadinessGaps[0] ?? payload.diagnostic?.mainGap;
+  const surfaceAdvice = {
+    cookedEvaluation: "Use the diagnostic as a directional baseline, then test it by completing the first proof-producing action.",
+    missionBrief: "Edit the mission until its milestone and daily commitment fit your real constraints, then approve it.",
+    questDetail: quest
+      ? `Complete the first unfinished step in “${quest.title}” and save the required proof.`
+      : "Return to the current sprint and choose the next available quest.",
+    proofPreparation: quest
+      ? `Describe what you actually did and how it satisfies “${quest.proofRequired}”.`
+      : "Describe the concrete action, result, and honest limitation before requesting a proof review.",
+    proofFeedback: payload.relevantProof?.reviewImprovement ??
+      "Add one concrete result or role-relevant detail, then request another review.",
+    weeklyReport: payload.checkpoint?.nextFocus ??
+      "Use the report to choose one readiness gap for the next chapter."
+  }[payload.surface];
+  const nextTitle = payload.surface === "missionBrief"
+    ? "Review one mission field"
+    : payload.surface === "proofFeedback"
+      ? "Make one proof revision"
+      : quest?.title ?? "Take the next honest step";
+  const answer = firstGap
+    ? `The most useful focus is ${firstGap}. ${surfaceAdvice}`
+    : surfaceAdvice;
+  const response = {
+    answer,
+    factIDsUsed: [],
+    inferences: firstGap ? ["This focus is inferred from the supplied plan and progress; it is not an independently verified hiring judgment."] : [],
+    advice: [surfaceAdvice],
+    nextAction: {
+      title: nextTitle,
+      detail: surfaceAdvice
+    },
+    suggestedDraft: payload.surface === "proofPreparation" || payload.surface === "proofFeedback"
+      ? "I completed [specific action]. The result was [observable result]. This supports [target-role requirement]. A limitation is [honest limitation]."
+      : null
+  };
+  assertSafeGeneratedText(JSON.stringify(response));
   return response;
 }
 

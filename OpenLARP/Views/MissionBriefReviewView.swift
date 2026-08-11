@@ -130,6 +130,13 @@ struct MissionBriefReviewView: View {
             .buttonStyle(PrimaryButtonStyle())
             .disabled(store.isMissionApprovalRunning)
 
+            AskOpenLARPButton(
+                store: store,
+                surface: .missionBrief,
+                title: "Ask OpenLARP about this mission"
+            )
+            .disabled(store.isMissionApprovalRunning)
+
             Button {
                 showingGoalResetConfirmation = true
             } label: {

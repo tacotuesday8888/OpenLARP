@@ -114,6 +114,7 @@ struct AppRootView: View {
         case .progress:
             NavigationStack {
                 ProgressTabView(
+                    store: store,
                     state: store.state,
                     attachmentURL: { attachment in
                         store.localURL(for: attachment)

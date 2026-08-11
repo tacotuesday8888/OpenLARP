@@ -679,6 +679,16 @@ describe("handleOpenLARPWorkflowRequest", () => {
       ["questPlan", { ...goalPayload(), diagnostic }],
       ["proofQualityCheck", { context: workflowContext(), proof: proof(), targetRoleTitle: "AI product engineer" }],
       ["progressSummary", { context: workflowContext(), targetRoleTitle: "AI product engineer" }],
+      ["contextualAssistant", {
+        surface: "questDetail",
+        question: "Why this quest?",
+        goal: { targetRole: "AI product engineer", timeline: "12 weeks", outcomeType: "job" },
+        confirmedFacts: [],
+        currentQuest: workflowContext().currentQuest,
+        progress: workflowContext().progress,
+        allowsLongTermMemoryWrite: false,
+        externalActionsAllowed: false
+      }],
       ["careerBrief", { context: workflowContext(), targetRoleTitle: "AI product engineer", opportunities: [opportunity()] }],
       ["safeShareCardText", { context: workflowContext(), proof: proof(), targetRoleTitle: "AI product engineer", maxCharacters: 280 }],
       ["opportunityRanking", {
@@ -693,11 +703,21 @@ describe("handleOpenLARPWorkflowRequest", () => {
     ] as const;
 
     for (const [kind, payload] of cases) {
-      const response = await authed(envelope(kind, payload));
+      const baseEnvelope = envelope(kind, payload);
+      const workflowEnvelope = kind === "contextualAssistant"
+        ? {
+            ...baseEnvelope,
+            run: {
+              ...baseEnvelope.run,
+              privacy: { ...baseEnvelope.run.privacy, allowsLongTermMemoryWrite: false }
+            }
+          }
+        : baseEnvelope;
+      const response = await authed(workflowEnvelope);
       expectSuccess(response, kind);
       expect(response.liveModelCallsEnabled).toBe(false);
       expect(response.externalActionTaken).toBe(false);
-      const isLiveWorkflow = ["missionBrief", "questPlan", "proofQualityCheck", "progressSummary"].includes(kind);
+      const isLiveWorkflow = ["missionBrief", "questPlan", "proofQualityCheck", "progressSummary", "contextualAssistant"].includes(kind);
       expect(response.usedFallback).toBe(isLiveWorkflow);
       expect(response.fallbackReason).toBe(isLiveWorkflow ? "disabled" : null);
     }

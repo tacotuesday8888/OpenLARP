@@ -27,6 +27,7 @@ enum OutcomeSheetDestination: Identifiable {
 }
 
 struct ProgressTabView: View {
+    let store: OpenLARPStore
     let state: OpenLARPState
     let attachmentURL: (ProofAttachment) -> URL
     let improveWeakestArea: () -> Void
@@ -39,6 +40,7 @@ struct ProgressTabView: View {
     @State private var outcomeSheetDestination: OutcomeSheetDestination?
 
     init(
+        store: OpenLARPStore,
         state: OpenLARPState,
         attachmentURL: @escaping (ProofAttachment) -> URL,
         improveWeakestArea: @escaping () -> Void,
@@ -47,6 +49,7 @@ struct ProgressTabView: View {
         deleteOutcome: @escaping OutcomeLogDeleteAction = { _ in },
         updateEvidenceCard: @escaping EvidenceCardUpdateAction = { _, _, _, _, _ in false }
     ) {
+        self.store = store
         self.state = state
         self.attachmentURL = attachmentURL
         self.improveWeakestArea = improveWeakestArea
@@ -83,6 +86,7 @@ struct ProgressTabView: View {
                 } else {
                     readinessCard
                     readinessHistoryCard
+                    checkpointReportCard
                     xpCard
                     outcomeLogCard
                     proofCard
@@ -212,6 +216,47 @@ struct ProgressTabView: View {
                         .background(Color.openLARPBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var checkpointReportCard: some View {
+        if let report = state.activeSprint?.reports.last {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(
+                        feature: .stats,
+                        eyebrow: "Day \(report.checkpointDay) report",
+                        title: report.checkpointDay == 14 ? "Sprint result" : "Chapter checkpoint"
+                    )
+
+                    Text(report.summary)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.openLARPInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
+                        SummaryTile(value: "\(report.completedQuestCount)", label: "Quests", color: .openLARPGreen)
+                        SummaryTile(value: "\(report.proofCount)", label: "Proof", color: .openLARPBlue)
+                        SummaryTile(
+                            value: report.readinessDelta >= 0 ? "+\(report.readinessDelta)" : "\(report.readinessDelta)",
+                            label: "Ready",
+                            color: .openLARPCoral
+                        )
+                    }
+
+                    Label(report.nextFocus, systemImage: "scope")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    AskOpenLARPButton(
+                        store: store,
+                        surface: .weeklyReport,
+                        title: "Ask OpenLARP about this report"
+                    )
                 }
             }
         }

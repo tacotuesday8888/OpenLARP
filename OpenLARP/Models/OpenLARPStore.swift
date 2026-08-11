@@ -50,6 +50,7 @@ final class OpenLARPStore {
     var pendingQualityResult: QualityCheckResult?
     var errorMessage: String?
     var isAgentScanning = false
+    var isContextualAssistantRunning = false
     var isGoalSetupRunning = false
     var isAdaptiveIntakeRunning = false
     var isMissionApprovalRunning = false
@@ -2219,6 +2220,47 @@ final class OpenLARPStore {
             recordBetaEvent(.subscriptionPurchaseFailed, occurredAt: now())
             errorMessage = "Subscription purchase could not be completed."
             save()
+        }
+    }
+
+    func askOpenLARP(
+        surface: V0ContextualAssistantSurface,
+        question: String
+    ) async -> V0ContextualAssistantResponse? {
+        guard !isContextualAssistantRunning else { return nil }
+        let requestedAt = now()
+        guard let request = V0ContextualAssistantRequest(
+            state: state,
+            surface: surface,
+            question: question,
+            pendingProof: pendingProof,
+            pendingQualityResult: pendingQualityResult,
+            requestedAt: requestedAt
+        ) else {
+            errorMessage = "Ask a specific question after confirming your career goal."
+            return nil
+        }
+
+        let originalState = state
+        let ownerContext = captureLocalOwnerOperationContext()
+        isContextualAssistantRunning = true
+        defer { isContextualAssistantRunning = false }
+        do {
+            let response = try await aiWorkflowService.answerContextualQuestion(request)
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return nil }
+            try response.validate(for: request)
+            recordAIWorkflowRuns([response.run])
+            errorMessage = nil
+            guard save() else {
+                state = originalState
+                return nil
+            }
+            return response
+        } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return nil }
+            state = originalState
+            errorMessage = "OpenLARP could not answer that safely yet. Your progress and draft were not changed."
+            return nil
         }
     }
 

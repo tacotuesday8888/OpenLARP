@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
+  contextualAssistantResponseSchema,
   diagnosticResponseSchema,
   missionBriefPayloadSchema,
   missionBriefResponseSchema,
   requestEnvelopeSchema
 } from "../src/contracts.js";
-import { makeDiagnostic, makeMissionBrief } from "../src/mockWorkflows.js";
+import { answerContextualQuestion, makeDiagnostic, makeMissionBrief } from "../src/mockWorkflows.js";
 import { validateGeneratedWorkflowResult } from "../src/postValidation.js";
 import { buildLiveWorkflowPrompt } from "../src/prompts.js";
 import { executeWorkflow } from "../src/workflowExecution.js";
@@ -134,6 +135,48 @@ describe("Rich V0 truthfulness evaluations", () => {
     });
     expect(timeout.execution).toMatchObject({ usedFallback: true, fallbackReason: "timeout" });
     expect(diagnosticResponseSchema.safeParse(timeout.result).success).toBe(true);
+  });
+
+  it("keeps contextual help grounded in confirmed fact IDs and non-acting boundaries", () => {
+    const payload = {
+      surface: "proofFeedback" as const,
+      question: "How should I improve this?",
+      goal: { targetRole: "iOS engineering intern", timeline: "12 weeks", outcomeType: "internship" as const },
+      confirmedFacts: [{
+        id: "88888888-8888-4888-8888-888888888888",
+        kind: "experience" as const,
+        value: "Completed two class projects"
+      }],
+      mission: null,
+      diagnostic: null,
+      currentQuest: null,
+      relevantProof: {
+        kind: "proof",
+        text: "I mapped three role requirements to one class project.",
+        hasLink: true,
+        attachmentCount: 1,
+        reviewLabel: "Needs more context",
+        reviewReason: "The written description is too broad.",
+        reviewImprovement: "Add one exact requirement and the matching project decision."
+      },
+      checkpoint: null,
+      progress: {
+        readiness: { overall: 42, proofStrength: 35, confidence: 45, consistency: 50, skillProof: 38, networkStrength: 25 },
+        completedQuestCount: 2,
+        proofCount: 1,
+        streakCount: 2,
+        xp: 220,
+        xpGoal: 1000
+      },
+      allowsLongTermMemoryWrite: false as const,
+      externalActionsAllowed: false as const
+    };
+
+    const result = contextualAssistantResponseSchema.parse(answerContextualQuestion(payload));
+
+    expect(result.factIDsUsed.every((id) => payload.confirmedFacts.some((fact) => fact.id === id))).toBe(true);
+    expect(result.advice[0]).toBe(payload.relevantProof.reviewImprovement);
+    expect(JSON.stringify(result)).not.toMatch(/sent|submitted|inspected the link|saved to memory/i);
   });
 
   it("falls back when a generated mission rewrites any user-confirmed input", async () => {

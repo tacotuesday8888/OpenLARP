@@ -7,6 +7,7 @@ export const implementedWorkflowKinds = [
   "questPlan",
   "proofQualityCheck",
   "progressSummary",
+  "contextualAssistant",
   "careerBrief",
   "safeShareCardText",
   "opportunityRanking",
@@ -252,6 +253,92 @@ export const progressSummaryPayloadSchema = z.object({
   targetRoleTitle: z.string().min(1).max(120)
 });
 
+export const contextualAssistantSurfaceSchema = z.enum([
+  "cookedEvaluation",
+  "missionBrief",
+  "questDetail",
+  "proofPreparation",
+  "proofFeedback",
+  "weeklyReport"
+]);
+
+const contextualAssistantFactSchema = z.object({
+  id: z.string().uuid(),
+  kind: careerFactKindSchema,
+  value: z.string().min(1).max(4000)
+});
+
+export const contextualAssistantPayloadSchema = z.object({
+  surface: contextualAssistantSurfaceSchema,
+  question: z.string().min(1).max(1000),
+  goal: z.object({
+    targetRole: z.string().min(1).max(120),
+    timeline: z.string().min(1).max(120),
+    outcomeType: z.enum(["job", "internship", "promotion", "careerChange"])
+  }),
+  confirmedFacts: z.array(contextualAssistantFactSchema).max(24),
+  mission: z.object({
+    targetOutcome: z.string().min(1).max(120),
+    constraints: z.string().max(4000),
+    mainReadinessGaps: z.array(z.string().min(1).max(500)).max(4),
+    firstMilestone: z.string().min(1).max(500),
+    dailyCommitmentMinutes: z.number().int().min(5).max(180)
+  }).optional().nullable(),
+  diagnostic: z.object({
+    label: z.string().min(1).max(80),
+    mainGap: z.string().min(1).max(500),
+    strongestSignal: z.string().min(1).max(500),
+    fastestFix: z.string().min(1).max(500),
+    readinessBaseline: z.number().int().min(0).max(100)
+  }).optional().nullable(),
+  currentQuest: questSchema.optional().nullable(),
+  relevantProof: z.object({
+    kind: z.string().min(1).max(80),
+    text: z.string().max(4000),
+    hasLink: z.boolean(),
+    attachmentCount: z.number().int().min(0).max(8),
+    reviewLabel: z.string().min(1).max(80).optional().nullable(),
+    reviewReason: z.string().min(1).max(500).optional().nullable(),
+    reviewImprovement: z.string().min(1).max(500).optional().nullable()
+  }).optional().nullable(),
+  checkpoint: z.object({
+    checkpointDay: z.union([z.literal(7), z.literal(14)]),
+    completedQuestCount: z.number().int().min(0).max(14),
+    proofCount: z.number().int().min(0).max(14),
+    outcomeCount: z.number().int().min(0).max(100),
+    readinessDelta: z.number().int().min(-100).max(100),
+    summary: z.string().min(1).max(800),
+    nextFocus: z.string().min(1).max(500)
+  }).optional().nullable(),
+  progress: progressContextSchema,
+  allowsLongTermMemoryWrite: z.literal(false),
+  externalActionsAllowed: z.literal(false),
+  requestedAt: z.string().datetime().optional()
+}).superRefine((payload, context) => {
+  const factIDs = payload.confirmedFacts.map((fact) => fact.id);
+  if (new Set(factIDs).size !== factIDs.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["confirmedFacts"],
+      message: "Confirmed fact identifiers must be unique."
+    });
+  }
+  if (payload.relevantProof && payload.surface !== "proofPreparation" && payload.surface !== "proofFeedback") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["relevantProof"],
+      message: "Proof context is allowed only on proof surfaces."
+    });
+  }
+  if (payload.checkpoint && payload.surface !== "weeklyReport") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["checkpoint"],
+      message: "Checkpoint context is allowed only on the report surface."
+    });
+  }
+});
+
 export const careerBriefPayloadSchema = z.object({
   context: workflowContextSchema,
   requestedAt: z.string().datetime().optional(),
@@ -389,6 +476,26 @@ export const progressSummaryResponseSchema = z.object({
   nextQuestTitle: z.string().max(140).optional().nullable()
 });
 
+export const contextualAssistantResponseSchema = z.object({
+  answer: z.string().min(1).max(1200),
+  factIDsUsed: z.array(z.string().uuid()).max(8),
+  inferences: z.array(z.string().min(1).max(500)).max(4),
+  advice: z.array(z.string().min(1).max(500)).min(1).max(4),
+  nextAction: z.object({
+    title: z.string().min(1).max(120),
+    detail: z.string().min(1).max(500)
+  }),
+  suggestedDraft: z.string().min(1).max(2000).optional().nullable()
+}).strict().superRefine((response, context) => {
+  if (new Set(response.factIDsUsed).size !== response.factIDsUsed.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["factIDsUsed"],
+      message: "Confirmed fact references must be unique."
+    });
+  }
+});
+
 export const careerBriefResponseSchema = z.object({
   title: z.string().min(1).max(120),
   summary: z.string().min(1).max(1000),
@@ -449,6 +556,7 @@ export type MissionBriefPayload = z.infer<typeof missionBriefPayloadSchema>;
 export type QuestPlanPayload = z.infer<typeof questPlanPayloadSchema>;
 export type ProofQualityPayload = z.infer<typeof proofQualityPayloadSchema>;
 export type ProgressSummaryPayload = z.infer<typeof progressSummaryPayloadSchema>;
+export type ContextualAssistantPayload = z.infer<typeof contextualAssistantPayloadSchema>;
 export type CareerBriefPayload = z.infer<typeof careerBriefPayloadSchema>;
 export type SafeShareCardTextPayload = z.infer<typeof safeShareCardTextPayloadSchema>;
 export type OpportunityRankingPayload = z.infer<typeof opportunityRankingPayloadSchema>;

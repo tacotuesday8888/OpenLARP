@@ -345,6 +345,12 @@ Cloud Run owns the Genkit/Gemini runtime and exposes only health and structured 
 
 Model choice, prompts, service location, prices, budgets, and provider credentials remain server-only. Neither layer uses long-lived key files; Cloud Run IAM and Application Default Credentials provide service-to-service authentication.
 
+### Contextual Help Boundary
+
+`Ask OpenLARP` is a bounded workflow inside the Cooked evaluation, mission review, quest detail, proof preparation, proof feedback, and checkpoint report. It is not a separate chat destination or a second source of product state. Each one-shot request contains only the approved goal, explicitly confirmed facts, the relevant mission/diagnostic/quest/report slice, bounded proof text and metadata when necessary, and current progress counters.
+
+The response contract separates confirmed fact references, inferences, advice, and one concrete user-controlled next action. A returned fact reference must match an identifier in the request. Conversations are ephemeral in Rich V0: question and answer text are not written to durable state or long-term memory. Proof URLs, local attachment paths, and attachment bytes are never included; the assistant may know only that a link or attachment exists. Both client and server force memory writes and external actions off, while deterministic local answers keep every surface useful when the live service is unavailable.
+
 ### Recommended Onboarding Steps
 
 The stages below describe the fuller product direction. Rich V0 combines them into the shorter reviewable flow above so the first quest remains reachable without a long intake.

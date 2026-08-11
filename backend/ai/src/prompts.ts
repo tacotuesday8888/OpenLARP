@@ -1,5 +1,6 @@
 import {
   adaptiveCareerIntakePayloadSchema,
+  contextualAssistantPayloadSchema,
   diagnosticPayloadSchema,
   missionBriefPayloadSchema,
   progressSummaryPayloadSchema,
@@ -92,6 +93,18 @@ export function buildLiveWorkflowPrompt(envelope: RequestEnvelope): LiveWorkflow
           "Do not claim progress, memory, or evidence that is absent from the payload."
         ],
         progressSummaryPayloadSchema.parse(envelope.payload)
+      );
+    case "contextualAssistant":
+      return prompt(
+        "openlarp.contextual-assistant.v1",
+        [
+          "Answer only from the supplied context and label facts, inferences, and advice through the structured fields.",
+          "factIDsUsed may contain only IDs from confirmedFacts. Never turn an inference into a fact.",
+          "Give one concrete user-controlled next action. A suggested draft must contain placeholders instead of invented claims when details are missing.",
+          "This exchange is ephemeral: do not write memory, retain new facts, or claim an external action.",
+          "Link destinations and attachment contents were not supplied or inspected. Never imply otherwise."
+        ],
+        contextualAssistantPayloadSchema.parse(envelope.payload)
       );
     default:
       throw new Error(`Workflow ${envelope.run.kind} does not have an enabled live prompt.`);

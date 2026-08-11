@@ -8,7 +8,8 @@ const LIVE_WORKFLOW_KINDS = [
   "missionBrief",
   "questPlan",
   "proofQualityCheck",
-  "progressSummary"
+  "progressSummary",
+  "contextualAssistant"
 ] as const;
 
 const runtimePolicySchema = z.object({
@@ -32,7 +33,8 @@ const runtimePolicySchema = z.object({
     missionBrief: z.boolean().default(false),
     questPlan: z.boolean(),
     proofQualityCheck: z.boolean(),
-    progressSummary: z.boolean()
+    progressSummary: z.boolean(),
+    contextualAssistant: z.boolean().default(false)
   })
 });
 

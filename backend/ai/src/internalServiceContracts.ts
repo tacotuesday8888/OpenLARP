@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   adaptiveCareerIntakePayloadSchema,
   adaptiveCareerIntakeResponseSchema,
+  contextualAssistantPayloadSchema,
+  contextualAssistantResponseSchema,
   diagnosticPayloadSchema,
   diagnosticResponseSchema,
   missionBriefPayloadSchema,
@@ -69,6 +71,7 @@ function livePayloadSchema(kind: string): z.ZodTypeAny | null {
     case "questPlan": return questPlanPayloadSchema;
     case "proofQualityCheck": return proofQualityPayloadSchema;
     case "progressSummary": return progressSummaryPayloadSchema;
+    case "contextualAssistant": return contextualAssistantPayloadSchema;
     default: return null;
   }
 }
@@ -81,6 +84,7 @@ function liveResultSchema(kind: string): z.ZodTypeAny | null {
     case "questPlan": return questPlanResponseSchema;
     case "proofQualityCheck": return proofQualityResponseSchema;
     case "progressSummary": return progressSummaryResponseSchema;
+    case "contextualAssistant": return contextualAssistantResponseSchema;
     default: return null;
   }
 }

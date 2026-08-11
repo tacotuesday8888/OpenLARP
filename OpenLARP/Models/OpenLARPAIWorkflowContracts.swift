@@ -7,6 +7,7 @@ enum V0AIWorkflowKind: String, Codable, CaseIterable, Identifiable {
     case questPlan
     case proofQualityCheck
     case progressSummary
+    case contextualAssistant
 
     var id: String { rawValue }
 }
@@ -283,6 +284,7 @@ struct V0AIBackendRequestRunMetadata: Codable, Equatable {
         requestedAt: Date,
         requestID: UUID = UUID(),
         privacy: CareerUserPrivacySettings = .localDefault,
+        allowsLongTermMemoryWrite: Bool? = nil,
         schemaVersion: Int = 1
     ) {
         self.schemaVersion = schemaVersion
@@ -290,7 +292,10 @@ struct V0AIBackendRequestRunMetadata: Codable, Equatable {
         self.providerRoute = providerRoute
         self.requestedAt = requestedAt
         self.requestID = requestID
-        self.privacy = V0AIBackendPrivacyMetadata(privacy: privacy)
+        self.privacy = V0AIBackendPrivacyMetadata(
+            privacy: privacy,
+            allowsLongTermMemoryWrite: allowsLongTermMemoryWrite
+        )
     }
 }
 
@@ -308,6 +313,7 @@ struct V0AIBackendRequestEnvelope<Payload: Codable & Equatable>: Codable, Equata
         requestedAt: Date,
         requestID: UUID = UUID(),
         privacy: CareerUserPrivacySettings = .localDefault,
+        allowsLongTermMemoryWrite: Bool? = nil,
         privateIdentifiers: V0AIBackendPrivateIdentifiers = .none,
         payload: Payload,
         safetyRules: V0AISafetyRules = .v0Default,
@@ -320,6 +326,7 @@ struct V0AIBackendRequestEnvelope<Payload: Codable & Equatable>: Codable, Equata
             requestedAt: requestedAt,
             requestID: requestID,
             privacy: privacy,
+            allowsLongTermMemoryWrite: allowsLongTermMemoryWrite,
             schemaVersion: schemaVersion
         )
         self.safetyRules = safetyRules
@@ -800,6 +807,223 @@ struct V0ProgressSummaryResponse: Codable, Equatable {
     }
 }
 
+enum V0ContextualAssistantSurface: String, Codable, CaseIterable, Sendable {
+    case cookedEvaluation
+    case missionBrief
+    case questDetail
+    case proofPreparation
+    case proofFeedback
+    case weeklyReport
+}
+
+struct V0ContextualAssistantFact: Codable, Equatable, Identifiable {
+    var id: UUID
+    var kind: CareerFactKind
+    var value: String
+}
+
+struct V0ContextualAssistantGoal: Codable, Equatable {
+    var targetRole: String
+    var timeline: String
+    var outcomeType: CareerOutcomeType
+}
+
+struct V0ContextualAssistantMission: Codable, Equatable {
+    var targetOutcome: String
+    var constraints: String
+    var mainReadinessGaps: [String]
+    var firstMilestone: String
+    var dailyCommitmentMinutes: Int
+}
+
+struct V0ContextualAssistantDiagnostic: Codable, Equatable {
+    var label: String
+    var mainGap: String
+    var strongestSignal: String
+    var fastestFix: String
+    var readinessBaseline: Int
+}
+
+struct V0ContextualAssistantProof: Codable, Equatable {
+    var kind: String
+    var text: String
+    var hasLink: Bool
+    var attachmentCount: Int
+    var reviewLabel: String?
+    var reviewReason: String?
+    var reviewImprovement: String?
+
+    init(submission: ProofSubmission, review: QualityCheckResult?) {
+        kind = submission.kind.rawValue
+        text = String(submission.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
+        hasLink = !submission.link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        attachmentCount = min(submission.attachments.count, ProofAttachmentPolicy.maximumCount)
+        reviewLabel = review?.label
+        reviewReason = review?.reason
+        reviewImprovement = review?.improvement
+    }
+
+    init(record: ProofRecord) {
+        self.init(
+            submission: ProofSubmission(
+                id: record.id,
+                kind: record.kind,
+                text: record.text,
+                link: record.link,
+                attachments: record.attachments,
+                submittedAt: record.submittedAt
+            ),
+            review: record.quality
+        )
+    }
+}
+
+struct V0ContextualAssistantCheckpoint: Codable, Equatable {
+    var checkpointDay: Int
+    var completedQuestCount: Int
+    var proofCount: Int
+    var outcomeCount: Int
+    var readinessDelta: Int
+    var summary: String
+    var nextFocus: String
+
+    init(report: CareerSprintCheckpointReport) {
+        checkpointDay = report.checkpointDay
+        completedQuestCount = report.completedQuestCount
+        proofCount = report.proofCount
+        outcomeCount = report.outcomeCount
+        readinessDelta = report.readinessDelta
+        summary = report.summary
+        nextFocus = report.nextFocus
+    }
+}
+
+struct V0ContextualAssistantRequest: Codable, Equatable {
+    var surface: V0ContextualAssistantSurface
+    var question: String
+    var goal: V0ContextualAssistantGoal
+    var confirmedFacts: [V0ContextualAssistantFact]
+    var mission: V0ContextualAssistantMission?
+    var diagnostic: V0ContextualAssistantDiagnostic?
+    var currentQuest: Quest?
+    var relevantProof: V0ContextualAssistantProof?
+    var checkpoint: V0ContextualAssistantCheckpoint?
+    var progress: V0ProgressContext
+    var privacy: CareerUserPrivacySettings
+    var allowsLongTermMemoryWrite: Bool
+    var externalActionsAllowed: Bool
+    var requestedAt: Date
+
+    init?(
+        state: OpenLARPState,
+        surface: V0ContextualAssistantSurface,
+        question: String,
+        pendingProof: ProofSubmission? = nil,
+        pendingQualityResult: QualityCheckResult? = nil,
+        requestedAt: Date
+    ) {
+        let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let goal = state.goal, !trimmedQuestion.isEmpty else { return nil }
+
+        self.surface = surface
+        self.question = String(trimmedQuestion.prefix(1_000))
+        self.goal = V0ContextualAssistantGoal(
+            targetRole: goal.targetRole,
+            timeline: goal.timeline,
+            outcomeType: goal.outcomeType
+        )
+        confirmedFacts = state.careerUnderstanding.confirmedFacts.prefix(24).map {
+            V0ContextualAssistantFact(id: $0.id, kind: $0.kind, value: $0.value)
+        }
+        mission = state.mission.map {
+            V0ContextualAssistantMission(
+                targetOutcome: $0.targetOutcome,
+                constraints: $0.constraints,
+                mainReadinessGaps: Array($0.mainReadinessGaps.prefix(4)),
+                firstMilestone: $0.firstMilestone,
+                dailyCommitmentMinutes: $0.dailyCommitmentMinutes
+            )
+        }
+        diagnostic = state.diagnostic.map {
+            V0ContextualAssistantDiagnostic(
+                label: $0.label,
+                mainGap: $0.mainGap,
+                strongestSignal: $0.strongestSignal,
+                fastestFix: $0.fastestFix,
+                readinessBaseline: $0.readinessBaseline
+            )
+        }
+        currentQuest = state.currentQuest
+        if surface == .proofPreparation || surface == .proofFeedback {
+            if let pendingProof {
+                relevantProof = V0ContextualAssistantProof(
+                    submission: pendingProof,
+                    review: surface == .proofFeedback ? pendingQualityResult : nil
+                )
+            } else if let latestProof = state.progress.recentProof.first {
+                relevantProof = V0ContextualAssistantProof(record: latestProof)
+            } else {
+                relevantProof = nil
+            }
+        } else {
+            relevantProof = nil
+        }
+        checkpoint = surface == .weeklyReport
+            ? state.activeSprint?.reports.last.map(V0ContextualAssistantCheckpoint.init)
+            : nil
+        progress = V0ProgressContext(progress: state.progress)
+        privacy = state.userProfile?.privacy ?? .localDefault
+        allowsLongTermMemoryWrite = false
+        externalActionsAllowed = false
+        self.requestedAt = requestedAt
+    }
+}
+
+struct V0ContextualAssistantNextAction: Codable, Equatable {
+    var title: String
+    var detail: String
+}
+
+enum V0ContextualAssistantContractError: Error, Equatable {
+    case unexpectedWorkflowKind
+    case invalidFactReference
+    case invalidResponse
+}
+
+struct V0ContextualAssistantResponse: Codable, Equatable {
+    var run: V0AIWorkflowRun
+    var answer: String
+    var factIDsUsed: [UUID]
+    var inferences: [String]
+    var advice: [String]
+    var nextAction: V0ContextualAssistantNextAction
+    var suggestedDraft: String?
+
+    func validate(for request: V0ContextualAssistantRequest) throws {
+        guard run.kind == .contextualAssistant else {
+            throw V0ContextualAssistantContractError.unexpectedWorkflowKind
+        }
+        let confirmedIDs = Set(request.confirmedFacts.map(\.id))
+        guard factIDsUsed.allSatisfy(confirmedIDs.contains),
+              Set(factIDsUsed).count == factIDsUsed.count else {
+            throw V0ContextualAssistantContractError.invalidFactReference
+        }
+        guard (1...1_200).contains(answer.count),
+              factIDsUsed.count <= 8,
+              inferences.count <= 4,
+              (1...4).contains(advice.count),
+              inferences.allSatisfy({ (1...500).contains($0.count) && !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              advice.allSatisfy({ (1...500).contains($0.count) && !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              (1...120).contains(nextAction.title.count),
+              (1...500).contains(nextAction.detail.count),
+              !nextAction.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !nextAction.detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              suggestedDraft.map({ (1...2_000).contains($0.count) && !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? true else {
+            throw V0ContextualAssistantContractError.invalidResponse
+        }
+    }
+}
+
 protocol LocalAIWorkflowFallbackEligibleError: Error {
     var allowsLocalWorkflowFallback: Bool { get }
 }
@@ -816,6 +1040,17 @@ protocol V0AIWorkflowServicing {
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse
     func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse
     func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse
+    func answerContextualQuestion(
+        _ request: V0ContextualAssistantRequest
+    ) async throws -> V0ContextualAssistantResponse
+}
+
+extension V0AIWorkflowServicing {
+    func answerContextualQuestion(
+        _ request: V0ContextualAssistantRequest
+    ) async throws -> V0ContextualAssistantResponse {
+        throw V0ContextualAssistantContractError.invalidResponse
+    }
 }
 
 struct LocalMockV0AIWorkflowService: V0AIWorkflowServicing {
@@ -896,6 +1131,49 @@ struct LocalMockV0AIWorkflowService: V0AIWorkflowServicing {
             progress: request.context.progress,
             nextQuestTitle: request.context.currentQuest?.title
         )
+    }
+
+    func answerContextualQuestion(
+        _ request: V0ContextualAssistantRequest
+    ) async throws -> V0ContextualAssistantResponse {
+        let quest = request.currentQuest
+        let focus = request.mission?.mainReadinessGaps.first ?? request.diagnostic?.mainGap
+        let surfaceAdvice: String
+        switch request.surface {
+        case .cookedEvaluation:
+            surfaceAdvice = "Use the diagnostic as a directional baseline, then test it with the first proof-producing action."
+        case .missionBrief:
+            surfaceAdvice = "Edit the milestone and daily commitment until they fit your real constraints, then approve the mission."
+        case .questDetail:
+            surfaceAdvice = quest.map { "Complete the first unfinished step in \"\($0.title)\" and save the required proof." }
+                ?? "Choose the next available quest in the current sprint."
+        case .proofPreparation:
+            surfaceAdvice = quest.map { "Describe what you actually did and how it satisfies \"\($0.proofRequired)\"." }
+                ?? "Describe the concrete action, result, and one honest limitation."
+        case .proofFeedback:
+            surfaceAdvice = request.relevantProof?.reviewImprovement
+                ?? "Add one concrete result or role-relevant detail, then request another review."
+        case .weeklyReport:
+            surfaceAdvice = request.checkpoint?.nextFocus
+                ?? "Use the report to choose one readiness gap for the next chapter."
+        }
+        let answer = focus.map { "The most useful focus is \($0). \(surfaceAdvice)" } ?? surfaceAdvice
+        let response = V0ContextualAssistantResponse(
+            run: run(kind: .contextualAssistant, requestedAt: request.requestedAt),
+            answer: answer,
+            factIDsUsed: [],
+            inferences: focus == nil ? [] : ["This focus is inferred from the supplied plan and progress; it is not an independently verified hiring judgment."],
+            advice: [surfaceAdvice],
+            nextAction: V0ContextualAssistantNextAction(
+                title: quest?.title ?? "Take the next honest step",
+                detail: surfaceAdvice
+            ),
+            suggestedDraft: request.surface == .proofPreparation || request.surface == .proofFeedback
+                ? "I completed [specific action]. The result was [observable result]. This supports [target-role requirement]. A limitation is [honest limitation]."
+                : nil
+        )
+        try response.validate(for: request)
+        return response
     }
 
     private func run(kind: V0AIWorkflowKind, requestedAt: Date) -> V0AIWorkflowRun {
@@ -985,6 +1263,19 @@ struct FallbackV0AIWorkflowService: V0AIWorkflowServicing {
         } catch {
             guard shouldUseLocalFallback(for: error) else { throw error }
             var response = try await fallback.summarizeProgress(request)
+            response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
+            return response
+        }
+    }
+
+    func answerContextualQuestion(
+        _ request: V0ContextualAssistantRequest
+    ) async throws -> V0ContextualAssistantResponse {
+        do {
+            return try await primary.answerContextualQuestion(request)
+        } catch {
+            guard shouldUseLocalFallback(for: error) else { throw error }
+            var response = try await fallback.answerContextualQuestion(request)
             response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
             return response
         }
