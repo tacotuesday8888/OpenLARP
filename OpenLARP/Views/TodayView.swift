@@ -2,6 +2,12 @@ import PhotosUI
 import SwiftUI
 
 struct TodayView: View {
+    private enum ContentPhase: Hashable {
+        case onboarding
+        case missionReview
+        case dashboard
+    }
+
     let store: OpenLARPStore
     @State private var showingAgent = false
     @State private var showingSkipConfirmation = false
@@ -33,6 +39,7 @@ struct TodayView: View {
             .padding(20)
             .padding(.bottom, 88)
         }
+        .id(contentPhase)
         .background(Color.openLARPBackground)
         .navigationTitle("Today")
         .navigationBarTitleDisplayMode(.inline)
@@ -121,6 +128,16 @@ struct TodayView: View {
         } message: {
             Text(store.errorMessage ?? "")
         }
+    }
+
+    private var contentPhase: ContentPhase {
+        if store.state.needsMissionApproval {
+            return .missionReview
+        }
+        if store.state.needsCareerIntake {
+            return .onboarding
+        }
+        return .dashboard
     }
 
     private func updateEvidenceCard(
