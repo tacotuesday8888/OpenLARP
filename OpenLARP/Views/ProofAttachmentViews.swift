@@ -9,7 +9,7 @@ enum ProofAttachmentImageLoader {
     ) async -> UIImage? {
         let path = fileURL.path
         let boundedDimension = max(1, maximumPixelDimension)
-        let loaded = await Task.detached(priority: .utility) {
+        let loaded: SendableProofAttachmentImage? = await Task.detached(priority: .utility) {
             guard let source = CGImageSourceCreateWithURL(
                 URL(fileURLWithPath: path) as CFURL,
                 nil
