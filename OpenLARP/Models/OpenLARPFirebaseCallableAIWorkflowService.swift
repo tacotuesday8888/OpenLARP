@@ -190,7 +190,7 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
             kind: .adaptiveCareerIntake,
             requestedAt: request.requestedAt,
             requestID: request.requestID,
-            privacy: request.privacy,
+            privacy: .localDefault,
             payload: FirebaseCallableAdaptiveCareerIntakePayload(request: request)
         )
         let result = V0AdaptiveCareerIntakeResponse(
@@ -317,7 +317,7 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
         let response: FirebaseCallableAIWorkflowResponse<FirebaseCallableContextualAssistantResult> = try await callWorkflow(
             kind: .contextualAssistant,
             requestedAt: request.requestedAt,
-            privacy: .localDefault,
+            privacy: request.privacy,
             allowsLongTermMemoryWrite: false,
             payload: FirebaseCallableContextualAssistantPayload(request: request)
         )
