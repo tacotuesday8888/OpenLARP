@@ -3,6 +3,7 @@ import Foundation
 enum V0AIWorkflowKind: String, Codable, CaseIterable, Identifiable {
     case adaptiveCareerIntake
     case cookedDiagnostic
+    case missionBrief
     case questPlan
     case proofQualityCheck
     case progressSummary
@@ -491,16 +492,69 @@ struct V0DiagnosticResponse: Codable, Equatable {
     var diagnostic: CookedDiagnostic
 }
 
+struct V0MissionBriefRequest: Codable, Equatable {
+    var schemaVersion: Int
+    var goal: CareerGoal
+    var confirmedFacts: [CareerFactRecord]
+    var diagnostic: CookedDiagnostic
+    var requiredEthicalBoundaries: [String]
+    var requestedAt: Date
+    var safetyRules: V0AISafetyRules
+
+    init(
+        goal: CareerGoal,
+        understanding: CareerUnderstanding,
+        diagnostic: CookedDiagnostic,
+        requestedAt: Date,
+        schemaVersion: Int = 1,
+        safetyRules: V0AISafetyRules = .v0Default
+    ) throws {
+        guard understanding.reviewState == .approved,
+              understanding.pendingHypotheses.isEmpty else {
+            throw OpenLARPError.careerUnderstandingNeedsReview
+        }
+        self.schemaVersion = schemaVersion
+        self.goal = goal
+        confirmedFacts = understanding.confirmedFacts
+        self.diagnostic = diagnostic
+        requiredEthicalBoundaries = CareerMissionBrief.requiredEthicalBoundaries
+        self.requestedAt = requestedAt
+        self.safetyRules = safetyRules
+    }
+}
+
+struct V0MissionBriefResponse: Codable, Equatable {
+    var run: V0AIWorkflowRun
+    var mission: CareerMissionBrief
+
+    func validate(for request: V0MissionBriefRequest) throws {
+        try mission.validate()
+        guard run.kind == .missionBrief,
+              mission.reviewState == .awaitingApproval,
+              mission.targetOutcome == request.goal.targetRole,
+              mission.constraints == request.goal.constraints.trimmingCharacters(in: .whitespacesAndNewlines),
+              mission.confirmedCurrentState == request.confirmedFacts,
+              mission.ethicalBoundaries == request.requiredEthicalBoundaries,
+              mission.dailyCommitmentMinutes == request.goal.dailyCommitmentMinutes,
+              mission.providerRoute == run.providerRoute,
+              mission.usedFallback == run.usedFallback else {
+            throw OpenLARPError.invalidMissionBrief
+        }
+    }
+}
+
 struct V0QuestPlanRequest: Codable, Equatable {
     var schemaVersion: Int
     var goal: CareerGoal
     var diagnostic: CookedDiagnostic
+    var mission: CareerMissionBrief?
     var requestedAt: Date
     var safetyRules: V0AISafetyRules
 
     init(
         goal: CareerGoal,
         diagnostic: CookedDiagnostic,
+        mission: CareerMissionBrief? = nil,
         requestedAt: Date,
         schemaVersion: Int = 1,
         safetyRules: V0AISafetyRules = .v0Default
@@ -508,6 +562,7 @@ struct V0QuestPlanRequest: Codable, Equatable {
         self.schemaVersion = schemaVersion
         self.goal = goal
         self.diagnostic = diagnostic
+        self.mission = mission
         self.requestedAt = requestedAt
         self.safetyRules = safetyRules
     }
@@ -708,6 +763,7 @@ protocol V0AIWorkflowServicing {
         _ request: V0AdaptiveCareerIntakeRequest
     ) async throws -> V0AdaptiveCareerIntakeResponse
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse
     func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse
     func summarizeProgress(_ request: V0ProgressSummaryRequest) async throws -> V0ProgressSummaryResponse
@@ -742,6 +798,26 @@ struct LocalMockV0AIWorkflowService: V0AIWorkflowServicing {
             run: run(kind: .cookedDiagnostic, requestedAt: request.requestedAt),
             diagnostic: V0LocalAIWorkflowFallback.makeDiagnostic(for: request.goal)
         )
+    }
+
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        let run = run(kind: .missionBrief, requestedAt: request.requestedAt)
+        let mission = try CareerMissionBrief.proposal(
+            targetOutcome: request.goal.targetRole,
+            confirmedCurrentState: request.confirmedFacts,
+            constraints: request.goal.constraints,
+            mainReadinessGaps: request.diagnostic.readinessGaps ?? [request.diagnostic.mainGap],
+            ethicalBoundaries: request.requiredEthicalBoundaries,
+            firstMilestone: request.diagnostic.firstAction ?? request.diagnostic.fastestFix,
+            dailyCommitmentMinutes: request.goal.dailyCommitmentMinutes,
+            sprint: .richV0,
+            providerRoute: run.providerRoute,
+            usedFallback: run.usedFallback,
+            generatedAt: request.requestedAt
+        )
+        let response = V0MissionBriefResponse(run: run, mission: mission)
+        try response.validate(for: request)
+        return response
     }
 
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
@@ -812,6 +888,20 @@ struct FallbackV0AIWorkflowService: V0AIWorkflowServicing {
             guard shouldUseLocalFallback(for: error) else { throw error }
             var response = try await fallback.generateDiagnostic(request)
             response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
+            return response
+        }
+    }
+
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        do {
+            return try await primary.generateMissionBrief(request)
+        } catch {
+            guard shouldUseLocalFallback(for: error) else { throw error }
+            var response = try await fallback.generateMissionBrief(request)
+            response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
+            response.mission.providerRoute = response.run.providerRoute
+            response.mission.usedFallback = true
+            try response.validate(for: request)
             return response
         }
     }
@@ -894,13 +984,16 @@ private enum V0LocalAIWorkflowFallback {
     }
 
     static func makeSevenDayPlan(for goal: CareerGoal) -> [Quest] {
-        [
+        let duration: (Int) -> Int = { suggestedMinutes in
+            max(5, min(suggestedMinutes, goal.dailyCommitmentMinutes))
+        }
+        return [
             Quest(
                 id: questIDs[0],
                 day: 1,
                 title: "Map 3 real requirements for \(goal.targetRole)",
                 purpose: "You need proof that matches what the role actually asks for, not a vague interest list.",
-                timeEstimateMinutes: 25,
+                timeEstimateMinutes: duration(25),
                 difficulty: "Starter",
                 gap: .proofStrength,
                 proofRequired: "Paste your requirement notes or link to the document.",
@@ -917,7 +1010,7 @@ private enum V0LocalAIWorkflowFallback {
                 day: 2,
                 title: "Create one tiny proof artifact",
                 purpose: "A small real artifact beats a big unsupported claim.",
-                timeEstimateMinutes: 30,
+                timeEstimateMinutes: duration(30),
                 difficulty: "Starter",
                 gap: .proofStrength,
                 proofRequired: "Add a link, screenshot, or notes showing what you made.",
@@ -934,7 +1027,7 @@ private enum V0LocalAIWorkflowFallback {
                 day: 3,
                 title: "Rewrite one profile bullet from real proof",
                 purpose: "Better wording is allowed. Inventing facts is not.",
-                timeEstimateMinutes: 20,
+                timeEstimateMinutes: duration(20),
                 difficulty: "Balanced",
                 gap: .confidence,
                 proofRequired: "Paste the before and after bullet.",
@@ -951,7 +1044,7 @@ private enum V0LocalAIWorkflowFallback {
                 day: 4,
                 title: "Explain your proof in five bullets",
                 purpose: "If you cannot explain the work, it will not help in interviews.",
-                timeEstimateMinutes: 25,
+                timeEstimateMinutes: duration(25),
                 difficulty: "Balanced",
                 gap: .confidence,
                 proofRequired: "Paste the five bullets.",
@@ -970,7 +1063,7 @@ private enum V0LocalAIWorkflowFallback {
                 day: 5,
                 title: "Find one low-friction networking target",
                 purpose: "Networking gets easier when the ask is specific and tied to real work.",
-                timeEstimateMinutes: 20,
+                timeEstimateMinutes: duration(20),
                 difficulty: "Spicy",
                 gap: .networking,
                 proofRequired: "Paste the person's role and why they are relevant.",
@@ -987,7 +1080,7 @@ private enum V0LocalAIWorkflowFallback {
                 day: 6,
                 title: "Send or save one honest outreach draft",
                 purpose: "The goal is a real, low-pressure career action, not fake confidence.",
-                timeEstimateMinutes: 20,
+                timeEstimateMinutes: duration(20),
                 difficulty: "Spicy",
                 gap: .networking,
                 proofRequired: "Paste the sent message or saved draft.",
@@ -1004,7 +1097,7 @@ private enum V0LocalAIWorkflowFallback {
                 day: 7,
                 title: "Run the weekly less-cooked check",
                 purpose: "Progress is the point. The app should show what actually changed.",
-                timeEstimateMinutes: 15,
+                timeEstimateMinutes: duration(15),
                 difficulty: "Review",
                 gap: .consistency,
                 proofRequired: "Write what proof improved and what still blocks you.",

@@ -3,6 +3,7 @@ import { z } from "zod";
 export const implementedWorkflowKinds = [
   "adaptiveCareerIntake",
   "cookedDiagnostic",
+  "missionBrief",
   "questPlan",
   "proofQualityCheck",
   "progressSummary",
@@ -183,6 +184,33 @@ export const diagnosticPayloadSchema = z.object({
   requestedAt: z.string().datetime().optional()
 });
 
+const missionConfirmedFactSchema = intakeFactBaseSchema.extend({
+  source: z.enum(["userEntry", "userEdit", "aiHypothesis", "legacyMigration"]),
+  confirmationState: z.literal("confirmed")
+});
+
+const cookedDiagnosticSchema = z.object({
+  score: z.number().int().min(0).max(100),
+  label: z.string().min(1).max(80),
+  mainGap: z.string().min(1).max(500),
+  strongestSignal: z.string().min(1).max(500),
+  fastestFix: z.string().min(1).max(500),
+  readinessBaseline: z.number().int().min(0).max(100),
+  strongestSignals: z.array(z.string().min(1).max(500)).min(1).max(4),
+  readinessGaps: z.array(z.string().min(1).max(500)).min(1).max(4),
+  missingInformation: z.array(z.string().min(1).max(500)).max(4),
+  uncertaintyExplanation: z.string().min(1).max(700),
+  firstAction: z.string().min(1).max(500)
+});
+
+export const missionBriefPayloadSchema = z.object({
+  goal: careerGoalSchema,
+  confirmedFacts: z.array(missionConfirmedFactSchema).max(24),
+  diagnostic: cookedDiagnosticSchema,
+  requiredEthicalBoundaries: z.array(z.string().min(1).max(300)).min(1).max(8),
+  requestedAt: z.string().datetime().optional()
+});
+
 export const questPlanPayloadSchema = z.object({
   goal: careerGoalSchema,
   diagnostic: z.object({
@@ -193,6 +221,7 @@ export const questPlanPayloadSchema = z.object({
     fastestFix: z.string(),
     readinessBaseline: z.number().int().min(0).max(100)
   }),
+  mission: z.lazy(() => missionBriefResponseSchema).optional(),
   requestedAt: z.string().datetime().optional()
 });
 
@@ -256,6 +285,21 @@ export const diagnosticResponseSchema = z.object({
   missingInformation: z.array(z.string().min(1).max(500)).max(4),
   uncertaintyExplanation: z.string().min(1).max(700),
   firstAction: z.string().min(1).max(500)
+});
+
+export const missionBriefResponseSchema = z.object({
+  targetOutcome: z.string().min(1).max(120),
+  confirmedCurrentState: z.array(missionConfirmedFactSchema).max(24),
+  constraints: z.string().max(4000),
+  mainReadinessGaps: z.array(z.string().min(1).max(500)).min(1).max(4),
+  ethicalBoundaries: z.array(z.string().min(1).max(300)).min(1).max(8),
+  firstMilestone: z.string().min(1).max(500),
+  dailyCommitmentMinutes: z.number().int().min(5).max(180),
+  sprint: z.object({
+    dayCount: z.literal(14),
+    chapterCount: z.literal(2),
+    summary: z.string().min(1).max(800)
+  })
 });
 
 export const fallbackReasonSchema = z.enum([
@@ -375,6 +419,7 @@ export type WorkflowKind = z.infer<typeof workflowKindSchema>;
 export type AdaptiveCareerIntakePayload = z.infer<typeof adaptiveCareerIntakePayloadSchema>;
 export type AdaptiveCareerIntakeResponse = z.infer<typeof adaptiveCareerIntakeResponseSchema>;
 export type DiagnosticPayload = z.infer<typeof diagnosticPayloadSchema>;
+export type MissionBriefPayload = z.infer<typeof missionBriefPayloadSchema>;
 export type QuestPlanPayload = z.infer<typeof questPlanPayloadSchema>;
 export type ProofQualityPayload = z.infer<typeof proofQualityPayloadSchema>;
 export type ProgressSummaryPayload = z.infer<typeof progressSummaryPayloadSchema>;

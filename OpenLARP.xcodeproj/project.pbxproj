@@ -30,11 +30,13 @@
 		24267A55433A10A71B29D407 /* LocalDataOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B1E1EEF319484CA5E02687 /* LocalDataOwnershipTests.swift */; };
 		25823B47ADD0FCC5D9710F4D /* ReleaseConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71CED45201231C788EF17A2 /* ReleaseConfigurationTests.swift */; };
 		28A9EB6E76034CFE66997860 /* OpenLARPReleaseContractSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2442B9DF6E0E422ED4F0B3C9 /* OpenLARPReleaseContractSnapshot.swift */; };
+		2BD2C652D3BC8938386D7E47 /* OpenLARPMissionBrief.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EA4CEECCF74DA62E00394BD /* OpenLARPMissionBrief.swift */; };
 		2E0F095308879A0FF0E744BC /* FirebaseCareerGraphSyncReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B52AD535F1C64725BDCE83B /* FirebaseCareerGraphSyncReadinessTests.swift */; };
 		2FAC3CB680B4FE7A18134A41 /* OpenLARPReleaseContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2A9257C1858D4253921255 /* OpenLARPReleaseContractTests.swift */; };
 		322E12DBF8F110DAD2C392D0 /* OpenLARPReleaseConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FC0461697344F56BEDB135 /* OpenLARPReleaseConfiguration.swift */; };
 		32C31764411CEAE637F3BF77 /* ProofArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38A7544CA52F69EBE427B74 /* ProofArchiveView.swift */; };
 		3469E86770713FB77ADC6000 /* AuthenticationReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5FE9FFE5F44B22B0A266078 /* AuthenticationReadinessTests.swift */; };
+		34C1CA8F370728133BA3F65C /* MissionBriefReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECB05C53B4EA09E690913C9 /* MissionBriefReviewView.swift */; };
 		35CFE7AA1BAAA4B1BF3E1EC0 /* OpenLARPShareCardExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9D4627A3B93C85AB8432AA7 /* OpenLARPShareCardExport.swift */; };
 		360F811DA782621C64896A27 /* SubscriptionReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558B84EBAC143D9553A0A62E /* SubscriptionReadinessTests.swift */; };
 		36487711E483C13DA799C091 /* BackendSessionReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 071E3A0FAFA43659976349F9 /* BackendSessionReadinessTests.swift */; };
@@ -57,6 +59,7 @@
 		52F52AA3274E6F522B33536D /* OpenLARPBetaMeasurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 404CAE7BD2E7B7A1199D312D /* OpenLARPBetaMeasurement.swift */; };
 		54E8488BD24F11C2B5E77326 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = C0AC7D45644C89C4DC16CE5B /* FirebaseFunctions */; };
 		5719578F3701E303B3C82BAC /* QuestPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65AE049F689207B56A408E9 /* QuestPreviewView.swift */; };
+		58A2BAAC6EC44EBEDA0F1961 /* MissionBriefTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26DE0D983438B1F1ACCA6B39 /* MissionBriefTests.swift */; };
 		5AFEC180419B34F7CF040EB7 /* CompletedQuestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */; };
 		5D3130594C03FEDD4E87E491 /* OpenLARPLocalDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1474B47727BE0F91D30140 /* OpenLARPLocalDataStore.swift */; };
 		61815BF4132A61EFF1167D77 /* ProofReviewIntegrityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2E0EAAA1BF07DECBDBE158D /* ProofReviewIntegrityTests.swift */; };
@@ -79,6 +82,7 @@
 		879E93F1937AB0562AFC5457 /* ReleaseServiceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52BB775BB9A302F0E588568 /* ReleaseServiceBoundaryTests.swift */; };
 		898788989E941E51F886015A /* OpenLARPReleaseContractSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2442B9DF6E0E422ED4F0B3C9 /* OpenLARPReleaseContractSnapshot.swift */; };
 		89E9612270DE46D7B0DE2B55 /* OpenLARPBetaMeasurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 404CAE7BD2E7B7A1199D312D /* OpenLARPBetaMeasurement.swift */; };
+		8E3F6BE3473240DB6D9237A5 /* OpenLARPMissionBrief.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EA4CEECCF74DA62E00394BD /* OpenLARPMissionBrief.swift */; };
 		90703ABE6E8B564BA1179B96 /* ShareCardExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D289D644FCC10CBC98DD5C /* ShareCardExportTests.swift */; };
 		940979C1D721A0E1E61590E6 /* AIBackendContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0BD29572C6A1B22588E89D /* AIBackendContractTests.swift */; };
 		9461CF8F924EE63254548527 /* OpenLARPApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601E79F5844C6D89A84C354B /* OpenLARPApp.swift */; };
@@ -99,6 +103,7 @@
 		AB4887FCA0C7653AA0A5FFC0 /* OpenLARPAttachmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8140307FB53F34C6E1DD623 /* OpenLARPAttachmentStore.swift */; };
 		AB5340B620F1DACAABF1A409 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = E427862DC32A18759A6492D8 /* FirebaseStorage */; };
 		AE1297BA0332DD5C9843B616 /* OpenLARPApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601E79F5844C6D89A84C354B /* OpenLARPApp.swift */; };
+		B0E86A8FF829752B042D58AE /* MissionBriefReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECB05C53B4EA09E690913C9 /* MissionBriefReviewView.swift */; };
 		B499952BF2656E87AE7DBA46 /* LocalDataExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76674E2BEC070DD5982B2ED3 /* LocalDataExportTests.swift */; };
 		B7BAAD41817C1157A1B5569B /* OpenLARPLocalDataExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BAC50140AD73A37E2DA647 /* OpenLARPLocalDataExport.swift */; };
 		B8A91DA6A6EC76569653EA37 /* CompletedQuestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */; };
@@ -150,6 +155,7 @@
 		071E3A0FAFA43659976349F9 /* BackendSessionReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendSessionReadinessTests.swift; sourceTree = "<group>"; };
 		0D6D15162F04C40E6ADCA0D5 /* OpenLARPReleasePresentationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPReleasePresentationPolicy.swift; sourceTree = "<group>"; };
 		0DB4C508489FA00F82B277CF /* OpenLARPStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPStore.swift; sourceTree = "<group>"; };
+		0EA4CEECCF74DA62E00394BD /* OpenLARPMissionBrief.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPMissionBrief.swift; sourceTree = "<group>"; };
 		110A29E9E3702EAF1A89FDDE /* OnboardingAccountEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAccountEntryView.swift; sourceTree = "<group>"; };
 		12DC112A777D32FCE8C8EE04 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		158AE576FBB3972BC8DFD382 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
@@ -159,6 +165,7 @@
 		1AC8DF9C8B644BCA48495AD3 /* QuestMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestMapView.swift; sourceTree = "<group>"; };
 		21F481061931A10C3D19445D /* ProofDraftStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofDraftStoreTests.swift; sourceTree = "<group>"; };
 		2442B9DF6E0E422ED4F0B3C9 /* OpenLARPReleaseContractSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPReleaseContractSnapshot.swift; sourceTree = "<group>"; };
+		26DE0D983438B1F1ACCA6B39 /* MissionBriefTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionBriefTests.swift; sourceTree = "<group>"; };
 		2D94367071D26EC53B70E4C2 /* BetaMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaMeasurementTests.swift; sourceTree = "<group>"; };
 		33A05FAA16A853FC45C7644C /* OpenLARPCareerUnderstanding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPCareerUnderstanding.swift; sourceTree = "<group>"; };
 		3447BF3025FF32A58EA3A1A1 /* OpenLARPStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPStyle.swift; sourceTree = "<group>"; };
@@ -219,6 +226,7 @@
 		E5ABD359BEDC7955E7EBC902 /* OpenLARPInternal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenLARPInternal.entitlements; sourceTree = "<group>"; };
 		E9CBA4417DBE205BCE9BEEAC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		F5123580C0ECE13B609D002C /* OpenLARPProofImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPProofImageProcessor.swift; sourceTree = "<group>"; };
+		FECB05C53B4EA09E690913C9 /* MissionBriefReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionBriefReviewView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -253,6 +261,7 @@
 				9B52AD535F1C64725BDCE83B /* FirebaseCareerGraphSyncReadinessTests.swift */,
 				76674E2BEC070DD5982B2ED3 /* LocalDataExportTests.swift */,
 				18B1E1EEF319484CA5E02687 /* LocalDataOwnershipTests.swift */,
+				26DE0D983438B1F1ACCA6B39 /* MissionBriefTests.swift */,
 				521FE05E7476E00B73EA58E0 /* ProofAttachmentStoreLifecycleTests.swift */,
 				21F481061931A10C3D19445D /* ProofDraftStoreTests.swift */,
 				59A0C23BA0AE98C39F37329B /* ProofImageProcessorTests.swift */,
@@ -289,6 +298,7 @@
 				C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */,
 				D946DF64F47A7C90479E8173 /* CookedShareCardView.swift */,
 				716619FBED12385EF5E1A435 /* GuidedCareerOnboardingView.swift */,
+				FECB05C53B4EA09E690913C9 /* MissionBriefReviewView.swift */,
 				110A29E9E3702EAF1A89FDDE /* OnboardingAccountEntryView.swift */,
 				12DC112A777D32FCE8C8EE04 /* ProfileView.swift */,
 				B39EFD52A49CEC4F79A489C4 /* ProgressTabView.swift */,
@@ -359,6 +369,7 @@
 				A76AAB73F44A0319F7F555C8 /* OpenLARPFirebaseCallableAIWorkflowService.swift */,
 				A8BAC50140AD73A37E2DA647 /* OpenLARPLocalDataExport.swift */,
 				3F1474B47727BE0F91D30140 /* OpenLARPLocalDataStore.swift */,
+				0EA4CEECCF74DA62E00394BD /* OpenLARPMissionBrief.swift */,
 				DF8AF0E1D740ACDC741F585D /* OpenLARPModels.swift */,
 				A9B5407A901AC7364EF7007F /* OpenLARPPersistence.swift */,
 				F5123580C0ECE13B609D002C /* OpenLARPProofImageProcessor.swift */,
@@ -593,6 +604,7 @@
 				2E0F095308879A0FF0E744BC /* FirebaseCareerGraphSyncReadinessTests.swift in Sources */,
 				B499952BF2656E87AE7DBA46 /* LocalDataExportTests.swift in Sources */,
 				24267A55433A10A71B29D407 /* LocalDataOwnershipTests.swift in Sources */,
+				58A2BAAC6EC44EBEDA0F1961 /* MissionBriefTests.swift in Sources */,
 				C309599C63C1F3805EFEABA1 /* ProofAttachmentStoreLifecycleTests.swift in Sources */,
 				1BC215AE731B9243BD4A118A /* ProofDraftStoreTests.swift in Sources */,
 				CCF7797F0EAF9F54D2133CFB /* ProofImageProcessorTests.swift in Sources */,
@@ -615,6 +627,7 @@
 				5AFEC180419B34F7CF040EB7 /* CompletedQuestDetailView.swift in Sources */,
 				80194F06EC7A0AD3A535D035 /* CookedShareCardView.swift in Sources */,
 				A41169926143AAADD2A9B105 /* GuidedCareerOnboardingView.swift in Sources */,
+				B0E86A8FF829752B042D58AE /* MissionBriefReviewView.swift in Sources */,
 				FE1152BBB61D977068A6E8D5 /* OnboardingAccountEntryView.swift in Sources */,
 				7FED685774E3A0A37BB4692A /* OpenLARPAIWorkflowContracts.swift in Sources */,
 				AA18A9FAB1582A9275FA7162 /* OpenLARPAgentFoundation.swift in Sources */,
@@ -634,6 +647,7 @@
 				BB424273A8937B30B2419351 /* OpenLARPFirebaseCallableAIWorkflowService.swift in Sources */,
 				03A63FE52BB0BE4892165D0E /* OpenLARPLocalDataExport.swift in Sources */,
 				5D3130594C03FEDD4E87E491 /* OpenLARPLocalDataStore.swift in Sources */,
+				2BD2C652D3BC8938386D7E47 /* OpenLARPMissionBrief.swift in Sources */,
 				9ED25057BE1A58BA82F7BA50 /* OpenLARPModels.swift in Sources */,
 				42E61DF100617B92FA6DF24F /* OpenLARPPersistence.swift in Sources */,
 				49FBD678F5E4C36ABB62692A /* OpenLARPProofImageProcessor.swift in Sources */,
@@ -665,6 +679,7 @@
 				B8A91DA6A6EC76569653EA37 /* CompletedQuestDetailView.swift in Sources */,
 				3CD390C93F63687423733772 /* CookedShareCardView.swift in Sources */,
 				70EF6876F14B40BB381F98BE /* GuidedCareerOnboardingView.swift in Sources */,
+				34C1CA8F370728133BA3F65C /* MissionBriefReviewView.swift in Sources */,
 				04AEAD026340AC4771EB50CD /* OnboardingAccountEntryView.swift in Sources */,
 				EEBBF6AEE3897263482F8023 /* OpenLARPAIWorkflowContracts.swift in Sources */,
 				1294B65D3295EDEE15E419A1 /* OpenLARPAgentFoundation.swift in Sources */,
@@ -684,6 +699,7 @@
 				83E006FC15FCE9E6492E8750 /* OpenLARPFirebaseCallableAIWorkflowService.swift in Sources */,
 				B7BAAD41817C1157A1B5569B /* OpenLARPLocalDataExport.swift in Sources */,
 				F7C9AA391A7E9FC947B0B352 /* OpenLARPLocalDataStore.swift in Sources */,
+				8E3F6BE3473240DB6D9237A5 /* OpenLARPMissionBrief.swift in Sources */,
 				F03FDE7E904C382F81746339 /* OpenLARPModels.swift in Sources */,
 				DAF1FF17EB7C0C81B86C0458 /* OpenLARPPersistence.swift in Sources */,
 				4ED2F5F628073BFDED20EA5B /* OpenLARPProofImageProcessor.swift in Sources */,

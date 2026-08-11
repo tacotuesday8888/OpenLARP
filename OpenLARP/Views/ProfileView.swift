@@ -57,7 +57,9 @@ struct ProfileView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This clears the local diagnostic and questline so you can set a new target.")
+            Text(store.state.needsMissionApproval
+                ? "This replaces the unapproved mission and readiness baseline so you can set a new target."
+                : "This clears the local diagnostic and questline so you can set a new target.")
         }
         .confirmationDialog(
             "Erase all on-device data?",
@@ -937,7 +939,11 @@ struct ProfileView: View {
     private var activeGoalCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(feature: .profile, eyebrow: "Goal", title: "Active goal")
+                SectionHeader(
+                    feature: .profile,
+                    eyebrow: "Goal",
+                    title: store.state.needsMissionApproval ? "Awaiting mission approval" : "Active goal"
+                )
 
                 if let goal = store.state.goal {
                     Text(goal.targetRole)
@@ -967,6 +973,7 @@ struct ProfileView: View {
                         Label("Change goal", systemImage: "slider.horizontal.3")
                     }
                     .buttonStyle(SecondaryButtonStyle())
+                    .disabled(store.isMissionApprovalRunning || store.isGoalSetupRunning)
                 } else {
                     Text("Set a career target from Today to unlock the diagnostic, quest map, and progress baseline.")
                         .font(.body)

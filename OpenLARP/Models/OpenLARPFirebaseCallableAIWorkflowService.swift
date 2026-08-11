@@ -225,6 +225,48 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
         )
     }
 
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        let response: FirebaseCallableAIWorkflowResponse<FirebaseCallableMissionBriefResult> = try await callWorkflow(
+            kind: .missionBrief,
+            requestedAt: request.requestedAt,
+            privacy: .localDefault,
+            payload: FirebaseCallableMissionBriefPayload(request: request)
+        )
+        let run = try response.workflowRun(expectedKind: .missionBrief, requestedAt: request.requestedAt)
+        let expectedFacts = request.confirmedFacts.map(FirebaseCallableMissionFactDTO.init)
+        guard response.result.targetOutcome == request.goal.targetRole,
+              response.result.confirmedCurrentState == expectedFacts,
+              response.result.constraints == request.goal.constraints.trimmingCharacters(in: .whitespacesAndNewlines),
+              response.result.ethicalBoundaries == request.requiredEthicalBoundaries,
+              response.result.dailyCommitmentMinutes == request.goal.dailyCommitmentMinutes else {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch(
+                "Firebase callable mission response changed user-confirmed mission inputs."
+            )
+        }
+        let mission = try CareerMissionBrief.proposal(
+            targetOutcome: response.result.targetOutcome,
+            confirmedCurrentState: request.confirmedFacts,
+            constraints: response.result.constraints,
+            mainReadinessGaps: response.result.mainReadinessGaps,
+            ethicalBoundaries: response.result.ethicalBoundaries,
+            firstMilestone: response.result.firstMilestone,
+            dailyCommitmentMinutes: response.result.dailyCommitmentMinutes,
+            sprint: response.result.sprint,
+            providerRoute: run.providerRoute,
+            usedFallback: run.usedFallback,
+            generatedAt: run.completedAt
+        )
+        let result = V0MissionBriefResponse(run: run, mission: mission)
+        do {
+            try result.validate(for: request)
+        } catch {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch(
+                "Firebase callable mission response did not match the approved career understanding."
+            )
+        }
+        return result
+    }
+
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
         let response: FirebaseCallableAIWorkflowResponse<FirebaseCallableQuestPlanResult> = try await callWorkflow(
             kind: .questPlan,
@@ -427,6 +469,17 @@ private struct FirebaseCallableAdaptiveCareerIntakeResult: Decodable {
     var hypotheses: [V0AdaptiveCareerHypothesis]
 }
 
+private struct FirebaseCallableMissionBriefResult: Decodable {
+    var targetOutcome: String
+    var confirmedCurrentState: [FirebaseCallableMissionFactDTO]
+    var constraints: String
+    var mainReadinessGaps: [String]
+    var ethicalBoundaries: [String]
+    var firstMilestone: String
+    var dailyCommitmentMinutes: Int
+    var sprint: CareerMissionSprint
+}
+
 private struct FirebaseCallableAdaptiveCareerIntakePayload: Codable, Equatable, Sendable {
     var confirmedFacts: [FirebaseCallableAdaptiveFactDTO]
     var pendingHypotheses: [FirebaseCallableAdaptiveHypothesisDTO]
@@ -491,15 +544,73 @@ private struct FirebaseCallableDiagnosticPayload: Codable, Equatable, Sendable {
     }
 }
 
+private struct FirebaseCallableMissionBriefPayload: Codable, Equatable, Sendable {
+    var goal: FirebaseCallableCareerGoalDTO
+    var confirmedFacts: [FirebaseCallableMissionFactDTO]
+    var diagnostic: CookedDiagnostic
+    var requiredEthicalBoundaries: [String]
+    var requestedAt: Date
+
+    init(request: V0MissionBriefRequest) {
+        goal = FirebaseCallableCareerGoalDTO(goal: request.goal)
+        confirmedFacts = request.confirmedFacts.map(FirebaseCallableMissionFactDTO.init)
+        diagnostic = request.diagnostic
+        requiredEthicalBoundaries = request.requiredEthicalBoundaries
+        requestedAt = request.requestedAt
+    }
+}
+
+private struct FirebaseCallableMissionFactDTO: Codable, Equatable, Sendable {
+    var id: UUID
+    var kind: CareerFactKind
+    var value: String
+    var source: CareerFactSource
+    var confirmationState: CareerFactConfirmationState
+    var lastUpdatedAt: Date
+
+    init(fact: CareerFactRecord) {
+        id = fact.id
+        kind = fact.kind
+        value = fact.value
+        source = fact.provenance.source
+        confirmationState = fact.confirmationState
+        lastUpdatedAt = fact.lastUpdatedAt
+    }
+}
+
 private struct FirebaseCallableQuestPlanPayload: Codable, Equatable, Sendable {
     var goal: FirebaseCallableCareerGoalDTO
     var diagnostic: CookedDiagnostic
+    var mission: FirebaseCallableQuestMissionDTO?
     var requestedAt: Date
 
     init(request: V0QuestPlanRequest) {
         goal = FirebaseCallableCareerGoalDTO(goal: request.goal)
         diagnostic = request.diagnostic
+        mission = request.mission.map(FirebaseCallableQuestMissionDTO.init)
         requestedAt = request.requestedAt
+    }
+}
+
+private struct FirebaseCallableQuestMissionDTO: Codable, Equatable, Sendable {
+    var targetOutcome: String
+    var confirmedCurrentState: [FirebaseCallableMissionFactDTO]
+    var constraints: String
+    var mainReadinessGaps: [String]
+    var ethicalBoundaries: [String]
+    var firstMilestone: String
+    var dailyCommitmentMinutes: Int
+    var sprint: CareerMissionSprint
+
+    init(mission: CareerMissionBrief) {
+        targetOutcome = mission.targetOutcome
+        confirmedCurrentState = mission.confirmedCurrentState.map(FirebaseCallableMissionFactDTO.init)
+        constraints = mission.constraints
+        mainReadinessGaps = mission.mainReadinessGaps
+        ethicalBoundaries = mission.ethicalBoundaries
+        firstMilestone = mission.firstMilestone
+        dailyCommitmentMinutes = mission.dailyCommitmentMinutes
+        sprint = mission.sprint
     }
 }
 

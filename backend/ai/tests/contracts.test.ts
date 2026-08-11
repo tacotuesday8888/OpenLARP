@@ -15,7 +15,10 @@ import {
   diagnosticResponseSchema,
   executionMetadataSchema,
   implementedWorkflowKinds,
+  missionBriefPayloadSchema,
+  missionBriefResponseSchema,
   opportunityRankingPayloadSchema,
+  questPlanPayloadSchema,
   requestEnvelopeSchema,
   safeShareCardTextPayloadSchema,
   safetyRulesSchema
@@ -25,6 +28,7 @@ import {
   makeAgentScan,
   makeCareerBrief,
   makeDiagnostic,
+  makeQuestPlan,
   makeSafeShareCardText,
   rankOpportunities
 } from "../src/mockWorkflows.js";
@@ -118,6 +122,72 @@ const workflowContext = {
   },
   allowsLongTermMemoryWrite: true
 };
+
+const confirmedMissionFacts = [{
+  id: "22222222-2222-2222-2222-222222222222",
+  kind: "experience",
+  value: "One shipped class app",
+  source: "userEntry",
+  confirmationState: "confirmed",
+  lastUpdatedAt: "2026-06-18T00:00:00.000Z"
+}];
+
+describe("mission brief contracts", () => {
+  it("accepts a grounded two-chapter mission proposal", () => {
+    const payload = missionBriefPayloadSchema.parse({
+      goal: safeEnvelope.payload.goal,
+      confirmedFacts: confirmedMissionFacts,
+      diagnostic: {
+        score: 55,
+        label: "Recoverable",
+        mainGap: "Role-specific proof",
+        strongestSignal: "One shipped class app",
+        fastestFix: "Create one focused walkthrough",
+        readinessBaseline: 45,
+        strongestSignals: ["One shipped class app"],
+        readinessGaps: ["Role-specific proof"],
+        missingInformation: [],
+        uncertaintyExplanation: "This is directional because hiring context is incomplete.",
+        firstAction: "Outline one project walkthrough"
+      },
+      requiredEthicalBoundaries: [
+        "Use only truthful, defensible career claims.",
+        "The user approves every external action."
+      ]
+    });
+
+    const response = missionBriefResponseSchema.parse({
+      targetOutcome: payload.goal.targetRole,
+      confirmedCurrentState: confirmedMissionFacts,
+      constraints: payload.goal.constraints,
+      mainReadinessGaps: ["Role-specific proof"],
+      ethicalBoundaries: payload.requiredEthicalBoundaries,
+      firstMilestone: "Create one focused walkthrough",
+      dailyCommitmentMinutes: payload.goal.dailyCommitmentMinutes,
+      sprint: {
+        dayCount: 14,
+        chapterCount: 2,
+        summary: "Build truthful proof first, then turn it into repeatable job-search action."
+      }
+    });
+
+    expect(response.sprint).toMatchObject({ dayCount: 14, chapterCount: 2 });
+    expect(response.confirmedCurrentState).toEqual(confirmedMissionFacts);
+  });
+
+  it("rejects a mission that silently changes the sprint shape", () => {
+    expect(() => missionBriefResponseSchema.parse({
+      targetOutcome: "iOS Engineer",
+      confirmedCurrentState: confirmedMissionFacts,
+      constraints: "",
+      mainReadinessGaps: ["Proof gap"],
+      ethicalBoundaries: ["Use only truthful claims."],
+      firstMilestone: "Create one artifact",
+      dailyCommitmentMinutes: 20,
+      sprint: { dayCount: 7, chapterCount: 1, summary: "One week." }
+    })).toThrow();
+  });
+});
 
 const aiProductOpportunity = {
   type: "Project",
@@ -258,6 +328,7 @@ describe("OpenLARP AI backend contracts", () => {
     expect(implementedWorkflowKinds).toEqual([
       "adaptiveCareerIntake",
       "cookedDiagnostic",
+      "missionBrief",
       "questPlan",
       "proofQualityCheck",
       "progressSummary",
@@ -266,6 +337,36 @@ describe("OpenLARP AI backend contracts", () => {
       "opportunityRanking",
       "agentScan"
     ]);
+  });
+
+  it("builds a complete seven-day first chapter within the approved daily commitment", () => {
+    const payload = questPlanPayloadSchema.parse({
+      goal: {
+        currentStatus: "student",
+        targetRole: "iOS engineer",
+        timeline: "12 weeks",
+        background: "One class app",
+        existingProof: "A local demo",
+        confidence: 3,
+        biggestBlocker: "Thin proof",
+        constraints: "Weeknights only",
+        dailyCommitmentMinutes: 15
+      },
+      diagnostic: {
+        score: 62,
+        label: "Recoverable",
+        mainGap: "Needs proof",
+        strongestSignal: "One class app",
+        fastestFix: "Create one walkthrough",
+        readinessBaseline: 48
+      }
+    });
+
+    const result = makeQuestPlan(payload);
+
+    expect(result.quests).toHaveLength(7);
+    expect(result.quests.map((quest) => quest.day)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(result.quests.every((quest) => quest.timeEstimateMinutes <= 15)).toBe(true);
   });
 
   it("bounds adaptive intake around confirmed facts, hypotheses, and unknowns", () => {

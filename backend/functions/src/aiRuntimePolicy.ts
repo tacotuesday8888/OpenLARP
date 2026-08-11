@@ -5,6 +5,7 @@ import type { WorkflowKind } from "../../ai/src/contracts.js";
 const LIVE_WORKFLOW_KINDS = [
   "adaptiveCareerIntake",
   "cookedDiagnostic",
+  "missionBrief",
   "questPlan",
   "proofQualityCheck",
   "progressSummary"
@@ -28,6 +29,7 @@ const runtimePolicySchema = z.object({
   workflows: z.object({
     adaptiveCareerIntake: z.boolean(),
     cookedDiagnostic: z.boolean(),
+    missionBrief: z.boolean().default(false),
     questPlan: z.boolean(),
     proofQualityCheck: z.boolean(),
     progressSummary: z.boolean()

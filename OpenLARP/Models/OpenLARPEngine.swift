@@ -1,6 +1,84 @@
 import Foundation
 
 enum OpenLARPEngine {
+    static func prepareMission(
+        _ goal: CareerGoal,
+        understanding: CareerUnderstanding,
+        diagnostic: CookedDiagnostic,
+        mission: CareerMissionBrief,
+        now: Date = Date()
+    ) throws -> OpenLARPState {
+        guard understanding.reviewState == .approved,
+              understanding.pendingHypotheses.isEmpty else {
+            throw OpenLARPError.careerUnderstandingNeedsReview
+        }
+        try mission.validate()
+        guard mission.reviewState == .awaitingApproval,
+              mission.targetOutcome == goal.targetRole,
+              mission.dailyCommitmentMinutes == goal.dailyCommitmentMinutes,
+              mission.confirmedCurrentState == understanding.confirmedFacts else {
+            throw OpenLARPError.invalidMissionBrief
+        }
+
+        let profile = AgentBriefFactory.makeProfile(for: goal, now: now)
+        let targetRole = AgentBriefFactory.makeTargetRole(for: goal, now: now)
+        var progress = ProgressState.empty
+        progress.readiness = initialReadiness(from: diagnostic)
+        progress.badges = [.firstGoal]
+        progress.readinessHistory = [
+            ReadinessSnapshot(
+                source: .initialBaseline,
+                reason: "Initial Am I Cooked baseline",
+                metrics: progress.readiness,
+                createdAt: now
+            )
+        ]
+
+        return OpenLARPState(
+            userProfile: profile,
+            goal: goal,
+            careerUnderstanding: understanding,
+            targetRoles: [targetRole],
+            diagnostic: diagnostic,
+            mission: mission,
+            plan: [],
+            progress: progress,
+            updatedAt: now,
+            subscriptionState: .notStarted()
+        )
+    }
+
+    static func approveMission(
+        in state: OpenLARPState,
+        mission: CareerMissionBrief,
+        plan: [Quest],
+        now: Date = Date()
+    ) throws -> OpenLARPState {
+        guard let currentMission = state.mission,
+              currentMission.reviewState == .awaitingApproval,
+              mission.id == currentMission.id,
+              mission.reviewState == .approved,
+              mission.targetOutcome == currentMission.targetOutcome,
+              mission.confirmedCurrentState == currentMission.confirmedCurrentState,
+              mission.ethicalBoundaries == currentMission.ethicalBoundaries,
+              mission.providerRoute == currentMission.providerRoute,
+              mission.generatedAt == currentMission.generatedAt,
+              let validatedPlan = validatedInitialPlan(plan) else {
+            throw OpenLARPError.invalidMissionBrief
+        }
+        try mission.validate()
+
+        var approved = state
+        approved.mission = mission
+        approved.goal?.constraints = mission.constraints
+        approved.goal?.dailyCommitmentMinutes = mission.dailyCommitmentMinutes
+        approved.userProfile?.minutesPerDay = mission.dailyCommitmentMinutes
+        approved.userProfile?.updatedAt = now
+        approved.plan = validatedPlan
+        approved.updatedAt = now
+        return approved
+    }
+
     static func confirmGoal(_ goal: CareerGoal, now: Date = Date()) -> OpenLARPState {
         let diagnostic = makeDiagnostic(for: goal)
         let plan = makeSevenDayPlan(for: goal)
@@ -502,12 +580,15 @@ enum OpenLARPEngine {
     }
 
     private static func makeSevenDayPlan(for goal: CareerGoal) -> [Quest] {
-        [
+        let duration: (Int) -> Int = { suggestedMinutes in
+            max(5, min(suggestedMinutes, goal.dailyCommitmentMinutes))
+        }
+        return [
             Quest(
                 day: 1,
                 title: "Map 3 real requirements for \(goal.targetRole)",
                 purpose: "You need proof that matches what the role actually asks for, not a vague interest list.",
-                timeEstimateMinutes: 25,
+                timeEstimateMinutes: duration(25),
                 difficulty: "Starter",
                 gap: .proofStrength,
                 proofRequired: "Paste your requirement notes or link to the document.",
@@ -523,7 +604,7 @@ enum OpenLARPEngine {
                 day: 2,
                 title: "Create one tiny proof artifact",
                 purpose: "A small real artifact beats a big unsupported claim.",
-                timeEstimateMinutes: 30,
+                timeEstimateMinutes: duration(30),
                 difficulty: "Starter",
                 gap: .proofStrength,
                 proofRequired: "Add a link, screenshot, or notes showing what you made.",
@@ -539,7 +620,7 @@ enum OpenLARPEngine {
                 day: 3,
                 title: "Rewrite one profile bullet from real proof",
                 purpose: "Better wording is allowed. Inventing facts is not.",
-                timeEstimateMinutes: 20,
+                timeEstimateMinutes: duration(20),
                 difficulty: "Balanced",
                 gap: .confidence,
                 proofRequired: "Paste the before and after bullet.",
@@ -555,7 +636,7 @@ enum OpenLARPEngine {
                 day: 4,
                 title: "Explain your proof in five bullets",
                 purpose: "If you cannot explain the work, it will not help in interviews.",
-                timeEstimateMinutes: 25,
+                timeEstimateMinutes: duration(25),
                 difficulty: "Balanced",
                 gap: .confidence,
                 proofRequired: "Paste the five bullets.",
@@ -573,7 +654,7 @@ enum OpenLARPEngine {
                 day: 5,
                 title: "Find one low-friction networking target",
                 purpose: "Networking gets easier when the ask is specific and tied to real work.",
-                timeEstimateMinutes: 20,
+                timeEstimateMinutes: duration(20),
                 difficulty: "Spicy",
                 gap: .networking,
                 proofRequired: "Paste the person's role and why they are relevant.",
@@ -589,7 +670,7 @@ enum OpenLARPEngine {
                 day: 6,
                 title: "Send or save one honest outreach draft",
                 purpose: "The goal is a real, low-pressure career action, not fake confidence.",
-                timeEstimateMinutes: 20,
+                timeEstimateMinutes: duration(20),
                 difficulty: "Spicy",
                 gap: .networking,
                 proofRequired: "Paste the sent message or saved draft.",
@@ -605,7 +686,7 @@ enum OpenLARPEngine {
                 day: 7,
                 title: "Run the weekly less-cooked check",
                 purpose: "Progress is the point. The app should show what actually changed.",
-                timeEstimateMinutes: 15,
+                timeEstimateMinutes: duration(15),
                 difficulty: "Review",
                 gap: .consistency,
                 proofRequired: "Write what proof improved and what still blocks you.",

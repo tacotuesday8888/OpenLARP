@@ -4,6 +4,8 @@ import {
   adaptiveCareerIntakeResponseSchema,
   diagnosticPayloadSchema,
   diagnosticResponseSchema,
+  missionBriefPayloadSchema,
+  missionBriefResponseSchema,
   executionMetadataSchema,
   progressSummaryPayloadSchema,
   progressSummaryResponseSchema,
@@ -63,6 +65,7 @@ function livePayloadSchema(kind: string): z.ZodTypeAny | null {
   switch (kind) {
     case "adaptiveCareerIntake": return adaptiveCareerIntakePayloadSchema;
     case "cookedDiagnostic": return diagnosticPayloadSchema;
+    case "missionBrief": return missionBriefPayloadSchema;
     case "questPlan": return questPlanPayloadSchema;
     case "proofQualityCheck": return proofQualityPayloadSchema;
     case "progressSummary": return progressSummaryPayloadSchema;
@@ -74,6 +77,7 @@ function liveResultSchema(kind: string): z.ZodTypeAny | null {
   switch (kind) {
     case "adaptiveCareerIntake": return adaptiveCareerIntakeResponseSchema;
     case "cookedDiagnostic": return diagnosticResponseSchema;
+    case "missionBrief": return missionBriefResponseSchema;
     case "questPlan": return questPlanResponseSchema;
     case "proofQualityCheck": return proofQualityResponseSchema;
     case "progressSummary": return progressSummaryResponseSchema;

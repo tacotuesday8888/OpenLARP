@@ -2962,6 +2962,7 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(V0AIWorkflowKind.allCases, [
             .adaptiveCareerIntake,
             .cookedDiagnostic,
+            .missionBrief,
             .questPlan,
             .proofQualityCheck,
             .progressSummary
@@ -4413,6 +4414,10 @@ private struct ThrowingV0AIWorkflowService: V0AIWorkflowServicing {
         throw TestWorkflowError.expectedFailure
     }
 
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        throw TestWorkflowError.expectedFailure
+    }
+
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
         throw TestWorkflowError.expectedFailure
     }
@@ -4434,6 +4439,10 @@ private struct SensitiveThrowingV0AIWorkflowService: V0AIWorkflowServicing {
     }
 
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
+        throw SensitiveWorkflowError()
+    }
+
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
         throw SensitiveWorkflowError()
     }
 
@@ -4483,6 +4492,10 @@ private struct InvalidPlanV0AIWorkflowService: V0AIWorkflowServicing {
         )
     }
 
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        try await LocalMockV0AIWorkflowService().generateMissionBrief(request)
+    }
+
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
         V0QuestPlanResponse(
             run: V0AIWorkflowRun(
@@ -4516,6 +4529,10 @@ private final class StateChangingProofReviewService: V0AIWorkflowServicing {
         try await LocalMockV0AIWorkflowService().generateDiagnostic(request)
     }
 
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        try await LocalMockV0AIWorkflowService().generateMissionBrief(request)
+    }
+
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
         try await LocalMockV0AIWorkflowService().generateQuestPlan(request)
     }
@@ -4540,6 +4557,10 @@ private struct UnsupportedInspectionProofReviewService: V0AIWorkflowServicing {
 
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         try await LocalMockV0AIWorkflowService().generateDiagnostic(request)
+    }
+
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        try await LocalMockV0AIWorkflowService().generateMissionBrief(request)
     }
 
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {

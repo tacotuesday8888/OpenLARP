@@ -5,6 +5,8 @@ import {
   diagnosticPayloadSchema,
   diagnosticResponseSchema,
   executionMetadataSchema,
+  missionBriefPayloadSchema,
+  missionBriefResponseSchema,
   progressSummaryPayloadSchema,
   progressSummaryResponseSchema,
   proofQualityPayloadSchema,
@@ -23,6 +25,7 @@ import {
   checkProofQuality,
   makeAdaptiveCareerIntake,
   makeDiagnostic,
+  makeMissionBrief,
   makeQuestPlan,
   summarizeProgress
 } from "./mockWorkflows.js";
@@ -143,6 +146,8 @@ function deterministicLiveWorkflow(envelope: RequestEnvelope): unknown {
       );
     case "cookedDiagnostic":
       return diagnosticResponseSchema.parse(makeDiagnostic(diagnosticPayloadSchema.parse(envelope.payload)));
+    case "missionBrief":
+      return missionBriefResponseSchema.parse(makeMissionBrief(missionBriefPayloadSchema.parse(envelope.payload)));
     case "questPlan":
       return questPlanResponseSchema.parse(makeQuestPlan(questPlanPayloadSchema.parse(envelope.payload)));
     case "proofQualityCheck":
@@ -158,6 +163,7 @@ function responseSchemaForLiveWorkflow(kind: RequestEnvelope["run"]["kind"]): z.
   switch (kind) {
     case "adaptiveCareerIntake": return adaptiveCareerIntakeResponseSchema;
     case "cookedDiagnostic": return diagnosticResponseSchema;
+    case "missionBrief": return missionBriefResponseSchema;
     case "questPlan": return questPlanResponseSchema;
     case "proofQualityCheck": return proofQualityResponseSchema;
     case "progressSummary": return progressSummaryResponseSchema;

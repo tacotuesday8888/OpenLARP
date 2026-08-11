@@ -3,6 +3,7 @@ import type {
   AgentScanPayload,
   CareerBriefPayload,
   DiagnosticPayload,
+  MissionBriefPayload,
   OpportunityRankingPayload,
   ProofQualityPayload,
   ProgressSummaryPayload,
@@ -75,15 +76,37 @@ export function makeDiagnostic(payload: DiagnosticPayload) {
   return response;
 }
 
+export function makeMissionBrief(payload: MissionBriefPayload) {
+  const response = {
+    targetOutcome: payload.goal.targetRole,
+    confirmedCurrentState: payload.confirmedFacts,
+    constraints: payload.goal.constraints,
+    mainReadinessGaps: payload.diagnostic.readinessGaps,
+    ethicalBoundaries: payload.requiredEthicalBoundaries,
+    firstMilestone: payload.diagnostic.firstAction,
+    dailyCommitmentMinutes: payload.goal.dailyCommitmentMinutes,
+    sprint: {
+      dayCount: 14 as const,
+      chapterCount: 2 as const,
+      summary: "Chapter one builds honest career proof. " +
+        "Chapter two adapts the next seven actions using what the first week actually produced."
+    }
+  };
+  assertSafeGeneratedText(JSON.stringify(response));
+  return response;
+}
+
 export function makeQuestPlan(payload: QuestPlanPayload) {
   const targetRole = payload.goal.targetRole;
+  const dailyCommitmentMinutes = payload.mission?.dailyCommitmentMinutes ?? payload.goal.dailyCommitmentMinutes;
+  const duration = (suggestedMinutes: number) => Math.max(5, Math.min(suggestedMinutes, dailyCommitmentMinutes));
   return {
     quests: [
       {
         day: 1,
         title: `Map 3 requirements for ${targetRole}`,
         purpose: "Turn vague career anxiety into a concrete proof target.",
-        timeEstimateMinutes: 25,
+        timeEstimateMinutes: duration(25),
         difficulty: "Starter",
         gap: "proofStrength",
         proofRequired: "Paste the requirement notes or link to the document.",
@@ -98,7 +121,7 @@ export function makeQuestPlan(payload: QuestPlanPayload) {
         day: 2,
         title: "Create one tiny proof artifact",
         purpose: "A small real artifact is more useful than a broad unsupported claim.",
-        timeEstimateMinutes: 30,
+        timeEstimateMinutes: duration(30),
         difficulty: "Starter",
         gap: "skillProof",
         proofRequired: "Add a link, screenshot, or notes showing what you made.",
@@ -113,7 +136,7 @@ export function makeQuestPlan(payload: QuestPlanPayload) {
         day: 3,
         title: "Turn proof into one honest profile bullet",
         purpose: "Better wording should clarify real work, not invent facts.",
-        timeEstimateMinutes: 20,
+        timeEstimateMinutes: duration(20),
         difficulty: "Balanced",
         gap: "confidence",
         proofRequired: "Paste the before and after bullet.",
@@ -122,6 +145,66 @@ export function makeQuestPlan(payload: QuestPlanPayload) {
           "Choose one true thing you have done.",
           "Write the plain version.",
           "Rewrite it with impact while keeping every claim defensible."
+        ]
+      },
+      {
+        day: 4,
+        title: "Explain your proof in five bullets",
+        purpose: "Clear explanations make real work usable in interviews without exaggerating it.",
+        timeEstimateMinutes: duration(25),
+        difficulty: "Balanced",
+        gap: "confidence",
+        proofRequired: "Paste the five-bullet explanation.",
+        xpReward: 110,
+        steps: [
+          "Describe the problem and your action.",
+          "Name one tradeoff and the real result.",
+          "Name what you would improve next."
+        ]
+      },
+      {
+        day: 5,
+        title: "Choose one relevant networking target",
+        purpose: "A specific, evidence-backed question makes outreach lower pressure and more useful.",
+        timeEstimateMinutes: duration(20),
+        difficulty: "Spicy",
+        gap: "networkStrength",
+        proofRequired: "Record the person's role and why their perspective is relevant.",
+        xpReward: 120,
+        steps: [
+          "Find one person whose role is close to your target.",
+          "Write why their path is relevant.",
+          "Draft one honest question tied to your proof."
+        ]
+      },
+      {
+        day: 6,
+        title: "Send or save one honest outreach draft",
+        purpose: "The action stays user-controlled while turning research into a concrete next move.",
+        timeEstimateMinutes: duration(20),
+        difficulty: "Spicy",
+        gap: "networkStrength",
+        proofRequired: "Paste the sent message or the final saved draft.",
+        xpReward: 140,
+        steps: [
+          "Use the target and question from day five.",
+          "Write a short message with one clear ask.",
+          "Choose whether to send it or keep the final draft."
+        ]
+      },
+      {
+        day: 7,
+        title: "Run the chapter-one evidence review",
+        purpose: "The next chapter should adapt to what this week actually produced.",
+        timeEstimateMinutes: duration(15),
+        difficulty: "Review",
+        gap: "consistency",
+        proofRequired: "Write what proof improved and what still blocks the target outcome.",
+        xpReward: 160,
+        steps: [
+          "Review the six completed actions.",
+          "Name the strongest honest proof created.",
+          "Choose the next readiness gap to shrink."
         ]
       }
     ]

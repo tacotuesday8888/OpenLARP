@@ -240,7 +240,9 @@ Flow:
 3. User provides resume/profile/project text if available.
 4. App identifies gaps.
 5. App gives a blunt but constructive diagnosis.
-6. App creates the first mission.
+6. App proposes an editable 14-day, two-chapter mission using only confirmed facts and clearly labeled diagnostic advice.
+7. User reviews and explicitly approves the mission; target facts and ethical boundaries cannot be silently rewritten.
+8. App creates the first seven-day chapter within the approved daily commitment.
 
 Output:
 
@@ -251,6 +253,7 @@ Output:
 - Backup targets.
 - First 7 days.
 - First daily quest.
+- Explicit mission approval state.
 
 Tone:
 

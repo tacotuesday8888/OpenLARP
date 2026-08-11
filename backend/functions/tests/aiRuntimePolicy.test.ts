@@ -14,6 +14,7 @@ function validPolicy() {
     workflows: {
       adaptiveCareerIntake: true,
       cookedDiagnostic: true,
+      missionBrief: true,
       questPlan: true,
       proofQualityCheck: false,
       progressSummary: true
@@ -36,6 +37,10 @@ describe("createCachedAIRuntimePolicyReader", () => {
     await expect(reader.read("proofQualityCheck", now)).resolves.toMatchObject({
       enabled: false,
       fallbackReason: "policy"
+    });
+    await expect(reader.read("missionBrief", now)).resolves.toMatchObject({
+      enabled: true,
+      policyRevision: "beta-2026-08-10"
     });
   });
 

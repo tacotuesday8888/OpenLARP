@@ -261,6 +261,110 @@ final class AIBackendContractTests: XCTestCase {
     }
 
     @MainActor
+    func testFirebaseCallableAIWorkflowServiceKeepsMissionGroundedInConfirmedFacts() async throws {
+        let fact = CareerFactRecord(
+            id: UUID(uuidString: "55555555-5555-4555-8555-555555555555")!,
+            kind: .experience,
+            value: "One shipped class project",
+            provenance: CareerFactProvenance(
+                source: .userEntry,
+                sourceIdentifier: nil,
+                recordedAt: sampleDate
+            ),
+            confirmationState: .confirmed,
+            lastUpdatedAt: sampleDate
+        )
+        let understanding = CareerUnderstanding(
+            facts: [fact],
+            unknowns: [],
+            reviewState: .approved,
+            reviewedAt: sampleDate,
+            approvedAt: sampleDate
+        )
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "missionBrief",
+            result: [
+                "targetOutcome": sampleGoal.targetRole,
+                "confirmedCurrentState": [[
+                    "id": fact.id.uuidString,
+                    "kind": fact.kind.rawValue,
+                    "value": fact.value,
+                    "source": fact.provenance.source.rawValue,
+                    "confirmationState": fact.confirmationState.rawValue,
+                    "lastUpdatedAt": "2026-06-18T10:00:00Z"
+                ]],
+                "constraints": sampleGoal.constraints,
+                "mainReadinessGaps": ["Needs stronger role-specific proof"],
+                "ethicalBoundaries": CareerMissionBrief.requiredEthicalBoundaries,
+                "firstMilestone": "Publish one truthful project walkthrough",
+                "dailyCommitmentMinutes": sampleGoal.dailyCommitmentMinutes,
+                "sprint": [
+                    "dayCount": 14,
+                    "chapterCount": 2,
+                    "summary": "Chapter one builds proof; chapter two adapts from the first week's evidence."
+                ]
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+        let request = try V0MissionBriefRequest(
+            goal: sampleGoal,
+            understanding: understanding,
+            diagnostic: sampleDiagnostic,
+            requestedAt: sampleDate
+        )
+
+        let response = try await service.generateMissionBrief(request)
+
+        XCTAssertEqual(response.run.kind, .missionBrief)
+        XCTAssertEqual(response.mission.reviewState, .awaitingApproval)
+        XCTAssertEqual(response.mission.confirmedCurrentState, [fact])
+        XCTAssertEqual(response.mission.ethicalBoundaries, CareerMissionBrief.requiredEthicalBoundaries)
+        let payloadJSON = try encodedJSONObjectString(invoker.calls[0].payload)
+        XCTAssertTrue(payloadJSON.contains(#""kind" : "missionBrief""#))
+        XCTAssertTrue(payloadJSON.contains(#""confirmationState" : "confirmed""#))
+        XCTAssertTrue(payloadJSON.contains(#""requiredEthicalBoundaries""#))
+        XCTAssertFalse(payloadJSON.contains("sourceIdentifier"))
+    }
+
+    @MainActor
+    func testFirebaseCallableAIWorkflowServiceRejectsMissionThatChangesConfirmedInputs() async throws {
+        let understanding = CareerIntakeDraft(goal: sampleGoal)
+            .makeApprovedUnderstanding(approvedAt: sampleDate)
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "missionBrief",
+            result: [
+                "targetOutcome": "A different role",
+                "confirmedCurrentState": [],
+                "constraints": sampleGoal.constraints,
+                "mainReadinessGaps": ["Needs proof"],
+                "ethicalBoundaries": CareerMissionBrief.requiredEthicalBoundaries,
+                "firstMilestone": "Create proof",
+                "dailyCommitmentMinutes": sampleGoal.dailyCommitmentMinutes,
+                "sprint": ["dayCount": 14, "chapterCount": 2, "summary": "Two chapters"]
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+        let request = try V0MissionBriefRequest(
+            goal: sampleGoal,
+            understanding: understanding,
+            diagnostic: sampleDiagnostic,
+            requestedAt: sampleDate
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await service.generateMissionBrief(request)
+        }
+    }
+
+    @MainActor
     func testFirebaseCallableAIWorkflowServiceMapsBackendQuestDTOsIntoAppQuests() async throws {
         let invoker = MockFirebaseCallableInvoker(response: callableResponse(
             kind: "questPlan",

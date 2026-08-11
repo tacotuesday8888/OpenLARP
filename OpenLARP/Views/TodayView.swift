@@ -14,7 +14,9 @@ struct TodayView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if store.state.needsGoalSetup {
+                if store.state.needsMissionApproval, let mission = store.state.mission {
+                    MissionBriefReviewView(store: store, mission: mission)
+                } else if store.state.needsCareerIntake {
                     GuidedCareerOnboardingView(store: store) { content in
                         pendingDiagnosticResult = content
                     }
@@ -50,7 +52,9 @@ struct TodayView: View {
                 privateShareContent: CookedShareCardContent(state: store.state),
                 detailedShareContent: CookedShareCardContent(state: store.state, includeDetails: true),
                 startQuest: {
-                    store.startCurrentQuest()
+                    if !store.state.needsMissionApproval {
+                        store.startCurrentQuest()
+                    }
                 },
                 adjustGoal: {
                     store.resetGoal()
@@ -796,12 +800,42 @@ private struct DiagnosticResultBridgeView: View {
                                     color: .openLARPYellow
                                 )
                             }
+
+                            DisclosureGroup("Full readiness breakdown") {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    diagnosticList(
+                                        title: "Strongest signals",
+                                        values: content.strongestSignals,
+                                        systemImage: "checkmark.circle"
+                                    )
+                                    diagnosticList(
+                                        title: "Readiness gaps",
+                                        values: content.readinessGaps,
+                                        systemImage: "scope"
+                                    )
+                                    if !content.missingInformation.isEmpty {
+                                        diagnosticList(
+                                            title: "Still missing",
+                                            values: content.missingInformation,
+                                            systemImage: "questionmark.circle"
+                                        )
+                                    }
+                                }
+                                .padding(.top, 8)
+                            }
+                            .font(.subheadline.weight(.semibold))
                         }
                     }
 
                     Card {
                         VStack(alignment: .leading, spacing: 12) {
-                            SectionHeader(feature: .quest, eyebrow: "First move", title: "Start with proof")
+                            SectionHeader(
+                                feature: .quest,
+                                eyebrow: "First move",
+                                title: content.primaryActionTitle == "Review My Mission"
+                                    ? "Approve the plan before quests exist"
+                                    : "Start with proof"
+                            )
 
                             Text(content.firstQuestTitle)
                                 .font(.title3.weight(.bold))
@@ -819,7 +853,12 @@ private struct DiagnosticResultBridgeView: View {
                                 startQuest()
                                 dismiss()
                             } label: {
-                                Label(content.primaryActionTitle, systemImage: "play.fill")
+                                Label(
+                                    content.primaryActionTitle,
+                                    systemImage: content.primaryActionTitle == "Review My Mission"
+                                        ? "checkmark.seal.fill"
+                                        : "play.fill"
+                                )
                             }
                             .buttonStyle(PrimaryButtonStyle())
                         }
@@ -882,6 +921,25 @@ private struct DiagnosticResultBridgeView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+
+    private func diagnosticList(
+        title: String,
+        values: [String],
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.openLARPSoftInk)
+                .textCase(.uppercase)
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                Label(value, systemImage: systemImage)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.openLARPInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 

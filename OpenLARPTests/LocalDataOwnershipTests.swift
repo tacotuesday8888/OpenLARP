@@ -449,6 +449,10 @@ private final class DelayedDiagnosticWorkflowService: V0AIWorkflowServicing {
         continuation = nil
     }
 
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        try await base.generateMissionBrief(request)
+    }
+
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
         try await base.generateQuestPlan(request)
     }

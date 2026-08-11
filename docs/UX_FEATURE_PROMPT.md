@@ -27,7 +27,7 @@ The app is quest-first.
 
 The main loop is:
 
-Goal setup -> Am I Cooked? diagnostic -> daily quest -> proof or self-report -> AI quality check -> XP/streak/progress -> next quest -> optional sharing
+Goal setup -> confirmed career understanding -> Am I Cooked? diagnostic -> editable mission approval -> daily quest -> proof or self-report -> AI quality check -> XP/streak/progress -> next quest -> optional sharing
 
 The product should always answer:
 
@@ -714,7 +714,7 @@ Also produce a feature interaction map showing how these features connect:
 
 Also provide a full happy path flow:
 
-New user opens app -> goal setup -> cooked diagnostic -> first quest -> proof submission -> AI check -> XP/streak/progress -> share card -> tomorrow preview
+New user opens app -> goal setup -> career-fact review -> cooked diagnostic -> edit and approve mission -> first quest -> proof submission -> AI check -> XP/streak/progress -> share card -> tomorrow preview
 
 Also provide failure/recovery flows:
 

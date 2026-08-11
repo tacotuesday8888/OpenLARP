@@ -656,8 +656,26 @@ describe("handleOpenLARPWorkflowRequest", () => {
       fastestFix: "Create one artifact",
       readinessBaseline: 48
     };
+    const missionDiagnostic = {
+      ...diagnostic,
+      strongestSignals: [diagnostic.strongestSignal],
+      readinessGaps: [diagnostic.mainGap],
+      missingInformation: [],
+      uncertaintyExplanation: "This is directional because hiring context is incomplete.",
+      firstAction: diagnostic.fastestFix
+    };
 
     const cases = [
+      ["missionBrief", {
+        ...goalPayload(),
+        confirmedFacts: [],
+        diagnostic: missionDiagnostic,
+        requiredEthicalBoundaries: [
+          "Use only truthful, defensible career claims.",
+          "Never invent career history.",
+          "The user approves every external action."
+        ]
+      }],
       ["questPlan", { ...goalPayload(), diagnostic }],
       ["proofQualityCheck", { context: workflowContext(), proof: proof(), targetRoleTitle: "AI product engineer" }],
       ["progressSummary", { context: workflowContext(), targetRoleTitle: "AI product engineer" }],
@@ -679,7 +697,7 @@ describe("handleOpenLARPWorkflowRequest", () => {
       expectSuccess(response, kind);
       expect(response.liveModelCallsEnabled).toBe(false);
       expect(response.externalActionTaken).toBe(false);
-      const isLiveWorkflow = ["questPlan", "proofQualityCheck", "progressSummary"].includes(kind);
+      const isLiveWorkflow = ["missionBrief", "questPlan", "proofQualityCheck", "progressSummary"].includes(kind);
       expect(response.usedFallback).toBe(isLiveWorkflow);
       expect(response.fallbackReason).toBe(isLiveWorkflow ? "disabled" : null);
     }

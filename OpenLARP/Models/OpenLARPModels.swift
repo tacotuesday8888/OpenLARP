@@ -120,6 +120,10 @@ struct CookedDiagnosticResultContent: Equatable, Identifiable {
     var mainGap: String
     var strongestSignal: String
     var fastestFix: String
+    var strongestSignals: [String]
+    var readinessGaps: [String]
+    var missingInformation: [String]
+    var uncertaintyExplanation: String
     var firstQuestID: UUID
     var firstQuestTitle: String
     var firstQuestPurpose: String
@@ -131,13 +135,13 @@ struct CookedDiagnosticResultContent: Equatable, Identifiable {
 
     init?(state: OpenLARPState) {
         guard let goal = state.goal,
-              let diagnostic = state.diagnostic,
-              let quest = state.currentQuest ??
-                state.plan.first(where: { $0.status == .locked }) ??
-                state.plan.first
-        else {
+              let diagnostic = state.diagnostic else {
             return nil
         }
+        let quest = state.currentQuest ??
+            state.plan.first(where: { $0.status == .locked }) ??
+            state.plan.first
+        guard let identity = quest?.id ?? state.mission?.id else { return nil }
 
         eyebrow = "Am I Cooked?"
         title = diagnostic.label
@@ -148,15 +152,25 @@ struct CookedDiagnosticResultContent: Equatable, Identifiable {
         mainGap = diagnostic.mainGap
         strongestSignal = diagnostic.strongestSignal
         fastestFix = diagnostic.fastestFix
-        firstQuestID = quest.id
-        firstQuestTitle = quest.title
-        firstQuestPurpose = quest.purpose
-        firstQuestMetaText = "\(quest.timeEstimate), \(quest.difficulty), +\(quest.xpReward) XP"
-        primaryActionTitle = state.progress.completedQuestCount == 0 ? "Start My First Quest" : "Start Quest"
+        strongestSignals = diagnostic.strongestSignals ?? [diagnostic.strongestSignal]
+        readinessGaps = diagnostic.readinessGaps ?? [diagnostic.mainGap]
+        missingInformation = diagnostic.missingInformation ?? []
+        uncertaintyExplanation = diagnostic.uncertaintyExplanation ?? "This is a directional baseline based only on the information you confirmed."
+        firstQuestID = identity
+        firstQuestTitle = quest?.title ?? diagnostic.firstAction ?? diagnostic.fastestFix
+        firstQuestPurpose = quest?.purpose ?? "Turn this directional baseline into a mission you can edit before OpenLARP creates any quests."
+        if let quest {
+            firstQuestMetaText = "\(quest.timeEstimate), \(quest.difficulty), +\(quest.xpReward) XP"
+        } else {
+            firstQuestMetaText = "14 days, 2 adaptive chapters, \(goal.dailyCommitmentMinutes) min/day"
+        }
+        primaryActionTitle = state.needsMissionApproval
+            ? "Review My Mission"
+            : state.progress.completedQuestCount == 0 ? "Start My First Quest" : "Start Quest"
         shareActionTitle = "Share Cooked Card"
         adjustGoalActionTitle = "Adjust Goal"
         let publicRole = PublicCareerCopy.safePublicRole(goal.targetRole, fallback: "your career goal")
-        explanationText = "This is a private baseline for \(publicRole), not an official employability grade."
+        explanationText = "This is a private, directional baseline for \(publicRole), not an official employability grade or hiring probability. \(uncertaintyExplanation)"
     }
 }
 
@@ -205,10 +219,14 @@ struct CookedShareCardContent: Equatable, Identifiable {
         scoreText = "\(diagnostic.score)/100 cooked"
         readinessText = "\(state.progress.readiness.overall)% ready"
         publicGapText = Self.publicGapText(for: state)
-        recoveryText = "Recovery path: build one real proof artifact this week."
+        recoveryText = state.needsMissionApproval
+            ? "Recovery path: approve an honest 14-day mission before any quests begin."
+            : "Recovery path: build one real proof artifact this week."
         self.includeDetails = includeDetails
         if includeDetails {
-            detailText = "First move: start one proof-building quest."
+            detailText = state.needsMissionApproval
+                ? "First move: review and approve the editable mission."
+                : "First move: start one proof-building quest."
         } else {
             detailText = nil
         }
@@ -1471,7 +1489,7 @@ struct SkippedTodayState: Codable, Equatable {
 }
 
 struct OpenLARPState: Codable, Equatable {
-    static let currentSchemaVersion = 11
+    static let currentSchemaVersion = 12
 
     var schemaVersion: Int
     var userProfile: CareerUserProfile?
@@ -1480,6 +1498,7 @@ struct OpenLARPState: Codable, Equatable {
     var onboardingFunnel: OnboardingFunnelState
     var targetRoles: [TargetRole]
     var diagnostic: CookedDiagnostic?
+    var mission: CareerMissionBrief?
     var plan: [Quest]
     var progress: ProgressState
     var agentBrief: AgentBrief
@@ -1506,6 +1525,7 @@ struct OpenLARPState: Codable, Equatable {
         onboardingFunnel: OnboardingFunnelState = .empty,
         targetRoles: [TargetRole] = [],
         diagnostic: CookedDiagnostic?,
+        mission: CareerMissionBrief? = nil,
         plan: [Quest],
         progress: ProgressState,
         agentBrief: AgentBrief = .empty,
@@ -1531,6 +1551,13 @@ struct OpenLARPState: Codable, Equatable {
         self.onboardingFunnel = onboardingFunnel
         self.targetRoles = targetRoles
         self.diagnostic = diagnostic
+        self.mission = mission ?? Self.legacyMission(
+            goal: goal,
+            understanding: careerUnderstanding,
+            diagnostic: diagnostic,
+            plan: plan,
+            updatedAt: updatedAt
+        )
         self.plan = plan
         self.progress = progress
         self.agentBrief = agentBrief
@@ -1558,6 +1585,7 @@ struct OpenLARPState: Codable, Equatable {
         onboardingFunnel: .empty,
         targetRoles: [],
         diagnostic: nil,
+        mission: nil,
         plan: [],
         progress: .empty,
         agentBrief: .empty,
@@ -1567,6 +1595,17 @@ struct OpenLARPState: Codable, Equatable {
 
     var needsGoalSetup: Bool {
         goal == nil || diagnostic == nil || plan.isEmpty
+    }
+
+    var needsCareerIntake: Bool {
+        goal == nil || diagnostic == nil
+    }
+
+    var needsMissionApproval: Bool {
+        goal != nil &&
+            diagnostic != nil &&
+            plan.isEmpty &&
+            mission?.reviewState == .awaitingApproval
     }
 
     var currentQuest: Quest? {
@@ -1586,6 +1625,7 @@ extension OpenLARPState {
         case onboardingFunnel
         case targetRoles
         case diagnostic
+        case mission
         case plan
         case progress
         case agentBrief
@@ -1636,6 +1676,20 @@ extension OpenLARPState {
         targetRoles = try container.decodeIfPresent([TargetRole].self, forKey: .targetRoles) ?? []
         diagnostic = try container.decodeIfPresent(CookedDiagnostic.self, forKey: .diagnostic)
         plan = try container.decode([Quest].self, forKey: .plan)
+        mission = try container.decodeIfPresent(CareerMissionBrief.self, forKey: .mission) ?? Self.legacyMission(
+            goal: goal,
+            understanding: careerUnderstanding,
+            diagnostic: diagnostic,
+            plan: plan,
+            updatedAt: updatedAt
+        )
+        if let mission {
+            let hasPlan = !plan.isEmpty
+            guard (mission.reviewState == .awaitingApproval && !hasPlan) ||
+                    (mission.reviewState == .approved && hasPlan) else {
+                throw OpenLARPPersistenceError.unrecoverableState
+            }
+        }
         progress = try container.decode(ProgressState.self, forKey: .progress)
         agentBrief = try container.decodeIfPresent(AgentBrief.self, forKey: .agentBrief) ?? .empty
         dailyCadence = try container.decodeIfPresent(DailyCadenceState.self, forKey: .dailyCadence) ?? .empty
@@ -1666,6 +1720,7 @@ extension OpenLARPState {
         try container.encode(onboardingFunnel, forKey: .onboardingFunnel)
         try container.encode(targetRoles, forKey: .targetRoles)
         try container.encodeIfPresent(diagnostic, forKey: .diagnostic)
+        try container.encodeIfPresent(mission, forKey: .mission)
         try container.encode(plan, forKey: .plan)
         try container.encode(progress, forKey: .progress)
         try container.encode(agentBrief, forKey: .agentBrief)
@@ -1683,6 +1738,22 @@ extension OpenLARPState {
         try container.encode(subscriptionState, forKey: .subscriptionState)
         try container.encodeIfPresent(privateEvidenceBackupCleanupResult, forKey: .privateEvidenceBackupCleanupResult)
         try container.encodeIfPresent(accountDeletionResult, forKey: .accountDeletionResult)
+    }
+
+    private static func legacyMission(
+        goal: CareerGoal?,
+        understanding: CareerUnderstanding,
+        diagnostic: CookedDiagnostic?,
+        plan: [Quest],
+        updatedAt: Date
+    ) -> CareerMissionBrief? {
+        guard !plan.isEmpty, let goal, let diagnostic else { return nil }
+        return CareerMissionBrief.legacyApproved(
+            goal: goal,
+            understanding: understanding,
+            diagnostic: diagnostic,
+            approvedAt: updatedAt
+        )
     }
 }
 
@@ -1775,6 +1846,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
     case questNotAvailable
     case emptyProof
     case invalidQuestPlan
+    case invalidMissionBrief
     case careerUnderstandingNeedsReview
 
     var errorDescription: String? {
@@ -1783,6 +1855,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
         case .questNotAvailable: "This quest is not available yet."
         case .emptyProof: "Add a written note about what you did before checking your submission."
         case .invalidQuestPlan: "The generated plan was not usable, so OpenLARP switched to a local plan."
+        case .invalidMissionBrief: "Review a valid mission brief before OpenLARP creates the sprint."
         case .careerUnderstandingNeedsReview: "Review and approve OpenLARP's understanding before creating your plan."
         }
     }

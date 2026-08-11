@@ -300,6 +300,14 @@ private final class RecordingRemoteWorkflowService: V0AIWorkflowServicing {
         return response
     }
 
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        calls.append(.missionBrief)
+        var response = try await LocalMockV0AIWorkflowService().generateMissionBrief(request)
+        response.run.providerRoute = .firebaseCallableGenkit
+        response.mission.providerRoute = .firebaseCallableGenkit
+        return response
+    }
+
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
         calls.append(.questPlan)
         var response = try await LocalMockV0AIWorkflowService().generateQuestPlan(request)

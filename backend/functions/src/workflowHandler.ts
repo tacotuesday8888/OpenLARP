@@ -7,6 +7,8 @@ import {
   careerBriefResponseSchema,
   diagnosticPayloadSchema,
   diagnosticResponseSchema,
+  missionBriefPayloadSchema,
+  missionBriefResponseSchema,
   opportunityRankingPayloadSchema,
   opportunityRankingResponseSchema,
   progressSummaryPayloadSchema,
@@ -38,6 +40,7 @@ import {
   makeAgentScan,
   makeCareerBrief,
   makeDiagnostic,
+  makeMissionBrief,
   makeQuestPlan,
   makeSafeShareCardText,
   rankOpportunities,
@@ -53,6 +56,7 @@ import { type ProviderBudgetGuard } from "./providerBudgetGuard.js";
 const LIVE_WORKFLOW_KINDS: ReadonlySet<WorkflowKind> = new Set([
   "adaptiveCareerIntake",
   "cookedDiagnostic",
+  "missionBrief",
   "questPlan",
   "proofQualityCheck",
   "progressSummary"
@@ -476,6 +480,10 @@ function dispatchDeterministicWorkflow(envelope: RequestEnvelope): unknown {
     case "cookedDiagnostic": {
       const payload = diagnosticPayloadSchema.parse(envelope.payload);
       return diagnosticResponseSchema.parse(makeDiagnostic(payload));
+    }
+    case "missionBrief": {
+      const payload = missionBriefPayloadSchema.parse(envelope.payload);
+      return missionBriefResponseSchema.parse(makeMissionBrief(payload));
     }
     case "questPlan": {
       const payload = questPlanPayloadSchema.parse(envelope.payload);
