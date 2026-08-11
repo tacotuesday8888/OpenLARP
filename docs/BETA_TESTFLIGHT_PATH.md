@@ -13,6 +13,7 @@ This document tracks the practical path from the current local product foundatio
 - RevenueCat iOS SDK `5.79.0` is linked through XcodeGen/SPM behind `OpenLARPSubscriptionServicing`, with ignored local plist configuration, Firebase UID identity sync, sign-out reset, offering/package purchase boundaries, and a no-key fallback that keeps local beta mode working.
 - Beta measurement exports include AI, backend, quest, and payment readiness signals, including subscription identity check/reset/failure counts, without private proof or billing identifiers.
 - GitHub Actions now has an iOS build/test workflow.
+- The iOS workflow includes an exact fresh-user UI journey for the public local-only build, covering onboarding, diagnostic review, mission approval, quest start, truthful proof review, XP claim, and the next-day state before the optimized Release contract runs.
 - Firebase Auth, Sign in with Apple capability, and Google Sign-In packages are declared through XcodeGen/SPM while private plist config remains ignored.
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
@@ -64,7 +65,7 @@ npm run beta:gate
 npm run firebase:live-readiness
 ```
 
-`npm run beta:gate` checks repo-controlled release gates such as the privacy manifest, bundle/config wiring, CI coverage, launch packet, and known external setup warnings. Expected current `firebase:live-readiness` result is a clean pass with no missing Google OAuth ID or missing Storage bucket warnings. The script also reports Firebase App Check App Attest registration and Firestore, Storage, and Google Identity enforcement status; warnings there mean App Check enforcement is still not beta-ready. A clean readiness script does not replace the required signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage proof upload/read rules, and callable fallback behavior.
+`npm run beta:gate` checks repo-controlled release gates such as the privacy manifest, bundle/config wiring, the fresh-user UI journey, the optimized Release contract, the launch packet, and known external setup warnings. Expected current `firebase:live-readiness` result is a clean pass with no missing Google OAuth ID or missing Storage bucket warnings. The script also reports Firebase App Check App Attest registration and Firestore, Storage, and Google Identity enforcement status; warnings there mean App Check enforcement is still not beta-ready. A clean readiness script does not replace the required signed-in simulator/device smoke test for Google Sign-In, Firestore writes, Storage proof upload/read rules, and callable fallback behavior.
 
 ## Backend Dependency Risk
 

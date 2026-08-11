@@ -2,6 +2,12 @@ import PhotosUI
 import SwiftUI
 
 struct TodayView: View {
+    private enum ContentPhase: Hashable {
+        case onboarding
+        case missionReview
+        case dashboard
+    }
+
     let store: OpenLARPStore
     @State private var showingAgent = false
     @State private var showingSkipConfirmation = false
@@ -33,6 +39,7 @@ struct TodayView: View {
             .padding(20)
             .padding(.bottom, 88)
         }
+        .id(contentPhase)
         .background(Color.openLARPBackground)
         .navigationTitle("Today")
         .navigationBarTitleDisplayMode(.inline)
@@ -121,6 +128,16 @@ struct TodayView: View {
         } message: {
             Text(store.errorMessage ?? "")
         }
+    }
+
+    private var contentPhase: ContentPhase {
+        if store.state.needsMissionApproval {
+            return .missionReview
+        }
+        if store.state.needsCareerIntake {
+            return .onboarding
+        }
+        return .dashboard
     }
 
     private func updateEvidenceCard(
@@ -360,6 +377,7 @@ struct TodayView: View {
                                     Label("Start Quest", systemImage: "play.fill")
                                 }
                                 .buttonStyle(PrimaryButtonStyle())
+                                .accessibilityIdentifier("quest.start")
 
                                 Button {
                                     store.swapCurrentQuest()
@@ -636,6 +654,7 @@ private struct SkippedTodayCard: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.openLARPGreen)
                         .textCase(.uppercase)
+                        .accessibilityIdentifier("today.tomorrowPreview")
 
                     if let nextQuestTitle = content.nextQuestTitle {
                         Text(nextQuestTitle)
@@ -746,6 +765,7 @@ private struct DoneForTodayCard: View {
                 Label("Done for today", systemImage: "checkmark.circle.fill")
                     .font(.headline)
                     .foregroundStyle(Color.openLARPGreen)
+                    .accessibilityIdentifier("today.done")
 
                 Text(content.completedQuestTitle)
                     .font(.title2.weight(.bold))
@@ -780,6 +800,7 @@ private struct DoneForTodayCard: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.openLARPGreen)
                         .textCase(.uppercase)
+                        .accessibilityIdentifier("today.tomorrowPreview")
 
                     if let nextQuestTitle = content.nextQuestTitle {
                         Text(nextQuestTitle)
@@ -1017,6 +1038,7 @@ private struct DiagnosticResultBridgeView: View {
                                 )
                             }
                             .buttonStyle(PrimaryButtonStyle())
+                            .accessibilityIdentifier("diagnostic.primaryAction")
                         }
                     }
 
@@ -1143,10 +1165,16 @@ private enum ProofImageContentPolicy {
 }
 
 private struct ProofComposer: View {
+    private enum FocusedField: Hashable {
+        case text
+        case link
+    }
+
     let store: OpenLARPStore
     @State private var draftID: UUID?
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var isSavingAttachments = false
+    @FocusState private var focusedField: FocusedField?
 
     private var activeDraft: ProofSubmission? {
         guard let draftID, store.pendingProof?.id == draftID else { return nil }
@@ -1195,12 +1223,15 @@ private struct ProofComposer: View {
                         .stroke(Color.openLARPGray.opacity(0.25))
                 )
                 .accessibilityLabel("Proof text")
+                .accessibilityIdentifier("proof.text")
+                .focused($focusedField, equals: .text)
                 .disabled(store.isProofChecking)
 
             TextField("Optional proof link", text: linkBinding)
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.never)
                 .keyboardType(.URL)
+                .focused($focusedField, equals: .link)
                 .disabled(store.isProofChecking)
 
             if kind == .proof {
@@ -1272,6 +1303,7 @@ private struct ProofComposer: View {
             .buttonStyle(PrimaryButtonStyle())
             .disabled(!canSubmit || isSavingAttachments || store.isProofChecking)
             .opacity(canSubmit && !isSavingAttachments && !store.isProofChecking ? 1 : 0.5)
+            .accessibilityIdentifier("proof.check")
 
             AskOpenLARPButton(
                 store: store,
@@ -1304,6 +1336,14 @@ private struct ProofComposer: View {
         .onAppear {
             if draftID == nil {
                 draftID = store.prepareProofDraft()
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
             }
         }
     }
@@ -1481,6 +1521,7 @@ private struct QualityResultCard: View {
                     Label("Claim XP", systemImage: "bolt.circle.fill")
                 }
                 .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("proof.claim")
             } else {
                 Button {
                     store.improvePendingProofDraft()

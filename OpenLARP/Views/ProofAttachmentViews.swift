@@ -1,5 +1,43 @@
+import ImageIO
 import SwiftUI
 import UIKit
+
+enum ProofAttachmentImageLoader {
+    static func load(
+        from fileURL: URL,
+        maximumPixelDimension: Int
+    ) async -> UIImage? {
+        let path = fileURL.path
+        let boundedDimension = max(1, maximumPixelDimension)
+        let loaded: SendableProofAttachmentImage? = await Task.detached(priority: .utility) {
+            guard let source = CGImageSourceCreateWithURL(
+                URL(fileURLWithPath: path) as CFURL,
+                nil
+            ) else {
+                return nil
+            }
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: boundedDimension
+            ]
+            guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+                source,
+                0,
+                options as CFDictionary
+            ) else {
+                return nil
+            }
+            return SendableProofAttachmentImage(image: UIImage(cgImage: thumbnail))
+        }.value
+        return loaded?.image
+    }
+}
+
+private struct SendableProofAttachmentImage: @unchecked Sendable {
+    let image: UIImage
+}
 
 struct ProofAttachmentStrip: View {
     let attachments: [ProofAttachment]
@@ -25,14 +63,20 @@ struct ProofAttachmentStrip: View {
 struct ProofAttachmentThumbnail: View {
     let attachment: ProofAttachment
     let fileURL: URL
+    @State private var image: UIImage?
+    @State private var didFinishLoading = false
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Group {
-                if let image = UIImage(contentsOfFile: fileURL.path) {
+                if let image {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
+                } else if !didFinishLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.openLARPBackground)
                 } else {
                     VStack(spacing: 6) {
                         Image(systemName: "photo")
@@ -58,6 +102,16 @@ struct ProofAttachmentThumbnail: View {
                 .padding(6)
         }
         .accessibilityLabel("Proof image attachment")
+        .accessibilityValue(didFinishLoading && image == nil ? "Missing from this device" : attachment.originalFileName)
+        .task(id: fileURL) {
+            image = nil
+            didFinishLoading = false
+            image = await ProofAttachmentImageLoader.load(
+                from: fileURL,
+                maximumPixelDimension: 192
+            )
+            didFinishLoading = true
+        }
     }
 }
 
