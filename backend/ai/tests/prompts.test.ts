@@ -10,6 +10,27 @@ const privacy = {
   allowsPrivateEvidenceCloudSync: false
 } as const;
 
+const assistantProgress = {
+  readiness: { overall: 40, proofStrength: 30, confidence: 50, consistency: 35, skillProof: 30, networkStrength: 20 },
+  completedQuestCount: 0,
+  proofCount: 0,
+  streakCount: 0,
+  xp: 0,
+  xpGoal: 1000
+};
+
+const assistantQuest = {
+  day: 1,
+  title: "Map three iOS role requirements",
+  purpose: "Choose the first honest proof target.",
+  timeEstimateMinutes: 25,
+  difficulty: "Starter",
+  gap: "proofStrength",
+  proofRequired: "Saved requirement notes",
+  xpReward: 120,
+  steps: ["Review two roles", "List repeated requirements"]
+};
+
 function envelope(kind: string, payload: unknown) {
   return requestEnvelopeSchema.parse({
     schemaVersion: 1,
@@ -133,5 +154,24 @@ describe("buildLiveWorkflowPrompt", () => {
     expect(serialized).not.toContain("Never invent an employer or any other substantial career claim.");
     expect(serialized).not.toMatch(/API[_ -]?KEY|Bearer |dailyBudget|token price/i);
     expect(serialized.length).toBeLessThan(24_000);
+  });
+
+  it("grounds contextual help and explicitly prohibits memory, inspection, and external action claims", () => {
+    const prompt = buildLiveWorkflowPrompt(envelope("contextualAssistant", {
+      surface: "questDetail",
+      question: "Why this quest?",
+      goal: { targetRole: "iOS engineer", timeline: "12 weeks", outcomeType: "job" },
+      confirmedFacts: [],
+      currentQuest: assistantQuest,
+      progress: assistantProgress,
+      allowsLongTermMemoryWrite: false,
+      externalActionsAllowed: false
+    }));
+
+    expect(prompt.promptVersion).toBe("openlarp.contextual-assistant.v1");
+    expect(prompt.systemInstruction).toContain("factIDsUsed may contain only IDs from confirmedFacts");
+    expect(prompt.systemInstruction).toContain("do not write memory");
+    expect(prompt.systemInstruction).toContain("attachment contents were not supplied or inspected");
+    expect(prompt.systemInstruction).toContain("concrete user-controlled next action");
   });
 });

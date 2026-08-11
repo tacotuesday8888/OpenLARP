@@ -100,6 +100,117 @@ final class AIBackendContractTests: XCTestCase {
     }
 
     @MainActor
+    func testContextualAssistantSendsOnlyConfirmedFactsAndNoPrivateAttachmentLocation() async throws {
+        let confirmed = CareerFactRecord.userEntry(
+            kind: .experience,
+            value: "One shipped class app",
+            createdAt: sampleDate
+        )!.userConfirmed(at: sampleDate)
+        let pending = try CareerFactRecord.aiHypothesis(
+            kind: .existingProof,
+            value: "May have a private portfolio file",
+            workflowRequestID: "prior-request",
+            createdAt: sampleDate
+        )
+        var state = sampleState
+        state.careerUnderstanding = CareerUnderstanding(
+            facts: [confirmed, pending],
+            unknowns: [],
+            reviewState: .approved,
+            reviewedAt: sampleDate,
+            approvedAt: sampleDate
+        )
+        guard let request = V0ContextualAssistantRequest(
+            state: state,
+            surface: .proofPreparation,
+            question: "How can I make this proof clearer?",
+            pendingProof: sampleProof,
+            requestedAt: sampleDate
+        ) else {
+            return XCTFail("Expected a valid contextual assistant request.")
+        }
+
+        XCTAssertEqual(request.confirmedFacts.map(\.value), ["One shipped class app"])
+        XCTAssertEqual(request.relevantProof?.attachmentCount, 1)
+        XCTAssertEqual(request.relevantProof?.hasLink, true)
+        XCTAssertFalse(request.allowsLongTermMemoryWrite)
+        XCTAssertFalse(request.externalActionsAllowed)
+        let requestJSON = try encodedJSONString(request)
+        XCTAssertFalse(requestJSON.contains("May have a private portfolio file"))
+        XCTAssertFalse(requestJSON.contains("private-proof.png"))
+        XCTAssertFalse(requestJSON.contains("https://example.com/proof"))
+
+        let response = try await LocalMockV0AIWorkflowService().answerContextualQuestion(request)
+        try response.validate(for: request)
+        XCTAssertEqual(response.run.kind, .contextualAssistant)
+        XCTAssertTrue(response.factIDsUsed.isEmpty)
+        XCTAssertNotNil(response.suggestedDraft)
+    }
+
+    @MainActor
+    func testFirebaseContextualAssistantRejectsUnknownFactReferences() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "contextualAssistant",
+            result: [
+                "answer": "Start with the first quest step.",
+                "factIDsUsed": ["99999999-9999-4999-8999-999999999999"],
+                "inferences": [],
+                "advice": ["Complete one bounded action."],
+                "nextAction": [
+                    "title": "Start the quest",
+                    "detail": "Complete the first listed step."
+                ],
+                "suggestedDraft": NSNull()
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+        guard let request = V0ContextualAssistantRequest(
+            state: sampleState,
+            surface: .questDetail,
+            question: "What should I do first?",
+            requestedAt: sampleDate
+        ) else {
+            return XCTFail("Expected a valid contextual assistant request.")
+        }
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await service.answerContextualQuestion(request)
+        }
+    }
+
+    @MainActor
+    func testContextualAssistantPersistsOnlyAuditMetadataNotConversationText() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("openlarp-contextual-assistant-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let persistence = OpenLARPPersistence(directory: directory)
+        try persistence.save(sampleState)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            aiWorkflowService: LocalMockV0AIWorkflowService(),
+            now: { sampleDate }
+        )
+        let privateQuestion = "PRIVATE-QUESTION-\(UUID().uuidString)"
+
+        let response = await store.askOpenLARP(
+            surface: .questDetail,
+            question: privateQuestion
+        )
+
+        XCTAssertNotNil(response)
+        XCTAssertEqual(store.state.aiWorkflowRuns.last?.kind, .contextualAssistant)
+        let persisted = try String(contentsOf: persistence.fileURL, encoding: .utf8)
+        XCTAssertFalse(persisted.contains(privateQuestion))
+        XCTAssertFalse(persisted.contains(response?.answer ?? "__missing-answer__"))
+        XCTAssertTrue(persisted.contains("contextualAssistant"))
+    }
+
+    @MainActor
     func testAdaptiveIntakeUsesDeterministicFallbackWhenFirebaseIsUnavailable() async throws {
         let invoker = MockFirebaseCallableInvoker(
             error: FirebaseCallableAIWorkflowServiceError.authenticationRequired

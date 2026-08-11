@@ -89,6 +89,33 @@ const proofEnvelope = requestEnvelopeSchema.parse({
     targetRoleTitle: "iOS engineer"
   }
 });
+const proofContext = (proofEnvelope.payload as {
+  context: { currentQuest: unknown; progress: unknown };
+}).context;
+
+const assistantEnvelope = requestEnvelopeSchema.parse({
+  ...envelope,
+  run: {
+    ...envelope.run,
+    kind: "contextualAssistant",
+    requestID: "55555555-5555-4555-8555-555555555555",
+    privacy: { ...envelope.run.privacy, allowsLongTermMemoryWrite: false }
+  },
+  payload: {
+    surface: "questDetail",
+    question: "Why this quest?",
+    goal: { targetRole: "iOS engineer", timeline: "12 weeks", outcomeType: "job" },
+    confirmedFacts: [{
+      id: "66666666-6666-4666-8666-666666666666",
+      kind: "experience",
+      value: "One shipped class app"
+    }],
+    currentQuest: proofContext.currentQuest,
+    progress: proofContext.progress,
+    allowsLongTermMemoryWrite: false,
+    externalActionsAllowed: false
+  }
+});
 
 describe("executeWorkflow", () => {
   it("returns a post-validated live result with privacy-safe metadata", async () => {
@@ -134,6 +161,25 @@ describe("executeWorkflow", () => {
       usedFallback: false,
       promptVersion: "openlarp.proof-quality.v1"
     });
+  });
+
+  it("rejects contextual answers that cite an unconfirmed fact ID", async () => {
+    const unsafeAnswer = {
+      answer: "Start with the first quest step.",
+      factIDsUsed: ["77777777-7777-4777-8777-777777777777"],
+      inferences: [],
+      advice: ["Complete one bounded action."],
+      nextAction: { title: "Start", detail: "Complete the first listed step." },
+      suggestedDraft: null
+    };
+    const generator = {
+      generate: vi.fn(async () => ({ output: unsafeAnswer, inputTokens: 50, outputTokens: 30 }))
+    };
+
+    const result = await executeWorkflow({ envelope: assistantEnvelope, policy, generator });
+
+    expect(result.execution).toMatchObject({ usedFallback: true, fallbackReason: "unsafeOutput" });
+    expect(result.result).not.toEqual(unsafeAnswer);
   });
 
   it("returns deterministic output when live generation is disabled", async () => {

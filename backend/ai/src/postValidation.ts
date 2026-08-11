@@ -1,6 +1,8 @@
 import {
   adaptiveCareerIntakePayloadSchema,
   adaptiveCareerIntakeResponseSchema,
+  contextualAssistantPayloadSchema,
+  contextualAssistantResponseSchema,
   diagnosticResponseSchema,
   missionBriefPayloadSchema,
   missionBriefResponseSchema,
@@ -127,6 +129,18 @@ export function validateGeneratedWorkflowResult(
     };
   }
 
+  if (kind === "contextualAssistant") {
+    const assistantPayload = contextualAssistantPayloadSchema.safeParse(payload);
+    const assistant = contextualAssistantResponseSchema.parse(parsed.data);
+    if (!assistantPayload.success) {
+      return { ok: false, reason: "invalidOutput" };
+    }
+    const confirmedFactIDs = new Set(assistantPayload.data.confirmedFacts.map((fact) => fact.id));
+    if (assistant.factIDsUsed.some((id) => !confirmedFactIDs.has(id))) {
+      return { ok: false, reason: "unsafeOutput" };
+    }
+  }
+
   return { ok: true, result: parsed.data };
 }
 
@@ -144,6 +158,8 @@ function responseSchemaFor(kind: WorkflowKind) {
       return proofCoachingResponseSchema;
     case "progressSummary":
       return progressSummaryResponseSchema;
+    case "contextualAssistant":
+      return contextualAssistantResponseSchema;
     default:
       return {
         safeParse: () => ({ success: false as const })

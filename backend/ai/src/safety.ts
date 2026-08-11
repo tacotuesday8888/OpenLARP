@@ -36,12 +36,12 @@ export function validateEnvelopeSafety(envelope: RequestEnvelope): SafetyValidat
     blockedReasons.push("external actions must require user approval");
   }
 
-  if (!envelope.run.privacy.allowsLongTermMemoryWrite && envelope.run.privacy.memoryMode === "cloudReady") {
-    blockedReasons.push("cloud-ready memory must explicitly allow long-term writes");
-  }
-
   if (envelope.run.privacy.allowsLongTermMemoryWrite && envelope.run.privacy.memoryMode !== "cloudReady") {
     blockedReasons.push("long-term memory writes require cloud-ready memory mode");
+  }
+
+  if (envelope.run.kind === "contextualAssistant" && envelope.run.privacy.allowsLongTermMemoryWrite) {
+    blockedReasons.push("contextual assistant exchanges cannot write long-term memory");
   }
 
   return {

@@ -311,11 +311,41 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
         )
     }
 
+    func answerContextualQuestion(
+        _ request: V0ContextualAssistantRequest
+    ) async throws -> V0ContextualAssistantResponse {
+        let response: FirebaseCallableAIWorkflowResponse<FirebaseCallableContextualAssistantResult> = try await callWorkflow(
+            kind: .contextualAssistant,
+            requestedAt: request.requestedAt,
+            privacy: request.privacy,
+            allowsLongTermMemoryWrite: false,
+            payload: FirebaseCallableContextualAssistantPayload(request: request)
+        )
+        let result = V0ContextualAssistantResponse(
+            run: try response.workflowRun(expectedKind: .contextualAssistant, requestedAt: request.requestedAt),
+            answer: response.result.answer,
+            factIDsUsed: response.result.factIDsUsed,
+            inferences: response.result.inferences,
+            advice: response.result.advice,
+            nextAction: response.result.nextAction,
+            suggestedDraft: response.result.suggestedDraft
+        )
+        do {
+            try result.validate(for: request)
+        } catch {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch(
+                "Firebase callable contextual help was not grounded in confirmed facts."
+            )
+        }
+        return result
+    }
+
     private func callWorkflow<Payload: Codable & Equatable & Sendable, Result: Decodable>(
         kind: V0AIWorkflowKind,
         requestedAt: Date,
         requestID requestedRequestID: UUID? = nil,
         privacy: CareerUserPrivacySettings,
+        allowsLongTermMemoryWrite: Bool? = nil,
         payload: Payload
     ) async throws -> FirebaseCallableAIWorkflowResponse<Result> {
         let expectedUserID = try preflight()
@@ -326,6 +356,7 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
             requestedAt: requestedAt,
             requestID: requestID,
             privacy: privacy,
+            allowsLongTermMemoryWrite: allowsLongTermMemoryWrite,
             payload: payload
         )
         let response = try await invoker.call(
@@ -478,6 +509,47 @@ private struct FirebaseCallableMissionBriefResult: Decodable {
     var firstMilestone: String
     var dailyCommitmentMinutes: Int
     var sprint: CareerMissionSprint
+}
+
+private struct FirebaseCallableContextualAssistantResult: Decodable {
+    var answer: String
+    var factIDsUsed: [UUID]
+    var inferences: [String]
+    var advice: [String]
+    var nextAction: V0ContextualAssistantNextAction
+    var suggestedDraft: String?
+}
+
+private struct FirebaseCallableContextualAssistantPayload: Codable, Equatable, @unchecked Sendable {
+    var surface: V0ContextualAssistantSurface
+    var question: String
+    var goal: V0ContextualAssistantGoal
+    var confirmedFacts: [V0ContextualAssistantFact]
+    var mission: V0ContextualAssistantMission?
+    var diagnostic: V0ContextualAssistantDiagnostic?
+    var currentQuest: Quest?
+    var relevantProof: V0ContextualAssistantProof?
+    var checkpoint: V0ContextualAssistantCheckpoint?
+    var progress: V0ProgressContext
+    var allowsLongTermMemoryWrite: Bool
+    var externalActionsAllowed: Bool
+    var requestedAt: Date
+
+    init(request: V0ContextualAssistantRequest) {
+        surface = request.surface
+        question = request.question
+        goal = request.goal
+        confirmedFacts = request.confirmedFacts
+        mission = request.mission
+        diagnostic = request.diagnostic
+        currentQuest = request.currentQuest
+        relevantProof = request.relevantProof
+        checkpoint = request.checkpoint
+        progress = request.progress
+        allowsLongTermMemoryWrite = false
+        externalActionsAllowed = false
+        requestedAt = request.requestedAt
+    }
 }
 
 private struct FirebaseCallableAdaptiveCareerIntakePayload: Codable, Equatable, Sendable {

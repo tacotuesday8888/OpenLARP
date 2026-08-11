@@ -17,7 +17,8 @@ function validPolicy() {
       missionBrief: true,
       questPlan: true,
       proofQualityCheck: false,
-      progressSummary: true
+      progressSummary: true,
+      contextualAssistant: true
     }
   };
 }
@@ -39,6 +40,10 @@ describe("createCachedAIRuntimePolicyReader", () => {
       fallbackReason: "policy"
     });
     await expect(reader.read("missionBrief", now)).resolves.toMatchObject({
+      enabled: true,
+      policyRevision: "beta-2026-08-10"
+    });
+    await expect(reader.read("contextualAssistant", now)).resolves.toMatchObject({
       enabled: true,
       policyRevision: "beta-2026-08-10"
     });

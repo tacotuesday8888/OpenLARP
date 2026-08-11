@@ -52,6 +52,7 @@ struct TodayView: View {
         }
         .sheet(item: $pendingDiagnosticResult) { content in
             DiagnosticResultBridgeView(
+                store: store,
                 content: content,
                 privateShareContent: CookedShareCardContent(state: store.state),
                 detailedShareContent: CookedShareCardContent(state: store.state, includeDetails: true),
@@ -157,7 +158,7 @@ struct TodayView: View {
             Button {
                 showingAgent = true
             } label: {
-                Label("Ask Agent about this quest", systemImage: "sparkles")
+                Label("Ask OpenLARP about this quest", systemImage: "sparkles")
             }
             .buttonStyle(SecondaryButtonStyle())
         case .outcome:
@@ -408,6 +409,7 @@ struct TodayView: View {
         switch store.state.activeSprint?.phase {
         case .chapterOneReview:
             SprintReviewCard(
+                store: store,
                 eyebrow: "Day 7 checkpoint",
                 title: "Chapter One complete",
                 detail: "OpenLARP will summarize the stored counters and readiness, then build days 8–14 from evidence metadata only.",
@@ -419,6 +421,7 @@ struct TodayView: View {
             }
         case .finalReview:
             SprintReviewCard(
+                store: store,
                 eyebrow: "Day 14 checkpoint",
                 title: "The sprint is ready to close",
                 detail: "Create a durable report from your completed quests, proof receipts, outcomes, and readiness change.",
@@ -430,6 +433,7 @@ struct TodayView: View {
             }
         case .completed:
             SprintReviewCard(
+                store: store,
                 eyebrow: "14-day report",
                 title: "Sprint complete",
                 detail: "Your proof, XP, readiness history, and report stay saved when you continue or adjust the goal.",
@@ -815,6 +819,7 @@ private struct DoneForTodayCard: View {
 }
 
 private struct SprintReviewCard: View {
+    let store: OpenLARPStore
     let eyebrow: String
     let title: String
     let detail: String
@@ -865,6 +870,12 @@ private struct SprintReviewCard: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    AskOpenLARPButton(
+                        store: store,
+                        surface: .weeklyReport,
+                        title: "Ask OpenLARP about this report"
+                    )
                 }
 
                 Button(action: action) {
@@ -891,6 +902,7 @@ private struct SprintReviewCard: View {
 }
 
 private struct DiagnosticResultBridgeView: View {
+    let store: OpenLARPStore
     let content: CookedDiagnosticResultContent
     let privateShareContent: CookedShareCardContent?
     let detailedShareContent: CookedShareCardContent?
@@ -1022,6 +1034,12 @@ private struct DiagnosticResultBridgeView: View {
                     .padding(14)
                     .background(Color.openLARPPaper.opacity(0.72))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    AskOpenLARPButton(
+                        store: store,
+                        surface: .cookedEvaluation,
+                        title: "Ask OpenLARP about this evaluation"
+                    )
 
                     HStack(spacing: 10) {
                         Button {
@@ -1255,6 +1273,15 @@ private struct ProofComposer: View {
             .disabled(!canSubmit || isSavingAttachments || store.isProofChecking)
             .opacity(canSubmit && !isSavingAttachments && !store.isProofChecking ? 1 : 0.5)
 
+            AskOpenLARPButton(
+                store: store,
+                surface: .proofPreparation,
+                title: "Ask OpenLARP about this proof",
+                onUseDraft: { suggestedDraft in
+                    textBinding.wrappedValue = suggestedDraft
+                }
+            )
+
             Text(kind == .selfReport
                 ? "Self-report requires a written reflection and earns less than a documented proof submission."
                 : "Add a written note before review. Your draft auto-saves on this device; a link or image is not treated as inspected evidence unless its contents are actually reviewed.")
@@ -1432,6 +1459,20 @@ private struct QualityResultCard: View {
                 Pill(title: "+\(result.readinessDelta) proof", systemImage: "chart.line.uptrend.xyaxis", color: .openLARPGreen)
                 Pill(title: "\(result.qualityScore)/100 context", systemImage: "gauge", color: .openLARPCoral)
             }
+
+            AskOpenLARPButton(
+                store: store,
+                surface: .proofFeedback,
+                title: "Ask OpenLARP about this feedback",
+                onUseDraft: { suggestedDraft in
+                    guard let draftID = store.pendingProof?.id else { return }
+                    do {
+                        try store.updateProofDraftText(suggestedDraft, draftID: draftID)
+                    } catch {
+                        store.errorMessage = error.localizedDescription
+                    }
+                }
+            )
 
             if result.isAccepted {
                 Button {

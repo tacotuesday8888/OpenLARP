@@ -2969,7 +2969,8 @@ final class V0EngineTests: XCTestCase {
             .missionBrief,
             .questPlan,
             .proofQualityCheck,
-            .progressSummary
+            .progressSummary,
+            .contextualAssistant
         ])
 
         let service: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService()

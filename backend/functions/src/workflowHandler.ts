@@ -1,6 +1,8 @@
 import {
   adaptiveCareerIntakePayloadSchema,
   adaptiveCareerIntakeResponseSchema,
+  contextualAssistantPayloadSchema,
+  contextualAssistantResponseSchema,
   agentScanPayloadSchema,
   agentScanResponseSchema,
   careerBriefPayloadSchema,
@@ -36,6 +38,7 @@ import {
 } from "../../ai/src/costAccounting.js";
 import {
   checkProofQuality,
+  answerContextualQuestion,
   makeAdaptiveCareerIntake,
   makeAgentScan,
   makeCareerBrief,
@@ -59,7 +62,8 @@ const LIVE_WORKFLOW_KINDS: ReadonlySet<WorkflowKind> = new Set([
   "missionBrief",
   "questPlan",
   "proofQualityCheck",
-  "progressSummary"
+  "progressSummary",
+  "contextualAssistant"
 ]);
 
 type FallbackReason =
@@ -496,6 +500,10 @@ function dispatchDeterministicWorkflow(envelope: RequestEnvelope): unknown {
     case "progressSummary": {
       const payload = progressSummaryPayloadSchema.parse(envelope.payload);
       return progressSummaryResponseSchema.parse(summarizeProgress(payload));
+    }
+    case "contextualAssistant": {
+      const payload = contextualAssistantPayloadSchema.parse(envelope.payload);
+      return contextualAssistantResponseSchema.parse(answerContextualQuestion(payload));
     }
     case "careerBrief": {
       const payload = careerBriefPayloadSchema.parse(envelope.payload);

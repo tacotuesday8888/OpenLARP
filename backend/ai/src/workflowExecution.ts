@@ -2,6 +2,8 @@ import type { z } from "zod";
 import {
   adaptiveCareerIntakePayloadSchema,
   adaptiveCareerIntakeResponseSchema,
+  contextualAssistantPayloadSchema,
+  contextualAssistantResponseSchema,
   diagnosticPayloadSchema,
   diagnosticResponseSchema,
   executionMetadataSchema,
@@ -24,6 +26,7 @@ import {
 } from "./liveGeneration.js";
 import {
   checkProofQuality,
+  answerContextualQuestion,
   makeAdaptiveCareerIntake,
   makeDiagnostic,
   makeMissionBrief,
@@ -155,6 +158,10 @@ function deterministicLiveWorkflow(envelope: RequestEnvelope): unknown {
       return proofQualityResponseSchema.parse(checkProofQuality(proofQualityPayloadSchema.parse(envelope.payload)));
     case "progressSummary":
       return progressSummaryResponseSchema.parse(summarizeProgress(progressSummaryPayloadSchema.parse(envelope.payload)));
+    case "contextualAssistant":
+      return contextualAssistantResponseSchema.parse(
+        answerContextualQuestion(contextualAssistantPayloadSchema.parse(envelope.payload))
+      );
     default:
       throw new Error(`Workflow ${envelope.run.kind} does not have a live execution path.`);
   }
@@ -168,6 +175,7 @@ function responseSchemaForLiveWorkflow(kind: RequestEnvelope["run"]["kind"]): z.
     case "questPlan": return questPlanResponseSchema;
     case "proofQualityCheck": return proofCoachingResponseSchema;
     case "progressSummary": return progressSummaryResponseSchema;
+    case "contextualAssistant": return contextualAssistantResponseSchema;
     default: throw new Error(`Workflow ${kind} does not have a live response schema.`);
   }
 }
