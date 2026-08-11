@@ -324,9 +324,9 @@ final class AIBackendContractTests: XCTestCase {
             kind: "cookedDiagnostic",
             liveModelCallsEnabled: true,
             liveModelUsed: true,
-            externalActionTaken: true,
             promptVersion: "openlarp.cooked.v1",
             policyRevision: "beta-2026-08-10",
+            externalActionTaken: true,
             result: [
                 "score": 62,
                 "label": "Some proof, not enough signal",
