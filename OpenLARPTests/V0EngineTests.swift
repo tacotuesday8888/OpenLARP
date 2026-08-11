@@ -3372,7 +3372,7 @@ final class V0EngineTests: XCTestCase {
         XCTAssertEqual(store.state.proofDraft?.id, draftID)
         XCTAssertEqual(
             store.errorMessage,
-            OpenLARPProofDraftError.persistenceFailed.localizedDescription
+            "Proof review could not finish. Your draft is still saved; try again when ready."
         )
     }
 
@@ -3461,9 +3461,11 @@ final class V0EngineTests: XCTestCase {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let persistence = OpenLARPPersistence(directory: directory)
+        let now = Date(timeIntervalSince1970: 24_000)
         let store = OpenLARPStore(
             persistence: persistence,
-            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { now }
         )
 
         await store.confirmGoal(goal)
