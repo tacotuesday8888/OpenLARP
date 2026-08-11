@@ -1,6 +1,7 @@
 import {
   adaptiveCareerIntakePayloadSchema,
   diagnosticPayloadSchema,
+  missionBriefPayloadSchema,
   progressSummaryPayloadSchema,
   proofQualityPayloadSchema,
   questPlanPayloadSchema,
@@ -45,6 +46,16 @@ export function buildLiveWorkflowPrompt(envelope: RequestEnvelope): LiveWorkflow
           "State the strongest signals, gaps, missing information, uncertainty, fastest legitimate improvement, and first action."
         ],
         diagnosticPayloadSchema.parse(envelope.payload)
+      );
+    case "missionBrief":
+      return prompt(
+        "openlarp.mission-brief.v1",
+        [
+          "Create an editable career mission from only the confirmed facts and supplied diagnostic.",
+          "Echo targetOutcome, confirmedCurrentState, constraints, ethicalBoundaries, and dailyCommitmentMinutes exactly from the input.",
+          "Keep the sprint fixed at 14 days in two seven-day chapters. The first milestone and gap wording are advice, not new facts."
+        ],
+        missionBriefPayloadSchema.parse(envelope.payload)
       );
     case "questPlan":
       return prompt(

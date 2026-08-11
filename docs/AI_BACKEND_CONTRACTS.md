@@ -121,7 +121,7 @@ Live execution is fail-closed and requires every control below:
 - `OPENLARP_ENABLE_LIVE_AI=true` on both the callable and AI-service runtimes.
 - A valid HTTPS `OPENLARP_AI_SERVICE_URL` on Functions.
 - All three Functions pricing/budget values: `OPENLARP_AI_INPUT_TOKEN_MICROS_PER_1K`, `OPENLARP_AI_OUTPUT_TOKEN_MICROS_PER_1K`, and `OPENLARP_AI_DAILY_BUDGET_MICROS`.
-- A current `_serverConfig/aiRuntimePolicy` document with `schemaVersion: 1`, a safe `revision`, `enabled`, a future `validUntil`, `timeoutMs` from 1,000 through 45,000, `maxOutputTokens` from 128 through 8,192, and explicit booleans for `adaptiveCareerIntake`, `cookedDiagnostic`, `questPlan`, `proofQualityCheck`, and `progressSummary`.
+- A current `_serverConfig/aiRuntimePolicy` document with `schemaVersion: 1`, a safe `revision`, `enabled`, a future `validUntil`, `timeoutMs` from 1,000 through 45,000, `maxOutputTokens` from 128 through 8,192, and explicit booleans for `adaptiveCareerIntake`, `cookedDiagnostic`, `missionBrief`, `questPlan`, `proofQualityCheck`, and `progressSummary`.
 
 The runtime policy is cached for at most 30 seconds and becomes disabled when missing, malformed, expired, globally off, or off for the requested workflow. The provider budget ledger lives under `_serverAIUsage/providerDaily/days/{UTC-day}` with hashed, expiring request reservations. Duplicate request IDs do not repeat provider work. The ledger reconciles estimated cost to actual token cost after the service responds and releases a reservation when dispatch cannot proceed.
 

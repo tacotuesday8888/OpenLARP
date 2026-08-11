@@ -183,6 +183,7 @@ The kill-switch document is `_serverConfig/aiRuntimePolicy`. Its required shape 
   "workflows": {
     "adaptiveCareerIntake": false,
     "cookedDiagnostic": false,
+    "missionBrief": false,
     "questPlan": false,
     "proofQualityCheck": false,
     "progressSummary": false

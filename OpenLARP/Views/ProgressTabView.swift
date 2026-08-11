@@ -64,7 +64,7 @@ struct ProgressTabView: View {
                     stat: "\(state.progress.readiness.overall)%"
                 )
 
-                if state.needsGoalSetup {
+                if state.needsCareerIntake {
                     Card {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("No baseline yet")

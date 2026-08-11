@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   adaptiveCareerIntakePayloadSchema,
   diagnosticPayloadSchema,
+  missionBriefPayloadSchema,
   proofQualityPayloadSchema
 } from "../src/contracts.js";
-import { makeDiagnostic, checkProofQuality } from "../src/mockWorkflows.js";
+import { makeDiagnostic, makeMissionBrief, checkProofQuality } from "../src/mockWorkflows.js";
 import { validateGeneratedWorkflowResult } from "../src/postValidation.js";
 
 const goal = {
@@ -178,6 +179,38 @@ describe("validateGeneratedWorkflowResult", () => {
     expect(validateGeneratedWorkflowResult("cookedDiagnostic", payload, result)).toEqual({
       ok: false,
       reason: "unsafeOutput"
+    });
+  });
+
+  it.each([
+    ["target outcome", { targetOutcome: "Senior iOS engineer" }],
+    ["confirmed current state", { confirmedCurrentState: [] }],
+    ["constraints", { constraints: "No constraints" }],
+    ["daily commitment", { dailyCommitmentMinutes: 90 }],
+    ["ethical boundaries", { ethicalBoundaries: ["Be helpful."] }]
+  ])("rejects a mission that changes the trusted %s", (_label, mutation) => {
+    const payload = missionBriefPayloadSchema.parse({
+      goal: { ...goal, constraints: "Weeknights only", dailyCommitmentMinutes: 30 },
+      confirmedFacts: [{
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "experience",
+        value: "One class app",
+        source: "userEntry",
+        confirmationState: "confirmed",
+        lastUpdatedAt: "2026-08-10T10:01:00.000Z"
+      }],
+      diagnostic: makeDiagnostic(diagnosticPayloadSchema.parse({ goal })),
+      requiredEthicalBoundaries: [
+        "Use only truthful, defensible career claims.",
+        "Never invent career history.",
+        "The user approves every external action."
+      ]
+    });
+    const result = { ...makeMissionBrief(payload), ...mutation };
+
+    expect(validateGeneratedWorkflowResult("missionBrief", payload, result)).toEqual({
+      ok: false,
+      reason: "invalidOutput"
     });
   });
 });

@@ -1468,6 +1468,10 @@ private struct FailingSubscriptionGateAIWorkflowService: V0AIWorkflowServicing {
         throw OpenLARPError.invalidQuestPlan
     }
 
+    func generateMissionBrief(_ request: V0MissionBriefRequest) async throws -> V0MissionBriefResponse {
+        throw OpenLARPError.invalidMissionBrief
+    }
+
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
         throw OpenLARPError.invalidQuestPlan
     }

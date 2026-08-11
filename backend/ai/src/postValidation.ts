@@ -2,6 +2,8 @@ import {
   adaptiveCareerIntakePayloadSchema,
   adaptiveCareerIntakeResponseSchema,
   diagnosticResponseSchema,
+  missionBriefPayloadSchema,
+  missionBriefResponseSchema,
   progressSummaryResponseSchema,
   proofQualityResponseSchema,
   questPlanResponseSchema,
@@ -71,6 +73,21 @@ export function validateGeneratedWorkflowResult(
     }
   }
 
+  if (kind === "missionBrief") {
+    const missionPayload = missionBriefPayloadSchema.safeParse(payload);
+    const mission = missionBriefResponseSchema.parse(parsed.data);
+    if (
+      !missionPayload.success ||
+      mission.targetOutcome !== missionPayload.data.goal.targetRole ||
+      mission.constraints !== missionPayload.data.goal.constraints ||
+      mission.dailyCommitmentMinutes !== missionPayload.data.goal.dailyCommitmentMinutes ||
+      JSON.stringify(mission.confirmedCurrentState) !== JSON.stringify(missionPayload.data.confirmedFacts) ||
+      JSON.stringify(mission.ethicalBoundaries) !== JSON.stringify(missionPayload.data.requiredEthicalBoundaries)
+    ) {
+      return { ok: false, reason: "invalidOutput" };
+    }
+  }
+
   if (kind === "proofQualityCheck") {
     const expectedReward = checkProofQuality(payload as Parameters<typeof checkProofQuality>[0]);
     const proofResult = proofQualityResponseSchema.parse(parsed.data);
@@ -91,6 +108,8 @@ function responseSchemaFor(kind: WorkflowKind) {
       return adaptiveCareerIntakeResponseSchema;
     case "cookedDiagnostic":
       return diagnosticResponseSchema;
+    case "missionBrief":
+      return missionBriefResponseSchema;
     case "questPlan":
       return questPlanResponseSchema;
     case "proofQualityCheck":

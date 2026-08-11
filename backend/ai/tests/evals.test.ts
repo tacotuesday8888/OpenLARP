@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { diagnosticResponseSchema, requestEnvelopeSchema } from "../src/contracts.js";
-import { makeDiagnostic } from "../src/mockWorkflows.js";
+import {
+  diagnosticResponseSchema,
+  missionBriefPayloadSchema,
+  missionBriefResponseSchema,
+  requestEnvelopeSchema
+} from "../src/contracts.js";
+import { makeDiagnostic, makeMissionBrief } from "../src/mockWorkflows.js";
 import { validateGeneratedWorkflowResult } from "../src/postValidation.js";
 import { buildLiveWorkflowPrompt } from "../src/prompts.js";
 import { executeWorkflow } from "../src/workflowExecution.js";
@@ -129,6 +134,25 @@ describe("Rich V0 truthfulness evaluations", () => {
     });
     expect(timeout.execution).toMatchObject({ usedFallback: true, fallbackReason: "timeout" });
     expect(diagnosticResponseSchema.safeParse(timeout.result).success).toBe(true);
+  });
+
+  it("falls back when a generated mission rewrites any user-confirmed input", async () => {
+    const envelope = missionEnvelope(evalFixtures.diagnosticProfiles[1]!.goal);
+    const grounded = makeMissionBrief(missionBriefPayloadSchema.parse(envelope.payload));
+    const generator = {
+      generate: vi.fn(async () => ({
+        output: { ...grounded, targetOutcome: "A role the user did not choose" },
+        inputTokens: 30,
+        outputTokens: 20
+      }))
+    };
+
+    const result = await executeWorkflow({ envelope, policy, generator });
+
+    expect(result.execution).toMatchObject({ usedFallback: true, fallbackReason: "invalidOutput" });
+    expect(result.result).toEqual(grounded);
+    expect(missionBriefResponseSchema.safeParse(result.result).success).toBe(true);
+    expect(generator.generate).toHaveBeenCalledTimes(1);
   });
 
   it("uses a schema-valid deterministic callable fallback when user quota is exhausted", async () => {
@@ -286,6 +310,52 @@ function proofEnvelope(proofMetadata: EvalFixture["proofMetadataCase"]) {
         ...proofMetadata
       },
       targetRoleTitle: "iOS engineer"
+    }
+  });
+}
+
+function missionEnvelope(goal: CareerGoalFixture) {
+  const diagnostic = makeDiagnostic(
+    diagnosticEnvelope(goal).payload as Parameters<typeof makeDiagnostic>[0]
+  );
+  return requestEnvelopeSchema.parse({
+    schemaVersion: 1,
+    run: {
+      schemaVersion: 1,
+      kind: "missionBrief",
+      providerRoute: "cloudRunGenkit",
+      requestedAt: "2026-08-10T10:00:00.000Z",
+      requestID: "33333333-3333-4333-8333-333333333333",
+      privacy: {
+        memoryMode: "cloudReady",
+        allowsLongTermMemoryWrite: true,
+        requiresUserApprovalForExternalActions: true,
+        shareWins: false,
+        allowsPrivateEvidenceCloudSync: false
+      }
+    },
+    safetyRules: {
+      hardBannedClaims: ["Never fabricate an employer or any other substantial career claim."],
+      requiredBehaviors: ["Separate facts, inferences, unknowns, and advice."],
+      privacyRequirements: ["External actions require user approval before the system can act."]
+    },
+    payload: {
+      goal,
+      confirmedFacts: [{
+        id: "44444444-4444-4444-8444-444444444444",
+        kind: "experience",
+        value: goal.background,
+        source: "userEntry",
+        confirmationState: "confirmed",
+        lastUpdatedAt: "2026-08-10T10:00:00.000Z"
+      }],
+      diagnostic,
+      requiredEthicalBoundaries: [
+        "Use only truthful, defensible career claims.",
+        "Never invent career history.",
+        "The user approves every external action."
+      ],
+      requestedAt: "2026-08-10T10:00:00.000Z"
     }
   });
 }

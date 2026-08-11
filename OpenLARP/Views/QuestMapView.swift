@@ -20,10 +20,12 @@ struct QuestMapView: View {
                 if state.plan.isEmpty {
                     Card {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("No questline yet")
+                            Text(state.needsMissionApproval ? "Mission approval comes first" : "No questline yet")
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(Color.openLARPInk)
-                            Text("The map is generated locally after goal setup and the Am I Cooked diagnostic.")
+                            Text(state.needsMissionApproval
+                                 ? "Review and approve the editable mission on Today. OpenLARP will create the first chapter only after that decision."
+                                 : "The map appears after goal setup, the Am I Cooked diagnostic, and mission approval.")
                                 .font(.body)
                                 .foregroundStyle(Color.openLARPSoftInk)
                             Button("View Today", action: viewToday)

@@ -412,7 +412,7 @@ final class CareerUnderstandingTests: XCTestCase {
 
         let decoded = try JSONDecoder.openLARPPersistence.decode(OpenLARPState.self, from: legacyData)
 
-        XCTAssertEqual(decoded.schemaVersion, 11)
+        XCTAssertEqual(decoded.schemaVersion, OpenLARPState.currentSchemaVersion)
         XCTAssertEqual(decoded.careerUnderstanding.reviewState, .approved)
         XCTAssertEqual(
             decoded.careerUnderstanding.unknowns.map(\.kind),
