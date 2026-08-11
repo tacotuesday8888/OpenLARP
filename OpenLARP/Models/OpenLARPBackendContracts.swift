@@ -1193,9 +1193,12 @@ struct CareerStateCloudPayload: Codable, Equatable {
                 $0.isPrivate && !cloudOutcomeIDs.contains($0.id)
             })
         }
-        let canPreserveDraft = localState.proofDraftQuestID.map { draftQuestID in
-            restored.plan.contains(where: { $0.id == draftQuestID })
-        } ?? localState.proofDraft == nil
+        let canPreserveDraft: Bool
+        if let draftQuestID = localState.proofDraftQuestID {
+            canPreserveDraft = restored.plan.contains { $0.id == draftQuestID }
+        } else {
+            canPreserveDraft = localState.proofDraft == nil
+        }
         if canPreserveDraft {
             restored.proofDraft = localState.proofDraft
             restored.proofDraftQuestID = localState.proofDraftQuestID
