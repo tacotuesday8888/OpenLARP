@@ -117,6 +117,18 @@ targets:
     type: bundle.unit-test
     dependencies:
       - target: OpenLARPInternal
+  OpenLARPUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - OpenLARPUITests
+    dependencies:
+      - target: OpenLARP
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.ui-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: OpenLARP
   OpenLARPReleaseContractTests:
     type: bundle.unit-test
     platform: iOS
@@ -156,6 +168,20 @@ schemes:
       config: Release
       targets:
         - OpenLARPReleaseContractTests
+  OpenLARPUIJourney:
+    management:
+      shared: true
+    build:
+      buildImplicitDependencies: false
+      targets:
+        OpenLARP:
+          - test
+        OpenLARPUITests:
+          - test
+    test:
+      config: Debug
+      targets:
+        - OpenLARPUITests
 `.trim();
 
 const publicSchemeFixture = `
@@ -242,6 +268,28 @@ jobs:
               print("::error::Debug test count mismatch.", file=sys.stderr)
               sys.exit(1)
           PY
+      - name: Run fresh-user UI journey
+        run: |
+          set -euo pipefail
+          UI_RESULT_BUNDLE="\${RUNNER_TEMP}/OpenLARPUIJourney-\${GITHUB_RUN_ID}-\${GITHUB_RUN_ATTEMPT}.xcresult"
+          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARPUIJourney -configuration Debug -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPUIJourneyTests -resultBundlePath "$UI_RESULT_BUNDLE" -only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFirstTruthfulProofLoop test
+          export UI_SUMMARY_JSON="$(xcrun xcresulttool get test-results summary --path "$UI_RESULT_BUNDLE" --compact)"
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          summary = json.loads(os.environ["UI_SUMMARY_JSON"])
+          expected = {
+              "totalTestCount": 1,
+              "passedTests": 1,
+              "failedTests": 0,
+              "skippedTests": 0,
+          }
+          actual = {key: summary.get(key) for key in expected}
+          if actual != expected:
+              print(f"::error::UI journey test count mismatch: {actual}", file=sys.stderr)
+              sys.exit(1)
+          PY
       - name: Run optimized App Store Release contract
         run: |
           set -euo pipefail
@@ -319,8 +367,10 @@ const completeFiles = new Map([
   ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", "release configuration"],
   ["OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift", "presentation policy"],
   ["OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift", "release snapshot"],
+  ["OpenLARPUITests/OpenLARPFreshUserJourneyTests.swift", "fresh-user UI journey"],
   ["OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift", "ordinary import contract"],
   ["OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme", publicSchemeFixture],
+  ["OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARPUIJourney.xcscheme", "shared UI journey scheme"],
   ["docs/APP_STORE_TESTFLIGHT_READINESS.md", [
     "TestFlight Beta Notes Draft",
     "Privacy Policy Checklist",
@@ -371,14 +421,14 @@ function movingWorkflowStepAfter(stepName, predecessorName) {
   return files;
 }
 
-const projectContractBlocker = "project.yml must define the isolated Release contract target and scheme.";
+const projectContractBlocker = "project.yml must define the isolated Release contract and UI journey targets and schemes.";
 const releaseChannelBlocker = "Debug or Release build channel configuration is missing.";
 const serviceCopyBlocker = "Local service configuration copy hooks must be restricted to internal-beta builds.";
 const publicTargetBoundaryBlocker = "The App Store target must be isolated from internal service SDKs, auth metadata, and entitlements.";
 const publicPrivacyBlocker = "The App Store privacy manifest must declare no tracking and no collected data.";
 const publicSchemeBlocker = "The shared OpenLARP scheme must build only the App Store target.";
 const appIconWarning = "A referenced 1024x1024 App Store icon file is still required before submission.";
-const workflowBlocker = "CI workflow must fail closed and execute Debug tests plus the verified Release contract.";
+const workflowBlocker = "CI workflow must fail closed and execute Debug, fresh-user UI journey, and verified Release contract tests.";
 
 describe("beta release gate", () => {
   it("passes repository-controlled checks while warning about external setup", () => {
@@ -517,6 +567,12 @@ describe("beta release gate", () => {
     ["contract target sole dependency", "    dependencies:\n      - target: OpenLARP\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "    dependencies:\n      - target: OpenLARP\n      - target: OpenLARPTests\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests"],
     ["contract target unique bundle ID", "PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.release-contract-tests", "PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.app"],
     ["contract target generated plist", "        GENERATE_INFOPLIST_FILE: YES", "        GENERATE_INFOPLIST_FILE: NO"],
+    ["UI journey target", "  OpenLARPUITests:\n    type: bundle.ui-testing", "  RenamedUITests:\n    type: bundle.ui-testing"],
+    ["UI journey target type", "  OpenLARPUITests:\n    type: bundle.ui-testing", "  OpenLARPUITests:\n    type: bundle.unit-test"],
+    ["UI journey app dependency", "  OpenLARPUITests:\n    type: bundle.ui-testing\n    platform: iOS\n    sources:\n      - OpenLARPUITests\n    dependencies:\n      - target: OpenLARP", "  OpenLARPUITests:\n    type: bundle.ui-testing\n    platform: iOS\n    sources:\n      - OpenLARPUITests\n    dependencies:\n      - target: OpenLARPInternal"],
+    ["UI journey test target name", "        TEST_TARGET_NAME: OpenLARP", "        TEST_TARGET_NAME: OpenLARPInternal"],
+    ["UI journey scheme", "  OpenLARPUIJourney:\n", "  RenamedUIJourney:\n"],
+    ["UI journey Debug configuration", "  OpenLARPUIJourney:\n    management:\n      shared: true\n    build:\n      buildImplicitDependencies: false\n      targets:\n        OpenLARP:\n          - test\n        OpenLARPUITests:\n          - test\n    test:\n      config: Debug", "  OpenLARPUIJourney:\n    management:\n      shared: true\n    build:\n      buildImplicitDependencies: false\n      targets:\n        OpenLARP:\n          - test\n        OpenLARPUITests:\n          - test\n    test:\n      config: Release"],
     ["Debug scheme test target", "    scheme:\n      testTargets:\n        - OpenLARPTests", "    scheme:\n      testTargets:\n        - OpenLARPReleaseContractTests"],
     ["contract scheme", "  OpenLARPReleaseContract:\n", "  RenamedReleaseContract:\n"],
     ["shared scheme marker", "  OpenLARPReleaseContract:\n    management:\n      shared: true", "  OpenLARPReleaseContract:\n    management:\n      shared: false"],
@@ -608,6 +664,13 @@ describe("beta release gate", () => {
     ["Debug all-tests-passed count", "passed != total", "passed < total"],
     ["Debug failed test count", "failed != 0", "failed < 0"],
     ["Debug skipped test count", "skipped != 0", "skipped < 0"],
+    ["conditional UI journey", "      - name: Run fresh-user UI journey\n", "      - name: Run fresh-user UI journey\n        if: success()\n"],
+    ["continue-on-error UI journey", "      - name: Run fresh-user UI journey\n", "      - name: Run fresh-user UI journey\n        continue-on-error: true\n"],
+    ["UI journey scheme", "-scheme OpenLARPUIJourney", "-scheme OpenLARP"],
+    ["UI journey selected simulator", "-scheme OpenLARPUIJourney -configuration Debug -destination \"id=${{ steps.simulator.outputs.device_id }}\"", "-scheme OpenLARPUIJourney -configuration Debug"],
+    ["UI journey named test", "-only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFirstTruthfulProofLoop", ""],
+    ["UI journey result bundle", "-resultBundlePath \"$UI_RESULT_BUNDLE\"", ""],
+    ["UI journey exact passed count", '"passedTests": 1', '"passedTests": 0'],
     ["conditional Release contract", "      - name: Run optimized App Store Release contract\n", "      - name: Run optimized App Store Release contract\n        if: success()\n"],
     ["continue-on-error Release contract", "      - name: Run optimized App Store Release contract\n", "      - name: Run optimized App Store Release contract\n        continue-on-error: true\n"],
     ["contract scheme", "-scheme OpenLARPReleaseContract", "-scheme OpenLARP"],
@@ -644,7 +707,8 @@ describe("beta release gate", () => {
 
   it.each([
     ["simulator", "      - name: Select available iPhone simulator\n", "      - name: Select available iPhone simulator\n        run: echo decoy\n      - name: Select available iPhone simulator\n"],
-    ["Debug test", "      - name: Run Debug simulator tests\n", "      - name: Run Debug simulator tests\n        run: echo decoy\n      - name: Run Debug simulator tests\n"]
+    ["Debug test", "      - name: Run Debug simulator tests\n", "      - name: Run Debug simulator tests\n        run: echo decoy\n      - name: Run Debug simulator tests\n"],
+    ["UI journey", "      - name: Run fresh-user UI journey\n", "      - name: Run fresh-user UI journey\n        run: echo decoy\n      - name: Run fresh-user UI journey\n"]
   ])("blocks duplicate required %s steps", (_name, from, to) => {
     expectBlocker(
       replacing(".github/workflows/ios-ci.yml", from, to),
@@ -702,6 +766,11 @@ describe("beta release gate", () => {
       "      - name: Run Debug simulator tests\n        run: |\n          if true; then exit 0; fi\n          set -euo pipefail"
     ],
     [
+      "fresh-user UI journey",
+      "      - name: Run fresh-user UI journey\n        run: |\n          set -euo pipefail",
+      "      - name: Run fresh-user UI journey\n        run: |\n          if true; then exit 0; fi\n          set -euo pipefail"
+    ],
+    [
       "conditional Release contract",
       "      - name: Run optimized App Store Release contract\n        run: |\n          set -euo pipefail",
       "      - name: Run optimized App Store Release contract\n        run: |\n          if true; then exit 0; fi\n          set -euo pipefail"
@@ -716,6 +785,7 @@ describe("beta release gate", () => {
   it.each([
     ["unsigned build", "Build unsigned iOS app"],
     ["Debug tests", "Run Debug simulator tests"],
+    ["UI journey", "Run fresh-user UI journey"],
     ["Release contract", "Run optimized App Store Release contract"]
   ])("blocks project generation moved after the %s", (_name, predecessor) => {
     expectBlocker(
@@ -726,10 +796,25 @@ describe("beta release gate", () => {
 
   it.each([
     ["Debug tests", "Run Debug simulator tests"],
+    ["UI journey", "Run fresh-user UI journey"],
     ["Release contract", "Run optimized App Store Release contract"]
   ])("blocks simulator selection moved after the %s", (_name, predecessor) => {
     expectBlocker(
       movingWorkflowStepAfter("Select available iPhone simulator", predecessor),
+      workflowBlocker
+    );
+  });
+
+  it("blocks the fresh-user UI journey from running before the Debug suite", () => {
+    expectBlocker(
+      movingWorkflowStepAfter("Run Debug simulator tests", "Run fresh-user UI journey"),
+      workflowBlocker
+    );
+  });
+
+  it("blocks the Release contract from running before the fresh-user UI journey", () => {
+    expectBlocker(
+      movingWorkflowStepAfter("Run fresh-user UI journey", "Run optimized App Store Release contract"),
       workflowBlocker
     );
   });

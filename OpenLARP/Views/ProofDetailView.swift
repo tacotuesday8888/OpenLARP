@@ -474,16 +474,21 @@ private struct ProofDetailTextBlock: View {
 private struct ProofAttachmentLargePreview: View {
     let attachment: ProofAttachment
     let fileURL: URL
+    @State private var image: UIImage?
+    @State private var didFinishLoading = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             ZStack {
-                if let image = UIImage(contentsOfFile: fileURL.path) {
+                if let image {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: .infinity)
                         .frame(maxHeight: 320)
+                } else if !didFinishLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 190)
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "photo")
@@ -511,5 +516,15 @@ private struct ProofAttachmentLargePreview: View {
             .foregroundStyle(Color.openLARPSoftInk)
         }
         .accessibilityLabel("Proof image preview")
+        .accessibilityValue(didFinishLoading && image == nil ? "Missing from this device" : attachment.originalFileName)
+        .task(id: fileURL) {
+            image = nil
+            didFinishLoading = false
+            image = await ProofAttachmentImageLoader.load(
+                from: fileURL,
+                maximumPixelDimension: 1_280
+            )
+            didFinishLoading = true
+        }
     }
 }

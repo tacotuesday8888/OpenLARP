@@ -115,6 +115,7 @@ struct GuidedCareerOnboardingView: View {
             .buttonStyle(PrimaryButtonStyle())
             .disabled(!canUsePrimaryAction || isOnboardingWorkRunning)
             .opacity(canUsePrimaryAction && !isOnboardingWorkRunning ? 1 : 0.5)
+            .accessibilityIdentifier("onboarding.primaryAction")
 
             if flow.step != .outcome {
                 Button {
@@ -187,6 +188,7 @@ struct GuidedCareerOnboardingView: View {
                         .textInputAutocapitalization(.sentences)
                         .focused($focusedField, equals: .targetOutcome)
                         .accessibilityLabel("Target role or career outcome")
+                        .accessibilityIdentifier("onboarding.targetOutcome")
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -437,6 +439,7 @@ struct GuidedCareerOnboardingView: View {
             .buttonStyle(.borderless)
             .font(.caption.weight(.semibold))
             .accessibilityLabel("Keep \(question.factKind.title) unknown")
+            .accessibilityIdentifier("onboarding.keepUnknown")
         }
     }
 

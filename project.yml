@@ -180,6 +180,19 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.tests
         GENERATE_INFOPLIST_FILE: YES
+  OpenLARPUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - OpenLARPUITests
+    dependencies:
+      - target: OpenLARP
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openlarp.ui-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_TARGET_NAME: OpenLARP
   OpenLARPReleaseContractTests:
     type: bundle.unit-test
     platform: iOS
@@ -219,3 +232,17 @@ schemes:
       config: Release
       targets:
         - OpenLARPReleaseContractTests
+  OpenLARPUIJourney:
+    management:
+      shared: true
+    build:
+      buildImplicitDependencies: false
+      targets:
+        OpenLARP:
+          - test
+        OpenLARPUITests:
+          - test
+    test:
+      config: Debug
+      targets:
+        - OpenLARPUITests

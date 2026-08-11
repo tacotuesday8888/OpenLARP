@@ -129,6 +129,7 @@ struct MissionBriefReviewView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(store.isMissionApprovalRunning)
+            .accessibilityIdentifier("mission.approve")
 
             AskOpenLARPButton(
                 store: store,

@@ -115,6 +115,25 @@ final class ProofImageProcessorTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testAttachmentImageLoaderDownsamplesBeforeRendering() async throws {
+        let input = makePatternedPNG(size: CGSize(width: 800, height: 600))
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).png")
+        try input.write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let image = try XCTUnwrap(
+            await ProofAttachmentImageLoader.load(
+                from: fileURL,
+                maximumPixelDimension: 120
+            )
+        )
+
+        XCTAssertLessThanOrEqual(image.cgImage?.width ?? .max, 120)
+        XCTAssertLessThanOrEqual(image.cgImage?.height ?? .max, 120)
+    }
+
     private func makePNG(size: CGSize) -> Data {
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.pngData { context in

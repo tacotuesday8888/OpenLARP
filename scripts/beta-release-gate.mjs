@@ -19,8 +19,10 @@ const REQUIRED_FILES = [
   "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
   "OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift",
   "OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift",
+  "OpenLARPUITests/OpenLARPFreshUserJourneyTests.swift",
   "OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift",
   "OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme",
+  "OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARPUIJourney.xcscheme",
   "docs/APP_STORE_TESTFLIGHT_READINESS.md",
   "docs/BETA_TESTFLIGHT_PATH.md",
   "docs/FIREBASE_BACKEND_SETUP.md",
@@ -32,7 +34,7 @@ const REQUIRED_FILES = [
 ];
 
 const PROJECT_CONTRACT_BLOCKER =
-  "project.yml must define the isolated Release contract target and scheme.";
+  "project.yml must define the isolated Release contract and UI journey targets and schemes.";
 const RELEASE_CHANNEL_BLOCKER =
   "Debug or Release build channel configuration is missing.";
 const SERVICE_COPY_BLOCKER =
@@ -44,7 +46,7 @@ const PUBLIC_PRIVACY_BLOCKER =
 const PUBLIC_SCHEME_BLOCKER =
   "The shared OpenLARP scheme must build only the App Store target.";
 const WORKFLOW_BLOCKER =
-  "CI workflow must fail closed and execute Debug tests plus the verified Release contract.";
+  "CI workflow must fail closed and execute Debug, fresh-user UI journey, and verified Release contract tests.";
 
 function textIncludesAll(text, values) {
   return values.every((value) => text.includes(value));
@@ -293,6 +295,7 @@ function validateProjectDefinition(project) {
     hasInternalOnlyCopyScript(revenueCatScripts[0], "RevenueCat-Info.plist");
 
   const contractTarget = project?.targets?.OpenLARPReleaseContractTests;
+  const uiTarget = project?.targets?.OpenLARPUITests;
   const publicScheme = project?.schemes?.OpenLARP;
   const publicSchemeBuildTargets = publicScheme?.build?.targets;
   const publicSchemeValid =
@@ -330,6 +333,26 @@ function validateProjectDefinition(project) {
     isExactArray(buildTargets.OpenLARPReleaseContractTests, ["test"]) &&
     contractScheme?.test?.config === "Release" &&
     isExactArray(contractScheme?.test?.targets, ["OpenLARPReleaseContractTests"]);
+  const uiScheme = project?.schemes?.OpenLARPUIJourney;
+  const uiBuildTargets = uiScheme?.build?.targets;
+  const uiJourneyValid =
+    uiTarget?.type === "bundle.ui-testing" &&
+    uiTarget?.platform === "iOS" &&
+    isExactArray(uiTarget?.sources, ["OpenLARPUITests"]) &&
+    Array.isArray(uiTarget?.dependencies) &&
+    uiTarget.dependencies.length === 1 &&
+    dependenciesInclude(uiTarget.dependencies, { target: "OpenLARP" }) &&
+    uiTarget?.settings?.base?.PRODUCT_BUNDLE_IDENTIFIER === "com.openlarp.ui-tests" &&
+    uiTarget?.settings?.base?.GENERATE_INFOPLIST_FILE === "YES" &&
+    uiTarget?.settings?.base?.TEST_TARGET_NAME === "OpenLARP" &&
+    uiScheme?.management?.shared === true &&
+    uiScheme?.build?.buildImplicitDependencies === false &&
+    uiBuildTargets &&
+    isExactArray(Object.keys(uiBuildTargets).sort(), ["OpenLARP", "OpenLARPUITests"]) &&
+    isExactArray(uiBuildTargets.OpenLARP, ["test"]) &&
+    isExactArray(uiBuildTargets.OpenLARPUITests, ["test"]) &&
+    uiScheme?.test?.config === "Debug" &&
+    isExactArray(uiScheme?.test?.targets, ["OpenLARPUITests"]);
 
   return {
     baseConfigurationValid: baseConfigurationValid && internalConfigurationValid,
@@ -337,7 +360,7 @@ function validateProjectDefinition(project) {
     channelsValid,
     serviceCopiesValid,
     publicSchemeValid,
-    contractValid
+    contractValid: contractValid && uiJourneyValid
   };
 }
 
@@ -384,6 +407,7 @@ function validateWorkflowDefinition(workflow) {
   const simulator = uniqueRequiredStep(steps, "Select available iPhone simulator");
   const unsignedBuild = uniqueRequiredStep(steps, "Build unsigned iOS app");
   const debugTests = uniqueRequiredStep(steps, "Run Debug simulator tests");
+  const uiJourney = uniqueRequiredStep(steps, "Run fresh-user UI journey");
   const releaseContract = uniqueRequiredStep(
     steps,
     "Run optimized App Store Release contract"
@@ -401,7 +425,7 @@ function validateWorkflowDefinition(workflow) {
   if (!publicSafety || !betaGate || !backendTests || !truthfulnessEvals ||
       !productionAudit || !backendBuild || !rulesTests ||
       !projectGeneration || !simulator || !unsignedBuild || !debugTests ||
-      !releaseContract || !containerBuild || !containerSmoke || Object.hasOwn(containerJob, "if") ||
+      !uiJourney || !releaseContract || !containerBuild || !containerSmoke || Object.hasOwn(containerJob, "if") ||
       Object.hasOwn(containerJob, "continue-on-error")) {
     return false;
   }
@@ -410,12 +434,17 @@ function validateWorkflowDefinition(workflow) {
   const simulatorIndex = steps.indexOf(simulator);
   const unsignedBuildIndex = steps.indexOf(unsignedBuild);
   const debugTestsIndex = steps.indexOf(debugTests);
+  const uiJourneyIndex = steps.indexOf(uiJourney);
   const releaseContractIndex = steps.indexOf(releaseContract);
   const requiredStepOrderValid =
     projectGenerationIndex < unsignedBuildIndex &&
     projectGenerationIndex < debugTestsIndex &&
+    projectGenerationIndex < uiJourneyIndex &&
     projectGenerationIndex < releaseContractIndex &&
     simulatorIndex < debugTestsIndex &&
+    simulatorIndex < uiJourneyIndex &&
+    debugTestsIndex < uiJourneyIndex &&
+    uiJourneyIndex < releaseContractIndex &&
     simulatorIndex < releaseContractIndex;
 
   const simulatorRun = simulator.run;
@@ -491,6 +520,29 @@ function validateWorkflowDefinition(workflow) {
     "sys.exit(1)"
     ]) && !contractRun.includes("rm -rf");
 
+  const uiJourneyScript = uiJourney.run;
+  const normalizedUIJourney = normalizedShell(uiJourneyScript);
+  const uiJourneyVerified =
+    hasCanonicalShellContract(uiJourneyScript, /^set -euo pipefail$/) &&
+    textIncludesAll(normalizedUIJourney, [
+    "set -euo pipefail",
+    "-project OpenLARP.xcodeproj",
+    "-scheme OpenLARPUIJourney",
+    "-configuration Debug",
+    "steps.simulator.outputs.device_id",
+    "OpenLARPUIJourney-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult",
+    '-resultBundlePath "$UI_RESULT_BUNDLE"',
+    "-only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFirstTruthfulProofLoop",
+    'xcrun xcresulttool get test-results summary --path "$UI_RESULT_BUNDLE"',
+    '"totalTestCount": 1',
+    '"passedTests": 1',
+    '"failedTests": 0',
+    '"skippedTests": 0',
+    "actual != expected",
+    "sys.exit(1)",
+    "test"
+    ]) && !uiJourneyScript.includes("rm -rf");
+
   const requiredCommandsValid =
     publicSafety.run.trim() === "npm run public:safety" &&
     betaGate.run.trim() === "npm run beta:gate" &&
@@ -510,7 +562,8 @@ function validateWorkflowDefinition(workflow) {
   );
 
   return requiredCommandsValid && simulatorFailsClosed && unsignedReleaseBuild &&
-    debugSuite && releaseContractVerified && requiredStepOrderValid && !hasSkipStep;
+    debugSuite && uiJourneyVerified && releaseContractVerified &&
+    requiredStepOrderValid && !hasSkipStep;
 }
 
 export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists = existsSync) {
@@ -619,7 +672,7 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
       }
 
       if (validation.contractValid) {
-        addResult(results, "pass", "The isolated shared Release contract target and scheme are configured.");
+        addResult(results, "pass", "The isolated Release contract and fresh-user UI journey targets and schemes are configured.");
       } else {
         addResult(results, "blocker", PROJECT_CONTRACT_BLOCKER);
       }
@@ -643,7 +696,7 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   if (workflowText) {
     const workflow = parseYaml(workflowText);
     if (workflow && validateWorkflowDefinition(workflow)) {
-      addResult(results, "pass", "CI fails closed and verifies Debug plus the optimized App Store Release contract.");
+      addResult(results, "pass", "CI fails closed and verifies Debug, the fresh-user UI journey, and the optimized App Store Release contract.");
     } else {
       addResult(results, "blocker", WORKFLOW_BLOCKER);
     }

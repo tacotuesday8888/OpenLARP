@@ -167,6 +167,48 @@ jobs:
               sys.exit(1)
           PY
 
+      - name: Run fresh-user UI journey
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+
+          UI_RESULT_BUNDLE="${RUNNER_TEMP}/OpenLARPUIJourney-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult"
+          xcodebuild \
+            -project OpenLARP.xcodeproj \
+            -scheme OpenLARPUIJourney \
+            -configuration Debug \
+            -destination "id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath /tmp/OpenLARPUIJourneyTests \
+            -resultBundlePath "$UI_RESULT_BUNDLE" \
+            -only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFirstTruthfulProofLoop \
+            test
+
+          export UI_SUMMARY_JSON="$(
+            xcrun xcresulttool get test-results summary \
+              --path "$UI_RESULT_BUNDLE" \
+              --compact
+          )"
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          summary = json.loads(os.environ["UI_SUMMARY_JSON"])
+          expected = {
+              "totalTestCount": 1,
+              "passedTests": 1,
+              "failedTests": 0,
+              "skippedTests": 0,
+          }
+          actual = {key: summary.get(key) for key in expected}
+          if actual != expected:
+              print(
+                  f"::error::UI journey test count mismatch: {actual}",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
+
       - name: Run optimized App Store Release contract
         timeout-minutes: 20
         run: |

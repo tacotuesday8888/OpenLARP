@@ -9,7 +9,7 @@ This is a working launch packet for the free, local-first App Store build. It is
 - Public navigation: Today, Map, Progress, and Profile
 - Primary promise: help students, new graduates, career switchers, and early-career professionals complete one useful career action per day, save honest proof locally, and understand readiness gaps
 - No account or purchase is needed. Account, cloud sync, subscriptions, and Agent are not included in this App Store build.
-- Repository work still required before submission: identity-safe local persistence and complete erase, sprint history and day-seven continuation, and final accessibility/release-UI verification
+- Repository-controlled product work now includes identity-safe persistence and erase, the complete 14-day sprint lifecycle, accessibility identifiers for the critical path, and an automated fresh-user UI journey through onboarding, mission approval, a truthful proof check, XP claim, and the next-day state.
 - Proof integrity status: implemented and regression-tested. Draft images are validated and staged under one quest-owned draft, limited to four and 8 MiB each after processing, promoted transactionally on claim, reconciled on recovery, and removed on discard/reset/skip/swap. A written note is required before review or claim, and uninspected links or images cannot increase local score, XP, readiness, or badge eligibility.
 - External work still required: final hosted URLs, metadata and screenshots, signed-device QA, signed archive upload, and App Store Connect completion
 
@@ -28,7 +28,8 @@ This is a working launch packet for the free, local-first App Store build. It is
 - `OpenLARPReleaseContract` compiles the real app module with the optimized Release configuration and keeps `ENABLE_TESTABILITY=NO`.
 - Its separate XCTest target uses ordinary `import OpenLARP`, not `@testable import`, and reads a minimal immutable snapshot derived from the bundled release channel and the same presentation/lifecycle policies used by the SwiftUI app.
 - The contract verifies the hosted app bundle identifier, literal `app-store` plist value, free/local-only service posture, empty unfinished-capability set, no live AI, exact public tabs and ordered sections, local-only privacy presentation, local-only lifecycle, and absence of Firebase/RevenueCat local configuration plists.
-- CI fails when simulator discovery fails, when the optimized contract test is skipped or does not run exactly once, when the Release app enables testability, or when the unsigned generic build is not Release.
+- CI fails when simulator discovery fails, when the fresh-user UI journey or optimized contract test is skipped or does not run exactly once, when the Release app enables testability, or when the unsigned generic build is not Release.
+- Proof-image thumbnails and detail previews load asynchronously and are downsampled before display, keeping attachment decoding out of SwiftUI view rendering and bounding decoded image size.
 - The JavaScript repository gate validates the structured XcodeGen and GitHub Actions wiring plus non-Swift readiness files. Swift behavior is proven by compiled XCTest rather than source-text parsing.
 
 Latest repository-controlled proof-integrity verification on July 11, 2026:
@@ -40,7 +41,7 @@ Latest repository-controlled proof-integrity verification on July 11, 2026:
 - the archived public app contained only the executable, `Info.plist`, `PkgInfo`, and the privacy manifest; it contained no vendor frameworks, service configuration plists, URL schemes, or embedded provisioning profile
 - the archived privacy manifest declared no tracking or collected data, matching the local-only runtime profile
 
-These automated checks do not replace signed-device visual and interaction QA. The final local flow, accessibility, layout, offline behavior, signing, archive, and uploaded build still require the external checks below.
+These automated checks do not replace signed-device visual and interaction QA. Final VoiceOver review, layout checks across supported device sizes, offline behavior on a real device, signing, archive, and the uploaded build still require the external checks below.
 
 ## App Store Connect Draft
 
