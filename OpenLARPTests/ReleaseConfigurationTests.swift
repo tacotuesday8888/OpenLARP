@@ -59,10 +59,10 @@ final class ReleaseConfigurationTests: XCTestCase {
         )
     }
 
-    func testAppStoreActivationRequestsOnlyDailyAvailabilityRefresh() {
+    func testAppStoreActivationRefreshesDailyAvailabilityAndLocalReminders() {
         XCTAssertEqual(
             AppLifecyclePolicy.activationOperations(for: .appStoreMVP),
-            [.refreshDailyAvailability]
+            [.refreshDailyAvailability, .reconcileQuestReminders]
         )
     }
 
@@ -73,7 +73,8 @@ final class ReleaseConfigurationTests: XCTestCase {
                 .refreshDailyAvailability,
                 .restoreAuthentication,
                 .refreshSubscription,
-                .syncBackendEvents
+                .syncBackendEvents,
+                .reconcileQuestReminders
             ]
         )
     }
@@ -106,6 +107,7 @@ final class ReleaseConfigurationTests: XCTestCase {
                 .activeGoal,
                 .recentOutcomes,
                 .streak,
+                .reminders,
                 .privacy,
                 .localData,
                 .badges,
@@ -169,6 +171,7 @@ final class ReleaseConfigurationTests: XCTestCase {
                 .activeGoal,
                 .recentOutcomes,
                 .streak,
+                .reminders,
                 .privacy,
                 .localData,
                 .badges,

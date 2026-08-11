@@ -15,6 +15,7 @@ It is not an open-source project. No open-source license is granted. You may rea
 - Native SwiftUI iOS app source in `OpenLARP/`
 - XCTest coverage in `OpenLARPTests/`
 - Local quest, proof, progress, and readiness models
+- Privacy-safe local quest reminders with explicit opt-in, editable time, and daily or weekday cadence
 - Backend-ready contracts for Firebase, Firestore, AI workflows, and subscriptions
 - Product and architecture notes in `docs/`
 - A direct Wondering product audit and OpenLARP feature translation in `docs/WONDERING_PRODUCT_AUDIT.md`

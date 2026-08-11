@@ -1763,7 +1763,7 @@ struct CareerSprintArchive: Codable, Equatable, Identifiable {
 }
 
 struct OpenLARPState: Codable, Equatable {
-    static let currentSchemaVersion = 14
+    static let currentSchemaVersion = 15
 
     var schemaVersion: Int
     var userProfile: CareerUserProfile?
@@ -1777,6 +1777,7 @@ struct OpenLARPState: Codable, Equatable {
     var activeSprint: CareerSprintState?
     var sprintHistory: [CareerSprintArchive]
     var progress: ProgressState
+    var questReminders: QuestReminderPreferences
     var agentBrief: AgentBrief
     var updatedAt: Date
     var dailyCadence: DailyCadenceState = .empty
@@ -1806,6 +1807,7 @@ struct OpenLARPState: Codable, Equatable {
         activeSprint: CareerSprintState? = nil,
         sprintHistory: [CareerSprintArchive] = [],
         progress: ProgressState,
+        questReminders: QuestReminderPreferences = .off,
         agentBrief: AgentBrief = .empty,
         updatedAt: Date,
         dailyCadence: DailyCadenceState = .empty,
@@ -1846,6 +1848,7 @@ struct OpenLARPState: Codable, Equatable {
         )
         self.sprintHistory = sprintHistory
         self.progress = progress
+        self.questReminders = questReminders
         self.agentBrief = agentBrief
         self.updatedAt = updatedAt
         self.dailyCadence = dailyCadence
@@ -1929,6 +1932,7 @@ extension OpenLARPState {
         case activeSprint
         case sprintHistory
         case progress
+        case questReminders
         case agentBrief
         case updatedAt
         case dailyCadence
@@ -1992,6 +1996,10 @@ extension OpenLARPState {
             }
         }
         progress = try container.decode(ProgressState.self, forKey: .progress)
+        questReminders = try container.decodeIfPresent(
+            QuestReminderPreferences.self,
+            forKey: .questReminders
+        ) ?? .off
         activeSprint = try container.decodeIfPresent(CareerSprintState.self, forKey: .activeSprint) ??
             Self.migratedActiveSprint(
                 goal: goal,
@@ -2035,6 +2043,7 @@ extension OpenLARPState {
         try container.encodeIfPresent(activeSprint, forKey: .activeSprint)
         try container.encode(sprintHistory, forKey: .sprintHistory)
         try container.encode(progress, forKey: .progress)
+        try container.encode(questReminders, forKey: .questReminders)
         try container.encode(agentBrief, forKey: .agentBrief)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(dailyCadence, forKey: .dailyCadence)

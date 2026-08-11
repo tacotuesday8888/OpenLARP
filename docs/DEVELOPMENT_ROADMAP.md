@@ -12,7 +12,7 @@ OpenLARP currently has:
 - A native SwiftUI iOS app shell with Today, Map, Progress, and Profile tabs
 - Guided four-step career onboarding with explicit fact confirmation, at most one material adaptive follow-up, and final approval
 - Durable career understanding that separates user-confirmed facts, unconfirmed AI hypotheses, rejected suggestions, and explicit unknowns
-- Backward-compatible schema-13 migration that preserves legacy facts, synthesizes an approved mission for existing active plans, and derives the correct active sprint phase without presenting new defaults as prior user claims
+- Backward-compatible schema-15 migration that preserves legacy facts and missions, derives the correct sprint phase, and defaults newly introduced local reminder preferences to off
 - Knownness-aware cloud goal mapping that omits newer legacy defaults when the provenanced understanding still marks them unknown
 - Grounded "Am I Cooked?" evaluation with signals, gaps, missing information, uncertainty, and a first legitimate action
 - An editable mission brief that keeps confirmed facts and ethical boundaries immutable and requires explicit approval before any quest exists
@@ -24,6 +24,7 @@ OpenLARP currently has:
 - Local text/link proof and app-private screenshot/photo attachment storage
 - Proof receipts, proof detail, proof archive, completed quest detail, and map preview screens
 - Daily cadence, intentional skip-today, and missed-day recovery behavior
+- Privacy-safe local quest reminders with contextual permission, an editable time, daily or weekday cadence, clear disable and Settings recovery controls, and no private career details in notification content
 - XCTest coverage for the core local behavior
 - Firebase Auth, Firestore, Storage, Functions, Google Sign-In, and callable AI service boundaries behind local-safe adapters
 - Optional Apple/Google account entry for service-enabled beta builds with a clearly explained device-only path; public local-only builds skip service controls, and service onboarding waits for the protected account workspace to resolve before accepting answers
@@ -37,7 +38,7 @@ OpenLARP does not yet have:
 
 - A deployed and live-smoked Genkit/Gemini path (the implementation remains disabled until the private service, callable configuration, IAM, and short-lived runtime policy are deployed)
 - Fully server-authoritative career graph sync
-- Push notifications
+- Remote push infrastructure or server-authored notification campaigns; V0 quest reminders are local and device-controlled
 - Live App Store subscriptions/paywalls
 - Production analytics dashboards
 - TestFlight/App Store release setup

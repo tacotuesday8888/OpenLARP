@@ -56,7 +56,7 @@
 
 ## Roadmap Decisions
 
-- V0: iOS career level-up beta with goal setup, cooked diagnostic, Today quest, seven-day map, proof/self-report, AI proof coaching, deterministic rewards, XP, streaks, badges, progress, push notifications, share cards, waitlist, and creator application.
+- V0: iOS career level-up beta with goal setup, cooked diagnostic, Today quest, seven-day map, proof/self-report, AI proof coaching, deterministic rewards, XP, streaks, badges, progress, user-controlled local quest reminders, share cards, waitlist, and creator application.
 - V1: Quest-linked resume and LinkedIn help based on real proof.
 - V2: Interview prep and cloud agent search.
 - V2 search defaults to courses, certificates, and projects.
@@ -86,7 +86,7 @@
 - What does the cooked-card design look like?
 - What are the first badge names and badge rules?
 - How much of the seven-day map should be locked, previewed, or editable?
-- What exact push notification cadence is useful without becoming annoying?
+- V0 reminder policy: explicit user opt-in after a sprint exists; one generic local reminder per chosen day; editable time; daily or weekday cadence; no private goal/proof text, streak-loss pressure, or marketing campaigns.
 
 ## Technical Planning Defaults
 

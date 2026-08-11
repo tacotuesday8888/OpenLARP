@@ -462,11 +462,13 @@ This hierarchy matters because it prevents the app from becoming a random pile o
 
 ### Journey 2: Daily Return
 
-1. Receives reminder.
+1. Optionally receives the generic local reminder at the time and cadence they chose.
 2. Opens Today.
 3. Completes quest.
 4. Submits proof.
 5. Sees progress.
+
+The V0 reminder is device-local and deliberately narrow. Notification permission is requested only when the user turns reminders on after a sprint exists. The user chooses the time and either daily or weekday cadence, can disable it in-app, and gets a direct iPhone Settings recovery path when system permission is off. Pending reminders are reconciled after account restoration and app activation, cancelled when no active sprint remains, and removed during local erase. Notification content never includes a target role, goal, quest title, proof, outcome, or other private career text.
 
 ### Journey 3: Missed Days
 

@@ -99,6 +99,7 @@ enum ProfileSection: String, CaseIterable, Identifiable, Sendable {
     case activeGoal
     case recentOutcomes
     case streak
+    case reminders
     case privacy
     case localData
     case badges
@@ -127,6 +128,7 @@ enum ProfileSection: String, CaseIterable, Identifiable, Sendable {
             .activeGoal,
             .recentOutcomes,
             .streak,
+            .reminders,
             .privacy,
             .localData,
             .badges,

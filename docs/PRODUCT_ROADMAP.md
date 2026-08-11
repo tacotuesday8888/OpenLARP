@@ -31,7 +31,7 @@ The V0 bet is growth first, then conversion. The first month should test whether
 - Badges for streaks, proof milestones, and major outcomes.
 - Shareable "Am I Cooked?" cards that are funny and hopeful without exposing private details.
 - Optional sharing for streaks, badges, and outcomes.
-- Push notifications for useful quest reminders and goal-related nudges.
+- User-enabled local notifications for one generic quest reminder per selected day, at an editable time and daily or weekday cadence. No streak-loss pressure, private career text, or server-authored marketing nudges.
 - Quick outcome log for major events such as applied, interview, rejection, offer, or changed goal.
 - Minimal profile by default, with extra questions asked only when needed.
 - Privacy controls for sensitive chat and memory.
@@ -74,7 +74,7 @@ Do not build in V0:
 
 Medium.
 
-V0 is intentionally narrow, but native iOS, AI diagnostics, proof uploads, push notifications, XP/streak logic, share cards, and payments still make it more complex than a manual MVP. The complexity is acceptable only because the chosen strategy is iOS-first and viral-growth-first.
+V0 is intentionally narrow, but native iOS, AI diagnostics, proof uploads, local notifications, XP/streak logic, share cards, and payments still make it more complex than a manual MVP. The complexity is acceptable only because the chosen strategy is iOS-first and viral-growth-first.
 
 ### User Value
 
