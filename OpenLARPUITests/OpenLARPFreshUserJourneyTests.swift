@@ -64,7 +64,8 @@ final class OpenLARPFreshUserJourneyTests: XCTestCase {
 
         let doneForTodayExists = app.descendants(matching: .any)["today.done"]
             .waitForExistence(timeout: 10)
-        let tomorrowPreviewExists = app.staticTexts["Tomorrow preview"].exists
+        let tomorrowPreviewExists = app.descendants(matching: .any)["today.tomorrowPreview"]
+            .waitForExistence(timeout: 5)
         let mapTabExists = app.tabBars.buttons["Map"].exists
         let progressTabExists = app.tabBars.buttons["Progress"].exists
         let profileTabExists = app.tabBars.buttons["Profile"].exists

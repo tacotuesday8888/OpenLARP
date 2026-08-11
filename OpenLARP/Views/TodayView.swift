@@ -654,6 +654,7 @@ private struct SkippedTodayCard: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.openLARPGreen)
                         .textCase(.uppercase)
+                        .accessibilityIdentifier("today.tomorrowPreview")
 
                     if let nextQuestTitle = content.nextQuestTitle {
                         Text(nextQuestTitle)
@@ -799,6 +800,7 @@ private struct DoneForTodayCard: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.openLARPGreen)
                         .textCase(.uppercase)
+                        .accessibilityIdentifier("today.tomorrowPreview")
 
                     if let nextQuestTitle = content.nextQuestTitle {
                         Text(nextQuestTitle)
