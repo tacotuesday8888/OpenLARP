@@ -123,12 +123,11 @@ final class ProofImageProcessorTests: XCTestCase {
         try input.write(to: fileURL, options: .atomic)
         defer { try? FileManager.default.removeItem(at: fileURL) }
 
-        let image = try XCTUnwrap(
-            await ProofAttachmentImageLoader.load(
-                from: fileURL,
-                maximumPixelDimension: 120
-            )
+        let loadedImage = await ProofAttachmentImageLoader.load(
+            from: fileURL,
+            maximumPixelDimension: 120
         )
+        let image = try XCTUnwrap(loadedImage)
 
         XCTAssertLessThanOrEqual(image.cgImage?.width ?? .max, 120)
         XCTAssertLessThanOrEqual(image.cgImage?.height ?? .max, 120)
