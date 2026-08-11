@@ -89,7 +89,7 @@ App Check enforcement is intentionally not enabled yet for Firestore, Storage, o
 
 Firestore rules currently allow signed-in users to read only their own `users/{uid}` tree. Client writes are limited to the account root, named career graph collections, proof records, and pending proof attachment metadata; arbitrary user subcollections are denied.
 
-Firestore rules enforce owner/path consistency, block client-written external action claims and sync status fields, block embedded proof attachment arrays, and restrict client proof attachment metadata to `pendingUpload`. Private goal context, private outcomes, proof records, and proof attachment metadata now require an accepted `users/{uid}/consents/privateEvidenceCloudSync` document; `shareWins` alone does not satisfy this gate. Client create/update/delete is denied for consent documents. Consent recording and revocation are server-owned through `setPrivateEvidenceCloudSyncConsent`, proof upload receipt promotion is server-owned through `promoteProofUploadReceipt`, uploaded proof backup cleanup is server-owned through `cleanupRevokedPrivateEvidenceUploads`, backend event acknowledgement is server-owned through `acknowledgeBackendEvents`, and account deletion is server-owned through `deleteOpenLARPAccount`. The callable backend now also records per-user daily quota units before AI workflow dispatch, proof receipt promotion, proof upload reconciliation, uploaded proof backup cleanup, or backend event acknowledgement. Account deletion is intentionally not quota-gated. This is still a beta client-sync model, not a fully server-trusted career graph; production trust still requires signed-in account-control smoke testing, final support/legal copy, derived readiness/history writes, App Check enforcement after provider rollout, provider token/cost accounting, and signed-in simulator/device smoke tests.
+Firestore rules enforce owner/path consistency, block client-written external action claims and sync status fields, block embedded proof attachment arrays, and restrict client proof attachment metadata to `pendingUpload`. Private goal context, private outcomes, proof records, and proof attachment metadata now require an accepted `users/{uid}/consents/privateEvidenceCloudSync` document; `shareWins` alone does not satisfy this gate. Client create/update/delete is denied for consent documents. Consent recording and revocation are server-owned through `setPrivateEvidenceCloudSyncConsent`, proof upload receipt promotion is server-owned through `promoteProofUploadReceipt`, uploaded proof backup cleanup is server-owned through `cleanupRevokedPrivateEvidenceUploads`, backend event acknowledgement is server-owned through `acknowledgeBackendEvents`, and account deletion is server-owned through `deleteOpenLARPAccount`. The callable backend records per-user daily quota units before AI workflow dispatch, proof receipt promotion, proof upload reconciliation, uploaded proof backup cleanup, or backend event acknowledgement. It also reserves and reconciles estimated provider spend in the server-only daily AI budget ledger before private AI dispatch. Account deletion is intentionally not quota-gated. This is still a beta client-sync model, not a fully server-trusted career graph; production trust still requires signed-in account-control smoke testing, final support/legal copy, derived readiness/history writes, App Check enforcement after provider rollout, and signed-in simulator/device smoke tests.
 
 Live Storage rules use Firebase's cross-service `firestore.exists(...)` and `firestore.get(...)` support to read private evidence consent documents. The Cloud Storage for Firebase service agent must have a Firestore read role for this to work outside the emulator. For `openlarp-dev-langqi`, the required member is `service-795318771575@gcp-sa-firebasestorage.iam.gserviceaccount.com`, and it has `roles/datastore.viewer`.
 
@@ -132,7 +132,7 @@ Revoked private evidence sync cleanup is intentionally separate from revocation.
 
 Full account deletion is now a separate server-owned callable foundation. `deleteOpenLARPAccount` requires Firebase Auth, a recent auth timestamp, `confirmDeletion=true`, and the exact phrase `DELETE MY OPENLARP ACCOUNT`. It first writes a minimal retained `_accountDeletionRequests/{uid}` marker, and rules plus Admin write-transaction guards reject new account writes once that marker exists. It then deletes the user's Storage prefix, recursively deletes `users/{uid}`, recursively deletes the hashed `_serverUsage` quota tree, and deletes the Firebase Auth user only after those data scopes complete. The response distinguishes `deleted` from `partial` and reports each scope independently, including marker finalization, so the app can route retry/support states honestly. Profile exposes an exact-phrase initiation path and keeps the result visible after deletion-triggered sign-out; local on-device career progress is intentionally not erased by cloud account deletion. This is not a privacy-policy substitute; App Store/TestFlight still need legal retention decisions, support copy, and real-device verification.
 
-Current beta limitation: proof upload receipts, backend event acknowledgement, private evidence sync consent, uploaded proof backup cleanup, and account deletion are server-owned, and work-producing callables have per-user quota guards. A fully authoritative career graph still needs signed-in account-controls smoke testing, final account data support/legal copy, derived readiness/history writes, App Check enforcement, provider token/cost accounting, and signed-in simulator/device smoke tests.
+Current beta limitation: proof upload receipts, backend event acknowledgement, private evidence sync consent, uploaded proof backup cleanup, and account deletion are server-owned; work-producing callables have per-user quota guards; and private AI dispatch has a provider budget guard. A fully authoritative career graph still needs signed-in account-controls smoke testing, final account data support/legal copy, derived readiness/history writes, App Check enforcement, and signed-in simulator/device smoke tests. The private AI path also remains disabled until deployment and authenticated live smoke are complete.
 
 Firestore rules now prevent backend event documents from bypassing the dedicated `backendEvents` rule through a broad user-tree rule. The broad recursive user write path has been removed; only named beta sync collections accept client writes. Backend event documents are owner-readable, but client create, update, and delete are denied. The server callable validates exact event shape, matching owner, known event kind, idempotency key, timestamp fields, and known typed summary fields before writing acknowledged history through the Admin SDK.
 
@@ -145,7 +145,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Security rules validate through Firebase MCP.
 - Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, private evidence sync consent gates, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22. `runOpenLARPWorkflow` is the callable AI workflow boundary, `setPrivateEvidenceCloudSyncConsent` is the server-owned private evidence consent boundary, `promoteProofUploadReceipt` is the server-trusted proof receipt boundary, `reconcileProofUploads` is the conservative orphan repair/report boundary, `acknowledgeBackendEvents` is the server-owned backend event acknowledgement boundary, and `deleteOpenLARPAccount` is the server-owned account deletion boundary.
-- The deployable Functions package is intentionally Genkit-free while live model calls are disabled; Genkit/Gemini orchestration remains isolated in `backend/ai`.
+- The deployable Functions package is intentionally Genkit-free. It can dispatch validated live workflows to an IAM-private Cloud Run service, while Genkit/Gemini dependencies remain isolated in `backend/ai` and `backend/ai-service`.
 - `backend/functions/package-lock.json` is committed because Firebase deploys from that source directory, and the package pins Firebase Admin to the latest 13.x version compatible with `firebase-functions@7.2.5`.
 - The iOS app is wired to try `runOpenLARPWorkflow` through Firebase Functions first and preserve local V0 behavior through fallback when live Firebase is unavailable.
 - `setPrivateEvidenceCloudSyncConsent` exists as an authenticated callable that records accepted/revoked private evidence sync consent server-side.
@@ -153,15 +153,63 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - `reconcileProofUploads` exists as an authenticated callable repair/report boundary for rare orphaned proof uploads. It defaults to report-only and deletes only older owner-scoped Storage objects whose custom metadata matches the signed-in user and whose Firestore proof attachment document is missing.
 - `cleanupRevokedPrivateEvidenceUploads` exists as an authenticated callable report/delete boundary for uploaded proof backups after consent is revoked. It defaults to report-only and deletion requires `confirmDeletion=true` with explicit attachment IDs.
 - `deleteOpenLARPAccount` exists as an authenticated callable account deletion boundary. It requires recent auth and exact destructive confirmation, writes a retained deletion marker that blocks stale client and Admin callable writes, deletes Storage/Firestore/quota scopes before deleting Firebase Auth, and is not quota-gated.
-- `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, and `acknowledgeBackendEvents` are protected by server-side per-user daily callable quota units. Exhausted calls return `resource-exhausted` before workflow dispatch, Storage scans, Storage reads, Storage/Firestore deletes, Firestore receipt writes, or backend event acknowledgement writes.
+- `runOpenLARPWorkflow`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, and `acknowledgeBackendEvents` are protected by server-side per-user daily callable quota units. Exhausted non-AI calls return `resource-exhausted` before side effects; AI quota exhaustion returns a successful deterministic fallback with `fallbackReason: quota` so the primary product flow remains usable.
+- Live AI dispatch also requires complete provider price/budget configuration and a successful request-scoped reservation under `_serverAIUsage/providerDaily/days/{UTC-day}`. Budget exhaustion, malformed accounting state, missing config, or a duplicate active/reconciled request reservation fails closed to deterministic fallback.
 - iOS App Check provider scaffolding is linked and configured, but Firebase product enforcement is still off until console registration, debug token handling, metrics, and signed-in simulator/device checks are complete.
-- `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and `deleteOpenLARPAccount` are expected deployed active Gen 2 callables in `us-central1` with Node.js 22 and live model calls disabled.
+- The existing `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and `deleteOpenLARPAccount` deployment is active in `us-central1` with Node.js 22 and deterministic AI behavior. The updated private-service dispatch implementation is local-only until its reviewed branch is deployed.
 - The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
 - `npm run firebase:signed-in-smoke` creates a temporary Firebase Auth smoke user through a local Admin custom token, first verifies that Firestore and Storage App Check enforcement are still off for this no-App-Check-token CLI path, calls the live workflow/proof/event callables as that signed-in user, validates Storage and Firestore side effects, and deletes its temporary Auth, Storage, Firestore, and quota data.
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
 - Google Sign-In is enabled in Firebase Auth for `openlarp-dev-langqi`.
 - A fresh Firebase iOS SDK config can be retrieved by CLI and now includes `CLIENT_ID` and `REVERSED_CLIENT_ID`. The ignored local `OpenLARP/GoogleService-Info.plist` has been refreshed on this workstation.
 - `npm run firebase:live-readiness` now checks Firestore, Functions, callable auth rejection for workflow/proof/event boundaries, iOS config, Google OAuth IDs, Storage bucket existence, Firebase App Check App Attest registration plus Firestore/Storage/Google Identity enforcement status, and Artifact Registry cleanup policies.
+
+## Private AI Service Operations
+
+The public trust boundary remains `runOpenLARPWorkflow`. Firebase Auth identifies the caller; Functions validates the request, applies safety rules, per-user quota, an expiring server policy, and the daily provider budget, then calls Cloud Run with a Google-signed ID token whose audience is the exact service origin. The Cloud Run service must remain unauthenticated-access-disabled. The Functions runtime service account should be the only application identity with `roles/run.invoker`; review existing IAM after deployment rather than assuming the helper removed older bindings.
+
+Use Application Default Credentials and service identities. Do not create or download service-account keys. The Functions identity needs only invocation access; the AI runtime identity needs only the Vertex AI permissions required for generation. The app never receives the service URL, model ID, prompts, provider credentials, prices, or budget.
+
+The kill-switch document is `_serverConfig/aiRuntimePolicy`. Its required shape is:
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": "controlled-beta-1",
+  "enabled": false,
+  "validUntil": "a future Firestore Timestamp or ISO-8601 timestamp",
+  "timeoutMs": 15000,
+  "maxOutputTokens": 1200,
+  "workflows": {
+    "adaptiveCareerIntake": false,
+    "cookedDiagnostic": false,
+    "questPlan": false,
+    "proofQualityCheck": false,
+    "progressSummary": false
+  }
+}
+```
+
+Start disabled, use a short expiry, and enable one workflow at a time. Missing, unreadable, malformed, expired, globally disabled, or workflow-disabled policy state produces deterministic fallback. The policy reader caches a valid policy for no more than 30 seconds.
+
+Before deployment, verify `npm run test:evals`, `npm run audit:production`, `npm run public:safety`, and `npm run beta:gate`. The production audit currently permits exactly six enumerated transitive Genkit/OpenTelemetry high findings for controlled beta, with no critical or direct high finding; do not treat that exception as broad-production approval.
+
+Deploy the service from a clean reviewed revision, then configure Functions with the returned HTTPS origin, its own `OPENLARP_ENABLE_LIVE_AI=true` switch, and explicit current provider pricing/daily budget values:
+
+```bash
+scripts/deploy-ai-service.sh \
+  --project openlarp-dev-langqi \
+  --region us-central1 \
+  --service SERVICE \
+  --ai-service-account AI_SERVICE_ACCOUNT \
+  --functions-service-account FUNCTIONS_SERVICE_ACCOUNT
+
+scripts/live-ai-smoke.sh --service-url CLOUD_RUN_ORIGIN --require-live
+```
+
+The smoke caller must use an ADC identity permitted to invoke the service. Output is deliberately limited to execution metadata and never prints the synthetic payload, generated result, model, service URL, pricing, budget, user identity, or policy content.
+
+Rollback begins by setting `enabled: false` in `_serverConfig/aiRuntimePolicy`; allow up to 30 seconds for the policy cache. If immediate defense in depth is necessary, also set `OPENLARP_ENABLE_LIVE_AI=false` on Functions or Cloud Run. Restore an earlier Cloud Run revision only after dispatch is disabled. The private service deployment and authenticated live smoke are not yet complete.
 
 ## Live Readiness Check
 
@@ -236,8 +284,8 @@ This CLI smoke test complements but does not replace real simulator/device Googl
 4. Verify the in-app account data controls for uploaded proof backup cleanup and full cloud account deletion on a signed-in simulator/device, then finalize privacy/legal/support copy.
 5. Register App Check in Firebase Console, verify simulator/debug and device App Attest metrics, update smoke tooling for App Check tokens, then enable App Check enforcement.
 6. Complete signed-device Apple account deletion/revocation testing before broad external TestFlight/App Store review.
-7. Deploy live Genkit/Gemini AI only after backend dependency advisories, prompts, evaluations, budget controls, observability, and secrets are resolved.
-8. Keep provider model IDs and API keys only on the backend.
+7. Review the enumerated controlled-beta dependency exceptions, deploy the private Cloud Run AI service and updated callable with least-privilege identities, configure current provider pricing and a small daily budget, enable one short-lived workflow policy, and pass the authenticated `--require-live` smoke.
+8. Keep provider model IDs, service URLs, prompts, credentials, pricing, and budgets server-only; use workload identity rather than API keys or key files.
 
 ## Local Commands
 
@@ -248,6 +296,9 @@ npx -y firebase-tools@15.21.0 deploy --only functions:openlarp-ai --project open
 npm run firebase:live-readiness
 npm run firebase:signed-in-smoke
 npm run build:backend
+npm run test:evals
+npm run audit:production
+npm run beta:gate
 npx -y firebase-tools@15.21.0 emulators:start --project openlarp-rules-test --only auth,firestore,storage
 npm run test:rules:emulators
 ```

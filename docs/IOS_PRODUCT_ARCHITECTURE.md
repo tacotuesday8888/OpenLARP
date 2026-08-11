@@ -315,7 +315,15 @@ Legacy saved goals migrate conservatively. Facts that existed in the old goal re
 
 Cloud mapping follows the same knownness rule. A compatibility default may keep old local behavior running, but it is omitted from downstream career-goal fields until the provenanced understanding says the user confirmed it.
 
-Live adaptive questioning is the next service milestone. The client-side provenance contract is ready for it, but the current first-run questions are guided and deterministic.
+The server-side adaptive intake workflow, grounding rules, post-generation validation, private service boundary, and deterministic fallback are implemented. The client-side provenance contract is ready to consume them, but the current first-run UI remains guided and deterministic until adaptive question presentation is integrated and the private service passes a live development smoke.
+
+## Live AI Trust Boundary
+
+The iOS app talks only to an authenticated Firebase callable. Firebase Functions owns user identity, public request validation, safety checks, per-user quota, the expiring workflow policy, daily provider budget, and fallback selection. When every gate permits a live call, Functions uses its workload identity to obtain a Google-signed ID token for the exact private Cloud Run origin.
+
+Cloud Run owns the Genkit/Gemini runtime and exposes only health and structured workflow routes. It does not accept a client user identity as authority, persist long-term memory, or perform external actions. Its output must match the workflow schema and pass grounding/truthfulness validation before Functions can return it. A provider timeout, malformed or unsafe output, quota/budget exhaustion, missing policy, missing service configuration, or IAM/network failure resolves to the same deterministic product behavior based on the user's approved facts.
+
+Model choice, prompts, service location, prices, budgets, and provider credentials remain server-only. Neither layer uses long-lived key files; Cloud Run IAM and Application Default Credentials provide service-to-service authentication.
 
 ### Recommended Onboarding Steps
 

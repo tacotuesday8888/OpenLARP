@@ -1,4 +1,5 @@
 **
+!.gcloudignore
 !package.json
 !package-lock.json
 !backend/
@@ -7,6 +8,9 @@
 !backend/ai/src/
 !backend/ai/src/**
 !backend/ai-service/
+!backend/ai-service/Dockerfile
+!backend/ai-service/Dockerfile.dockerignore
+!backend/ai-service/cloudbuild.yaml
 !backend/ai-service/package.json
 !backend/ai-service/tsconfig.json
 !backend/ai-service/src/

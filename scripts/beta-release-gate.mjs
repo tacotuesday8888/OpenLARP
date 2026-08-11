@@ -376,6 +376,8 @@ function validateWorkflowDefinition(workflow) {
   const publicSafety = uniqueRequiredStep(steps, "Check public repo safety");
   const betaGate = uniqueRequiredStep(steps, "Check beta release gate");
   const backendTests = uniqueRequiredStep(steps, "Test Genkit backend");
+  const truthfulnessEvals = uniqueRequiredStep(steps, "Test AI truthfulness evals");
+  const productionAudit = uniqueRequiredStep(steps, "Check production dependency audit");
   const backendBuild = uniqueRequiredStep(steps, "Build Firebase Functions backend");
   const rulesTests = uniqueRequiredStep(steps, "Test Firebase security rules");
   const projectGeneration = uniqueRequiredStep(steps, "Generate Xcode project");
@@ -386,10 +388,21 @@ function validateWorkflowDefinition(workflow) {
     steps,
     "Run optimized App Store Release contract"
   );
+  const containerJob = workflow?.jobs?.["ai-service-container"];
+  const containerBuild = uniqueRequiredStep(
+    containerJob?.steps,
+    "Build private AI service container"
+  );
+  const containerSmoke = uniqueRequiredStep(
+    containerJob?.steps,
+    "Smoke private AI service container"
+  );
 
-  if (!publicSafety || !betaGate || !backendTests || !backendBuild || !rulesTests ||
+  if (!publicSafety || !betaGate || !backendTests || !truthfulnessEvals ||
+      !productionAudit || !backendBuild || !rulesTests ||
       !projectGeneration || !simulator || !unsignedBuild || !debugTests ||
-      !releaseContract) {
+      !releaseContract || !containerBuild || !containerSmoke || Object.hasOwn(containerJob, "if") ||
+      Object.hasOwn(containerJob, "continue-on-error")) {
     return false;
   }
 
@@ -482,9 +495,15 @@ function validateWorkflowDefinition(workflow) {
     publicSafety.run.trim() === "npm run public:safety" &&
     betaGate.run.trim() === "npm run beta:gate" &&
     backendTests.run.trim() === "npm run test:backend" &&
+    truthfulnessEvals.run.trim() === "npm run test:evals" &&
+    productionAudit.run.trim() === "npm run audit:production" &&
     backendBuild.run.trim() === "npm run build:backend" &&
     rulesTests.run.trim() === "npm run test:rules:emulators" &&
-    projectGeneration.run.trim() === "xcodegen generate";
+    projectGeneration.run.trim() === "xcodegen generate" &&
+    containerBuild.run.trim() ===
+      "docker build --file backend/ai-service/Dockerfile --tag openlarp-ai-ci ." &&
+    containerSmoke.run.trim() ===
+      "scripts/smoke-ai-service-container.sh openlarp-ai-ci";
 
   const hasSkipStep = steps.some((step) =>
     typeof step?.name === "string" && step.name.toLowerCase().includes("skipped simulator")

@@ -18,6 +18,6 @@ FROM node:22.23.1-bookworm-slim
 ENV NODE_ENV=production
 ENV PORT=8080
 WORKDIR /app
-COPY --from=build --chown=node:node /app/backend/ai-service/dist/index.js ./index.js
+COPY --from=build --chown=node:node /app/backend/ai-service/dist/index.cjs ./index.cjs
 USER node
-CMD ["node", "index.js"]
+CMD ["node", "index.cjs"]

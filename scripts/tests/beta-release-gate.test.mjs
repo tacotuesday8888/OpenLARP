@@ -189,6 +189,10 @@ jobs:
         run: npm run beta:gate
       - name: Test Genkit backend
         run: npm run test:backend
+      - name: Test AI truthfulness evals
+        run: npm run test:evals
+      - name: Check production dependency audit
+        run: npm run audit:production
       - name: Build Firebase Functions backend
         run: npm run build:backend
       - name: Test Firebase security rules
@@ -265,6 +269,12 @@ jobs:
               print(f"::error::Release contract test count mismatch: {actual}", file=sys.stderr)
               sys.exit(1)
           PY
+  ai-service-container:
+    steps:
+      - name: Build private AI service container
+        run: docker build --file backend/ai-service/Dockerfile --tag openlarp-ai-ci .
+      - name: Smoke private AI service container
+        run: scripts/smoke-ai-service-container.sh openlarp-ai-ci
 `.trim();
 
 const completeFiles = new Map([
@@ -613,7 +623,11 @@ describe("beta release gate", () => {
     ["exact skipped test count", "\"skippedTests\": 0", "\"skippedTests\": 1"],
     ["Release testability query", "-target OpenLARP -configuration Release -showBuildSettings", "-target OpenLARP -configuration Debug -showBuildSettings"],
     ["Release testability assertion", "[ \"$ENABLE_TESTABILITY\" != \"NO\" ]", "[ \"$ENABLE_TESTABILITY\" != \"YES\" ]"],
-    ["generic Release build", "-scheme OpenLARP -configuration Release -destination generic/platform=iOS", "-scheme OpenLARP -destination generic/platform=iOS"]
+    ["generic Release build", "-scheme OpenLARP -configuration Release -destination generic/platform=iOS", "-scheme OpenLARP -destination generic/platform=iOS"],
+    ["AI truthfulness evals", "        run: npm run test:evals", "        run: echo skipped-evals"],
+    ["production dependency audit", "        run: npm run audit:production", "        run: echo skipped-audit"],
+    ["private AI Docker build", "        run: docker build --file backend/ai-service/Dockerfile --tag openlarp-ai-ci .", "        run: echo skipped-container"],
+    ["private AI Docker startup smoke", "        run: scripts/smoke-ai-service-container.sh openlarp-ai-ci", "        run: echo skipped-container-smoke"]
   ])("blocks %s weakening", (_name, from, to) => {
     expectBlocker(replacing(".github/workflows/ios-ci.yml", from, to), workflowBlocker);
   });

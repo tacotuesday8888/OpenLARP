@@ -26,13 +26,13 @@ OpenLARP currently has:
 - Optional Apple/Google account entry for service-enabled beta builds with a clearly explained device-only path; public local-only builds skip service controls, and service onboarding waits for the protected account workspace to resolve before accepting answers
 - A development Firebase project with deployed Firestore/Storage rules and deterministic Gen 2 callable functions
 - Server-trusted proof upload receipt promotion: the client uploads Storage bytes, then a callable verifies Storage metadata and writes the uploaded Firestore receipt
-- Backend AI contracts and a deterministic callable workflow boundary, with provider token/cost estimate metadata and live model calls disabled until Genkit/Gemini safety, secrets, observability, and dependency work is ready
+- Backend AI contracts, grounded structured Gemini workflows, post-generation truthfulness checks, a private Cloud Run runtime, authenticated callable dispatch, expiring runtime policy, per-user quota, provider budget ledger, deterministic fallbacks, adversarial evals, and CI/operations gates; deployment and live-development smoke remain pending
 - RevenueCat/subscription contracts and local entitlement state, without live App Store products
 - GitHub Actions CI plus local backend, rules, simulator, and unsigned iOS build validation gates
 
 OpenLARP does not yet have:
 
-- Live Genkit/Gemini model calls
+- A deployed and live-smoked Genkit/Gemini path (the implementation remains disabled until the private service, callable configuration, IAM, and short-lived runtime policy are deployed)
 - Live adaptive onboarding questions and AI-generated career hypotheses (the safe provenance and confirmation contract is present)
 - Fully server-authoritative career graph sync
 - Push notifications
@@ -125,7 +125,7 @@ Success criteria:
 
 Goal: connect AI to narrow, controlled V0 jobs.
 
-Status: partially complete as a backend-ready boundary. Current diagnostic, quest, proof check, and progress behavior is deterministic local/mock logic; authenticated Firebase callable routing exists, and Rich V0 goal context now survives the iOS/backend contract boundary, but live model calls and adaptive onboarding questions remain disabled.
+Status: partially complete. Narrow grounded Genkit/Gemini workflows, strict schemas, post-generation safety validation, a private Cloud Run service, authenticated Firebase callable routing, per-user quota, provider budget controls, expiring workflow policy, deterministic fallbacks, adversarial truthfulness evals, redacted smoke tooling, and CI gates are implemented locally. The current iOS flows still use deterministic behavior because the private service/callable configuration have not been deployed or live-smoked, and adaptive intake has not yet been integrated into the first-run UI.
 
 Work:
 
@@ -147,7 +147,7 @@ Success criteria:
 
 Goal: make V0 usable across sessions/devices.
 
-Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, server-owned private evidence cloud sync consent gates, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned uploaded proof backup cleanup after revoked consent, server-owned backend event acknowledgement, server-owned account deletion, in-app account data controls, server-side per-user callable quotas, backend-only provider token/cost estimates, live readiness checks, signed-in CLI smoke tooling, and iOS App Check provider scaffolding exist. The remaining trust work is signed-in simulator/device Google Sign-In UX testing, account-controls privacy/legal/support copy, Firebase Console App Check registration and enforcement, live AI secret/observability/evaluation gates, derived readiness/history writes, and production-grade sync repair UX.
+Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, server-owned private evidence cloud sync consent gates, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned uploaded proof backup cleanup after revoked consent, server-owned backend event acknowledgement, server-owned account deletion, in-app account data controls, server-side per-user callable quotas, backend-only provider token/cost estimates, live readiness checks, signed-in CLI smoke tooling, iOS App Check provider scaffolding, private AI-service implementation, provider budget controls, expiring kill-switch policy, evals, and release gates exist. The remaining trust work includes the private service/IAM/callable deployment and live smoke, signed-in simulator/device account UX testing, account-controls privacy/legal/support copy, Firebase Console App Check registration and enforcement, derived readiness/history writes, and production-grade sync repair UX.
 
 Work:
 
@@ -156,7 +156,7 @@ Work:
 - Finish account-backed Google Sign-In and sync smoke tests on simulator/device
 - Keep backend event acknowledgement server-owned through Cloud Functions
 - Register App Check in Firebase Console, keep simulator debug tokens private, verify metrics from opt-in simulator/debug and App Attest device builds, then enable enforcement
-- Configure real provider pricing, daily budgets, observability, and evaluation gates before enabling live AI or broad beta traffic
+- Deploy with reviewed current provider pricing and a small daily budget, keep metadata-only observability/evals/audits green, and complete an authenticated live smoke before enabling even controlled beta traffic
 - Keep explicit server-owned private evidence cloud sync consent separate from public sharing language
 - Keep uploaded proof backup cleanup separate from consent revocation, and verify the user-facing account/private-data controls before broad beta
 

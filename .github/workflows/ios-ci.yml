@@ -47,6 +47,12 @@ jobs:
       - name: Test Genkit backend
         run: npm run test:backend
 
+      - name: Test AI truthfulness evals
+        run: npm run test:evals
+
+      - name: Check production dependency audit
+        run: npm run audit:production
+
       - name: Build Firebase Functions backend
         run: npm run build:backend
 
@@ -216,3 +222,18 @@ jobs:
               )
               sys.exit(1)
           PY
+
+  ai-service-container:
+    name: Build private AI service container
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Build private AI service container
+        run: docker build --file backend/ai-service/Dockerfile --tag openlarp-ai-ci .
+
+      - name: Smoke private AI service container
+        run: scripts/smoke-ai-service-container.sh openlarp-ai-ci
