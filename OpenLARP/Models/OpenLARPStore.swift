@@ -110,15 +110,19 @@ final class OpenLARPStore {
         }
 
         func restore(into state: inout OpenLARPState) {
-            if let profile, var refreshedProfile = state.userProfile {
-                refreshedProfile.id = profile.id
-                refreshedProfile.accountID = profile.accountID
-                refreshedProfile.email = profile.email
-                refreshedProfile.displayName = profile.displayName
-                refreshedProfile.networkingComfort = profile.networkingComfort
-                refreshedProfile.privacy = profile.privacy
-                refreshedProfile.createdAt = profile.createdAt
-                state.userProfile = refreshedProfile
+            if let profile {
+                if var refreshedProfile = state.userProfile {
+                    refreshedProfile.id = profile.id
+                    refreshedProfile.accountID = profile.accountID
+                    refreshedProfile.email = profile.email
+                    refreshedProfile.displayName = profile.displayName
+                    refreshedProfile.networkingComfort = profile.networkingComfort
+                    refreshedProfile.privacy = profile.privacy
+                    refreshedProfile.createdAt = profile.createdAt
+                    state.userProfile = refreshedProfile
+                } else {
+                    state.userProfile = profile
+                }
             }
             state.outcomeLog = outcomeLog
             state.betaEvents = betaEvents

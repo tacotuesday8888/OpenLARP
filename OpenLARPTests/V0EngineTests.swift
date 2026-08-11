@@ -40,21 +40,25 @@ final class V0EngineTests: XCTestCase {
             fastestFix: "Turn the project into a reusable proof artifact.",
             readinessBaseline: 67
         )
-        let quest = Quest(
-            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
-            day: 4,
-            title: "Create a proof artifact",
-            purpose: "Show one target-role skill with evidence.",
-            timeEstimateMinutes: 120,
-            proofRequired: "Add the artifact link or screenshot.",
-            xpReward: 500,
-            status: .completed
-        )
+        let plan = (1...7).map { day in
+            Quest(
+                id: day == 1
+                    ? UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+                    : UUID(),
+                day: 4,
+                title: "Create proof artifact \(day)",
+                purpose: "Show one target-role skill with evidence.",
+                timeEstimateMinutes: 120,
+                proofRequired: "Add the artifact link or screenshot.",
+                xpReward: 500,
+                status: .completed
+            )
+        }
 
         let state = OpenLARPEngine.confirmGoal(
             goal,
             diagnostic: diagnostic,
-            plan: [quest],
+            plan: plan,
             now: now
         )
 
@@ -750,8 +754,8 @@ final class V0EngineTests: XCTestCase {
 
         XCTAssertEqual(content.completedQuestTitle, finalQuest.title)
         XCTAssertNil(content.nextQuestTitle)
-        XCTAssertEqual(content.nextQuestStatusText, "Track complete")
-        XCTAssertEqual(content.unlockMessage, "You finished the local seven-day track.")
+        XCTAssertEqual(content.nextQuestStatusText, "Chapter complete")
+        XCTAssertEqual(content.unlockMessage, "Review your progress to continue.")
     }
 
     func testSelfReportAwardsPartialCreditWithoutPretendingProofIsStrong() throws {
@@ -4483,7 +4487,11 @@ extension V0EngineTests {
         XCTAssertNil(state.currentQuest)
         XCTAssertEqual(
             state.dailyCadence.nextUnlockDate,
-            testCalendar.date(byAdding: .day, value: 1, to: reviewTime)
+            testCalendar.date(
+                byAdding: .day,
+                value: 1,
+                to: testCalendar.startOfDay(for: reviewTime)
+            )
         )
 
         state = OpenLARPEngine.refreshDailyAvailability(
@@ -4498,7 +4506,7 @@ extension V0EngineTests {
         let startedAt = Date(timeIntervalSince1970: 1_900_300_000)
         var state = OpenLARPEngine.confirmGoal(goal, now: startedAt)
         state = try completeAvailableQuests(in: state, count: 7, startingAt: startedAt)
-        let reviewTime = startedAt.addingTimeInterval(7 * 86_400)
+        let reviewTime = startedAt.addingTimeInterval(6 * 86_400)
         let daySevenReport = try OpenLARPEngine.makeSprintCheckpointReport(
             checkpointDay: 7,
             summary: "Chapter one completed.",
@@ -4731,7 +4739,7 @@ extension V0EngineTests {
             count: 7,
             startingAt: startedAt
         )
-        let reviewTime = startedAt.addingTimeInterval(7 * 86_400)
+        let reviewTime = startedAt.addingTimeInterval(6 * 86_400)
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = OpenLARPStore(
