@@ -1194,7 +1194,7 @@ struct CareerStateCloudPayload: Codable, Equatable {
             })
         }
         let canPreserveDraft = localState.proofDraftQuestID.map { draftQuestID in
-            restored.plan.contains { $0.id == draftQuestID }
+            restored.plan.contains(where: { $0.id == draftQuestID })
         } ?? localState.proofDraft == nil
         if canPreserveDraft {
             restored.proofDraft = localState.proofDraft
