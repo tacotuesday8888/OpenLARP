@@ -26,6 +26,9 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
     case proofNeedsImprovement
     case xpClaimed
     case nextDayReturn
+    case questRemindersEnabled
+    case questRemindersDisabled
+    case questReminderPermissionDenied
     case cookedCardPrepared
     case outcomeLogged
     case accountSessionRestored
@@ -74,6 +77,9 @@ enum BetaEventKind: String, Codable, CaseIterable, Identifiable {
         case .proofNeedsImprovement: "Proof needs improvement"
         case .xpClaimed: "XP claimed"
         case .nextDayReturn: "Next-day return"
+        case .questRemindersEnabled: "Quest reminders enabled"
+        case .questRemindersDisabled: "Quest reminders disabled"
+        case .questReminderPermissionDenied: "Quest reminder permission denied"
         case .cookedCardPrepared: "Cooked card prepared"
         case .outcomeLogged: "Outcome logged"
         case .accountSessionRestored: "Account session restored"

@@ -8,6 +8,7 @@ enum AppLifecycleOperation: Equatable, Sendable {
     case restoreAuthentication
     case refreshSubscription
     case syncBackendEvents
+    case reconcileQuestReminders
 }
 
 struct AppLifecyclePolicy {
@@ -24,6 +25,7 @@ struct AppLifecyclePolicy {
         if configuration.runsBackendEventSync {
             operations.append(.syncBackendEvents)
         }
+        operations.append(.reconcileQuestReminders)
         return operations
     }
 
@@ -201,6 +203,8 @@ struct AppRootView: View {
                     await store.refreshSubscriptionStatus()
                 case .syncBackendEvents:
                     await store.syncBackendEvents()
+                case .reconcileQuestReminders:
+                    await store.reconcileQuestReminders()
                 }
             }
         }

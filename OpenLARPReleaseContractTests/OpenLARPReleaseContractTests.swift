@@ -37,7 +37,7 @@ final class OpenLARPReleaseContractTests: XCTestCase {
             ]
         )
         XCTAssertEqual(snapshot.profilePrivacyPresentation, "localOnlyNotice")
-        XCTAssertEqual(snapshot.activationOperations, ["refreshDailyAvailability"])
+        XCTAssertEqual(snapshot.activationOperations, ["refreshDailyAvailability", "reconcileQuestReminders"])
         XCTAssertEqual(snapshot.tabChangeOperations, ["refreshDailyAvailability"])
         XCTAssertNil(Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist"))
         XCTAssertNil(Bundle.main.url(forResource: "RevenueCat-Info", withExtension: "plist"))

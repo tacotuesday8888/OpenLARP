@@ -146,6 +146,9 @@ struct ProfileView: View {
             Text(store.errorMessage ?? "")
         }
         .background(authenticationPresentationAnchorReader)
+        .task {
+            await store.refreshQuestReminderAuthorizationStatus()
+        }
     }
 
     private func updateEvidenceCard(
@@ -193,6 +196,8 @@ struct ProfileView: View {
             recentOutcomesCard
         case .streak:
             streakCard
+        case .reminders:
+            reminderCard
         case .privacy:
             privacyCard
         case .localData:
@@ -1134,6 +1139,114 @@ struct ProfileView: View {
                 }
             }
         }
+    }
+
+    private var reminderCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionHeader(
+                    feature: .recovery,
+                    eyebrow: "On your schedule",
+                    title: "Gentle quest reminder"
+                )
+
+                Text("At most one reminder on a chosen day. Lock-screen text stays generic and never includes your role, goal, proof, or career details.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if store.state.needsGoalSetup {
+                    Label(
+                        "Create and approve your first sprint before turning on reminders.",
+                        systemImage: "bell.slash"
+                    )
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    PrivacyToggleRow(
+                        title: "Quest reminders",
+                        detail: "OpenLARP asks for notification permission only when you turn this on.",
+                        isOn: questRemindersEnabledBinding
+                    )
+
+                    DatePicker(
+                        "Reminder time",
+                        selection: questReminderTimeBinding,
+                        displayedComponents: .hourAndMinute
+                    )
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.openLARPInk)
+
+                    Picker("Reminder cadence", selection: questReminderCadenceBinding) {
+                        ForEach(QuestReminderCadence.allCases) { cadence in
+                            Text(cadence.label).tag(cadence)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if store.questReminderAuthorizationStatus == .denied {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Notifications are disabled in iPhone Settings. Your preferred schedule stays on this device until you turn reminders off.")
+                                .font(.caption)
+                                .foregroundStyle(Color.openLARPSoftInk)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            #if canImport(UIKit)
+                            Button {
+                                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                                UIApplication.shared.open(url)
+                            } label: {
+                                Label("Open iPhone Settings", systemImage: "gear")
+                            }
+                            .buttonStyle(SecondaryButtonStyle())
+                            #endif
+                        }
+                    }
+                }
+            }
+            .disabled(store.isUpdatingQuestReminders)
+        }
+    }
+
+    private var questRemindersEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { store.state.questReminders.isEnabled },
+            set: { isEnabled in
+                Task { await store.setQuestRemindersEnabled(isEnabled) }
+            }
+        )
+    }
+
+    private var questReminderTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                let preferences = store.state.questReminders
+                return Calendar.autoupdatingCurrent.date(
+                    bySettingHour: preferences.hour,
+                    minute: preferences.minute,
+                    second: 0,
+                    of: Date()
+                ) ?? Date()
+            },
+            set: { date in
+                let components = Calendar.autoupdatingCurrent.dateComponents(
+                    [.hour, .minute],
+                    from: date
+                )
+                guard let hour = components.hour, let minute = components.minute else { return }
+                Task { await store.updateQuestReminderTime(hour: hour, minute: minute) }
+            }
+        )
+    }
+
+    private var questReminderCadenceBinding: Binding<QuestReminderCadence> {
+        Binding(
+            get: { store.state.questReminders.cadence },
+            set: { cadence in
+                Task { await store.updateQuestReminderCadence(cadence) }
+            }
+        )
     }
 
     private var localDataCard: some View {

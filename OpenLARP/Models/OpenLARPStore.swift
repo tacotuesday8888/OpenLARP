@@ -35,6 +35,7 @@ final class OpenLARPStore {
     private let accountDeletionService: any AccountDeletionServicing
     private let backendSessionProvider: any BackendSessionProviding
     private let subscriptionService: any OpenLARPSubscriptionServicing
+    private let questReminderScheduler: any QuestReminderScheduling
     let releaseConfiguration: OpenLARPReleaseConfiguration
     private let now: () -> Date
     private let calendar: Calendar
@@ -71,6 +72,8 @@ final class OpenLARPStore {
     var isRestoringPurchases = false
     var isLoadingSubscriptionOffering = false
     var isPurchasingSubscriptionPackage = false
+    var isUpdatingQuestReminders = false
+    var questReminderAuthorizationStatus: QuestReminderAuthorizationStatus = .unknown
     var authenticationResult: OpenLARPAuthenticationResult?
     var careerGraphSyncPreview: CareerGraphSyncPreview?
     var currentSubscriptionOffering: RevenueCatOfferingSnapshot?
@@ -94,6 +97,7 @@ final class OpenLARPStore {
         let accountDeletionResult: AccountDeletionResult?
         let onboardingFunnel: OnboardingFunnelState
         let progress: ProgressState
+        let questReminders: QuestReminderPreferences
         let sprintHistory: [CareerSprintArchive]
 
         init(state: OpenLARPState, now: Date = Date()) {
@@ -107,6 +111,7 @@ final class OpenLARPStore {
             accountDeletionResult = state.accountDeletionResult
             onboardingFunnel = state.onboardingFunnel
             progress = state.progress
+            questReminders = state.questReminders
             sprintHistory = OpenLARPEngine.sprintHistoryIncludingGoalChange(in: state, now: now)
         }
 
@@ -148,6 +153,7 @@ final class OpenLARPStore {
             }
             state.progress.readinessHistory = progress.readinessHistory + newBaselineHistory
             state.progress.recentProof = progress.recentProof
+            state.questReminders = questReminders
             state.sprintHistory = sprintHistory
         }
     }
@@ -182,6 +188,7 @@ final class OpenLARPStore {
         accountDeletionService: any AccountDeletionServicing = LocalMockAccountDeletionService(),
         backendSessionProvider: (any BackendSessionProviding)? = nil,
         subscriptionService: any OpenLARPSubscriptionServicing = MockOpenLARPSubscriptionService(),
+        questReminderScheduler: any QuestReminderScheduling = UserNotificationQuestReminderScheduler(),
         releaseConfiguration: OpenLARPReleaseConfiguration = .internalBeta,
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .autoupdatingCurrent,
@@ -212,6 +219,7 @@ final class OpenLARPStore {
         self.activeLocalBackendOwnerUserID = resolvedBackendOwnerUserID
         self.isLocalDataAccessBlocked = localDataStartupError != nil
         self.proofImageProcessor = proofImageProcessor
+        self.questReminderScheduler = questReminderScheduler
         self.releaseConfiguration = releaseConfiguration
         self.didFinishInitialAuthenticationResolution = !releaseConfiguration.runsAuthenticationLifecycle
         if releaseConfiguration.serviceMode == .localOnly {
@@ -490,6 +498,7 @@ final class OpenLARPStore {
             state = originalState
             return false
         }
+        await reconcileQuestReminders()
         return true
     }
 
@@ -589,6 +598,7 @@ final class OpenLARPStore {
             state = originalState
             return false
         }
+        await reconcileQuestReminders()
         return true
     }
 
@@ -767,6 +777,7 @@ final class OpenLARPStore {
                 state = originalState
                 return false
             }
+            await reconcileQuestReminders()
             return true
         } catch {
             state = originalState
@@ -824,6 +835,7 @@ final class OpenLARPStore {
                 state = originalState
                 return false
             }
+            await reconcileQuestReminders()
             return true
         } catch {
             state = originalState
@@ -881,6 +893,7 @@ final class OpenLARPStore {
                 state = originalState
                 return false
             }
+            await reconcileQuestReminders()
             return true
         } catch {
             state = originalState
@@ -913,6 +926,7 @@ final class OpenLARPStore {
         clearPersistedProofDraft()
         state.onboardingFunnel = .empty
         save()
+        Task { await reconcileQuestReminders() }
     }
 
     func startCurrentQuest() {
@@ -1380,6 +1394,175 @@ final class OpenLARPStore {
         if persistProofDraft() {
             errorMessage = nil
         }
+    }
+
+    func refreshQuestReminderAuthorizationStatus() async {
+        questReminderAuthorizationStatus = await questReminderScheduler.authorizationStatus()
+    }
+
+    func setQuestRemindersEnabled(_ isEnabled: Bool) async {
+        var preferences = state.questReminders
+        preferences.isEnabled = isEnabled
+        await applyQuestReminderPreferences(
+            preferences,
+            requestsAuthorizationIfNeeded: isEnabled
+        )
+    }
+
+    func updateQuestReminderTime(hour: Int, minute: Int) async {
+        var preferences = state.questReminders
+        preferences.hour = min(max(hour, 0), 23)
+        preferences.minute = min(max(minute, 0), 59)
+        await applyQuestReminderPreferences(
+            preferences,
+            requestsAuthorizationIfNeeded: false
+        )
+    }
+
+    func updateQuestReminderCadence(_ cadence: QuestReminderCadence) async {
+        var preferences = state.questReminders
+        preferences.cadence = cadence
+        await applyQuestReminderPreferences(
+            preferences,
+            requestsAuthorizationIfNeeded: false
+        )
+    }
+
+    func reconcileQuestReminders() async {
+        guard !isUpdatingQuestReminders else { return }
+        isUpdatingQuestReminders = true
+        defer { isUpdatingQuestReminders = false }
+
+        let ownerContext = captureLocalOwnerOperationContext()
+        let status = await questReminderScheduler.authorizationStatus()
+        guard isCurrentLocalOwnerOperation(ownerContext) else { return }
+        questReminderAuthorizationStatus = status
+
+        guard status == .authorized,
+              let schedule = QuestReminderPolicy.schedule(
+                for: state.questReminders,
+                hasActiveCareerStep: hasActiveReminderCareerStep
+              ) else {
+            await questReminderScheduler.cancelPendingReminders()
+            return
+        }
+
+        try? await questReminderScheduler.replacePendingReminders(with: schedule)
+    }
+
+    private func applyQuestReminderPreferences(
+        _ preferences: QuestReminderPreferences,
+        requestsAuthorizationIfNeeded: Bool
+    ) async {
+        guard !isUpdatingQuestReminders else { return }
+        guard !preferences.isEnabled || hasActiveReminderCareerStep else {
+            errorMessage = "Create and approve a career sprint before turning on quest reminders."
+            return
+        }
+
+        isUpdatingQuestReminders = true
+        defer { isUpdatingQuestReminders = false }
+        let ownerContext = captureLocalOwnerOperationContext()
+        let previousState = state
+
+        if !preferences.isEnabled {
+            state.questReminders = preferences
+            state.updatedAt = now()
+            if previousState.questReminders.isEnabled {
+                recordBetaEvent(.questRemindersDisabled)
+            }
+            guard save() else {
+                state = previousState
+                return
+            }
+            await questReminderScheduler.cancelPendingReminders()
+            questReminderAuthorizationStatus = await questReminderScheduler.authorizationStatus()
+            errorMessage = nil
+            return
+        }
+
+        var status = await questReminderScheduler.authorizationStatus()
+        guard isCurrentLocalOwnerOperation(ownerContext) else { return }
+        if status == .notDetermined && requestsAuthorizationIfNeeded {
+            do {
+                status = try await questReminderScheduler.requestAuthorization()
+            } catch {
+                questReminderAuthorizationStatus = await questReminderScheduler.authorizationStatus()
+                errorMessage = "OpenLARP could not request notification permission. Try again in iPhone Settings."
+                return
+            }
+        }
+        guard isCurrentLocalOwnerOperation(ownerContext) else { return }
+        questReminderAuthorizationStatus = status
+        guard status == .authorized else {
+            if status == .denied {
+                recordBetaEvent(.questReminderPermissionDenied)
+                _ = save()
+            }
+            errorMessage = status == .denied
+                ? "Notifications are off for OpenLARP. You can enable them in iPhone Settings."
+                : "Allow notifications when you turn on reminders so OpenLARP can schedule them."
+            return
+        }
+
+        guard let schedule = QuestReminderPolicy.schedule(
+            for: preferences,
+            hasActiveCareerStep: hasActiveReminderCareerStep
+        ) else { return }
+
+        do {
+            try await questReminderScheduler.replacePendingReminders(with: schedule)
+            guard isCurrentLocalOwnerOperation(ownerContext) else {
+                await questReminderScheduler.cancelPendingReminders()
+                return
+            }
+            state.questReminders = preferences
+            state.updatedAt = now()
+            if !previousState.questReminders.isEnabled {
+                recordBetaEvent(.questRemindersEnabled)
+            }
+            guard save() else {
+                state = previousState
+                let restored = await restoreQuestReminderSchedule(for: previousState)
+                errorMessage = restored
+                    ? "Your reminder change could not be saved. The previous schedule was restored."
+                    : "Your reminder change could not be saved, and iPhone reminder scheduling needs another try."
+                return
+            }
+            errorMessage = nil
+        } catch {
+            let restored = await restoreQuestReminderSchedule(for: previousState)
+            errorMessage = restored
+                ? "Your reminder could not be scheduled. The previous schedule was restored."
+                : "Your reminder could not be scheduled, and the previous schedule needs another try."
+        }
+    }
+
+    private func restoreQuestReminderSchedule(for state: OpenLARPState) async -> Bool {
+        if let schedule = QuestReminderPolicy.schedule(
+            for: state.questReminders,
+            hasActiveCareerStep: hasActiveReminderCareerStep(in: state)
+        ) {
+            do {
+                try await questReminderScheduler.replacePendingReminders(with: schedule)
+                return true
+            } catch {
+                return false
+            }
+        } else {
+            await questReminderScheduler.cancelPendingReminders()
+            return true
+        }
+    }
+
+    private var hasActiveReminderCareerStep: Bool {
+        hasActiveReminderCareerStep(in: state)
+    }
+
+    private func hasActiveReminderCareerStep(in state: OpenLARPState) -> Bool {
+        guard !state.needsGoalSetup,
+              let phase = state.activeSprint?.phase else { return false }
+        return phase != .completed
     }
 
     func updateProfilePrivacy(
@@ -2367,6 +2550,8 @@ final class OpenLARPStore {
             state = .empty
             clearOwnerBoundTransientState()
             authenticationResult = nil
+            await questReminderScheduler.cancelPendingReminders()
+            questReminderAuthorizationStatus = await questReminderScheduler.authorizationStatus()
             _ = await authenticationService.signOut(for: state)
             _ = try? await subscriptionService.resetSubscriberIdentity(
                 currentState: .notStarted(),
@@ -2464,6 +2649,7 @@ final class OpenLARPStore {
             clearCareerGraphSyncPreview()
             errorMessage = nil
             save()
+            await reconcileQuestReminders()
         case .signedOut:
             guard switchLocalOwner(to: .guest) else {
                 if shouldSurfaceMessage {
@@ -2475,6 +2661,7 @@ final class OpenLARPStore {
             if localDataStore != nil {
                 clearCareerGraphSyncPreview()
                 errorMessage = nil
+                await reconcileQuestReminders()
                 return
             }
             if result.operation == .signOut || state.userProfile?.accountID != nil || state.userProfile?.email != nil {
@@ -2485,6 +2672,7 @@ final class OpenLARPStore {
                 clearCareerGraphSyncPreview()
                 errorMessage = nil
                 save()
+                await reconcileQuestReminders()
             }
         case .cancelled:
             authenticationResult = result

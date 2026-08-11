@@ -139,8 +139,8 @@ Risk:
 
 Trigger:
 
-- Daily reminder.
-- Streak at risk.
+- A generic reminder at the user-selected local time and cadence.
+- A real career step the user chose to return to.
 
 Action:
 
@@ -154,6 +154,7 @@ Reward:
 Risk:
 
 - Streak loss can cause churn. The app needs forgiveness mechanics.
+- Reminder copy must never threaten streak loss, expose career details, or manufacture urgency.
 
 ### Habit Loop 4: Weekly Level-Up Report
 
@@ -434,4 +435,3 @@ OpenLARP's retention risk is high.
 The strongest path is not more features. It is a daily proof-building loop that makes users feel less stuck and more credible.
 
 If the product becomes a generic career toolbox, retention will be weak. If it becomes a personalized identity-training system with honest progress, retention may be strong enough to justify building the full iOS app.
-
