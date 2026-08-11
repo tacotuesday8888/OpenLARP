@@ -113,6 +113,8 @@ enum CareerFactError: Error, Equatable {
     case factNotFound
     case factIsNotAwaitingAIConfirmation
     case unresolvedHypotheses
+    case adaptiveQuestionIsNotUnknown
+    case invalidAdaptiveAnswer
 }
 
 struct CareerFactProvenance: Codable, Equatable, Sendable {
@@ -342,14 +344,18 @@ struct CareerUnderstanding: Codable, Equatable, Sendable {
               facts[index].confirmationState == .awaitingConfirmation else {
             throw CareerFactError.factIsNotAwaitingAIConfirmation
         }
+        let kind = facts[index].kind
         facts[index] = facts[index].userConfirmed(at: date)
+        unknowns.removeAll { $0.kind == kind }
     }
 
     mutating func editAndConfirmFact(id: UUID, value: String, at date: Date) throws {
         guard let index = facts.firstIndex(where: { $0.id == id }) else {
             throw CareerFactError.factNotFound
         }
+        let kind = facts[index].kind
         facts[index] = try facts[index].editedAndConfirmed(value: value, at: date)
+        unknowns.removeAll { $0.kind == kind }
     }
 
     mutating func approve(at date: Date) throws {
@@ -363,6 +369,92 @@ struct CareerUnderstanding: Codable, Equatable, Sendable {
         reviewState = .approved
         reviewedAt = reviewedAt ?? date
         approvedAt = date
+    }
+
+    mutating func confirmUserEntriesForAdaptiveIntake(at date: Date) throws {
+        facts = try facts.map { fact in
+            guard fact.confirmationState == .awaitingConfirmation,
+                  fact.provenance.source != .aiHypothesis else {
+                return fact
+            }
+            return try fact.confirmed(at: date)
+        }
+    }
+
+    mutating func addAdaptiveHypotheses(
+        from response: V0AdaptiveCareerIntakeResponse,
+        at date: Date
+    ) throws {
+        let unknownKinds = Set(unknowns.map(\.kind))
+        var addedKinds = Set(facts.filter {
+            $0.provenance.source == .aiHypothesis
+        }.map(\.kind))
+        var availableSlots = max(0, 2 - pendingHypotheses.count)
+
+        for hypothesis in response.hypotheses where
+            availableSlots > 0 &&
+            hypothesis.confirmationState == .awaitingConfirmation &&
+            unknownKinds.contains(hypothesis.kind) &&
+            addedKinds.insert(hypothesis.kind).inserted {
+            facts.append(try CareerFactRecord.aiHypothesis(
+                kind: hypothesis.kind,
+                value: hypothesis.value,
+                workflowRequestID: response.requestID.uuidString,
+                createdAt: date
+            ))
+            availableSlots -= 1
+        }
+    }
+
+    mutating func answerAdaptiveQuestion(
+        _ question: V0AdaptiveCareerQuestion,
+        answer: String,
+        at date: Date
+    ) throws {
+        guard unknowns.contains(where: { $0.kind == question.factKind }) else {
+            throw CareerFactError.adaptiveQuestionIsNotUnknown
+        }
+        guard let fact = CareerFactRecord.userEntry(
+            kind: question.factKind,
+            value: answer,
+            createdAt: date
+        ) else {
+            throw CareerFactError.invalidAdaptiveAnswer
+        }
+        facts.removeAll {
+            $0.kind == question.factKind &&
+                $0.provenance.source == .aiHypothesis &&
+                $0.confirmationState == .awaitingConfirmation
+        }
+        facts.append(fact)
+        unknowns.removeAll { $0.kind == question.factKind }
+    }
+
+    func rebuildingReview(
+        using draft: CareerIntakeDraft,
+        reviewedAt date: Date
+    ) -> CareerUnderstanding {
+        var rebuilt = draft.makeUnderstanding(reviewedAt: date)
+        let rebuiltUnknownKinds = Set(rebuilt.unknowns.map(\.kind))
+        let adaptiveFacts = facts.filter { fact in
+            fact.provenance.source == .aiHypothesis ||
+                (fact.provenance.source == .userEdit && fact.provenance.sourceIdentifier != nil)
+        }
+
+        for fact in adaptiveFacts {
+            switch fact.confirmationState {
+            case .confirmed:
+                guard let index = rebuilt.facts.firstIndex(where: {
+                    $0.kind == fact.kind && $0.value == fact.value
+                }) else { continue }
+                rebuilt.facts[index] = fact
+                rebuilt.unknowns.removeAll { $0.kind == fact.kind }
+            case .awaitingConfirmation, .rejected:
+                guard rebuiltUnknownKinds.contains(fact.kind) else { continue }
+                rebuilt.facts.append(fact)
+            }
+        }
+        return rebuilt
     }
 }
 
@@ -499,7 +591,58 @@ struct CareerIntakeDraft: Codable, Equatable, Sendable {
         return .reviewing(facts: facts, unknowns: unknowns, reviewedAt: reviewedAt)
     }
 
-    private static func normalizedDailyMinutes(_ value: Int) -> Int {
+    mutating func applyAdaptiveAnswer(_ answer: String, for kind: CareerFactKind) throws {
+        guard let answer = CareerUnderstandingText.sanitized(answer, limit: kind.maxValueLength) else {
+            throw CareerFactError.invalidAdaptiveAnswer
+        }
+        switch kind {
+        case .outcomeType:
+            guard let value = CareerOutcomeType.allCases.first(where: {
+                $0.title.caseInsensitiveCompare(answer) == .orderedSame ||
+                    $0.rawValue.caseInsensitiveCompare(answer) == .orderedSame
+            }) else { throw CareerFactError.invalidAdaptiveAnswer }
+            outcomeType = value
+        case .targetOutcome:
+            targetOutcome = answer
+        case .currentStage:
+            guard let value = CurrentStatus.allCases.first(where: {
+                $0.rawValue.caseInsensitiveCompare(answer) == .orderedSame
+            }) else { throw CareerFactError.invalidAdaptiveAnswer }
+            currentStatus = value
+        case .timeline:
+            timeline = answer
+        case .urgency:
+            guard let value = CareerUrgency.allCases.first(where: {
+                $0.title.caseInsensitiveCompare(answer) == .orderedSame ||
+                    $0.rawValue.caseInsensitiveCompare(answer) == .orderedSame
+            }) else { throw CareerFactError.invalidAdaptiveAnswer }
+            urgency = value
+        case .experience:
+            experience = answer
+        case .existingProof:
+            existingProof = answer
+        case .constraints:
+            constraints = answer
+        case .confidence:
+            guard let value = Self.firstInteger(in: answer), (1...5).contains(value) else {
+                throw CareerFactError.invalidAdaptiveAnswer
+            }
+            confidence = value
+        case .dailyCommitment:
+            guard let value = Self.firstInteger(in: answer) else {
+                throw CareerFactError.invalidAdaptiveAnswer
+            }
+            dailyCommitmentMinutes = Self.normalizedDailyMinutes(value)
+        case .biggestBlocker:
+            biggestBlocker = answer
+        }
+    }
+
+    private static func firstInteger(in value: String) -> Int? {
+        value.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }.first
+    }
+
+    static func normalizedDailyMinutes(_ value: Int) -> Int {
         [10, 20, 30, 45].min(by: { abs($0 - value) < abs($1 - value) }) ?? 20
     }
 }

@@ -8,6 +8,7 @@ struct GuidedCareerOnboardingView: View {
         case existingProof
         case constraints
         case biggestBlocker
+        case adaptiveAnswer
     }
 
     let store: OpenLARPStore
@@ -20,6 +21,9 @@ struct GuidedCareerOnboardingView: View {
     @State private var didChooseLocalEntry = false
     @State private var ownerScope = ""
     @State private var hypothesisEdits: [UUID: String] = [:]
+    @State private var adaptiveQuestion: V0AdaptiveCareerQuestion?
+    @State private var adaptiveAnswer = ""
+    @State private var didFinishAdaptiveRequest = false
     @FocusState private var focusedField: FocusedField?
 
     var body: some View {
@@ -92,19 +96,25 @@ struct GuidedCareerOnboardingView: View {
             }
 
             Button(action: performPrimaryAction) {
-                if store.isGoalSetupRunning {
+                if store.isAdaptiveIntakeRunning {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(.white)
+                        Text("Finding One Useful Follow-up")
+                    }
+                } else if store.isGoalSetupRunning {
                     HStack(spacing: 10) {
                         ProgressView()
                             .tint(.white)
                         Text("Building Your Readiness Check")
                     }
                 } else {
-                    Label(flow.step.primaryActionTitle, systemImage: primaryActionSystemImage)
+                    Label(primaryActionTitle, systemImage: primaryActionSystemImage)
                 }
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!canUsePrimaryAction || store.isGoalSetupRunning)
-            .opacity(canUsePrimaryAction && !store.isGoalSetupRunning ? 1 : 0.5)
+            .disabled(!canUsePrimaryAction || isOnboardingWorkRunning)
+            .opacity(canUsePrimaryAction && !isOnboardingWorkRunning ? 1 : 0.5)
 
             if flow.step != .outcome {
                 Button {
@@ -114,7 +124,7 @@ struct GuidedCareerOnboardingView: View {
                     Label("Back to \(previousStepTitle)", systemImage: "chevron.left")
                 }
                 .buttonStyle(SecondaryButtonStyle())
-                .disabled(store.isGoalSetupRunning)
+                .disabled(isOnboardingWorkRunning)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: flow.step)
@@ -313,13 +323,20 @@ struct GuidedCareerOnboardingView: View {
 
     private var reviewStep: some View {
         let understanding = reviewUnderstanding ?? draft.makeUnderstanding(reviewedAt: Date())
+        let displayedUnknowns = understanding.unknowns.filter {
+            $0.kind != adaptiveQuestion?.factKind
+        }
         return VStack(alignment: .leading, spacing: 14) {
             Card {
                 VStack(alignment: .leading, spacing: 14) {
                     onboardingPrompt(
                         "Approve the facts, not a flattering guess",
-                        detail: "Only the information below will shape your readiness check. Future AI suggestions will appear separately for confirmation."
+                        detail: reviewPromptDetail
                     )
+
+                    if let adaptiveQuestion {
+                        adaptiveQuestionSection(adaptiveQuestion)
+                    }
 
                     reviewSection(
                         title: "You told us",
@@ -352,11 +369,11 @@ struct GuidedCareerOnboardingView: View {
                         )
                     }
 
-                    if !understanding.unknowns.isEmpty {
+                    if !displayedUnknowns.isEmpty {
                         Divider()
                         Label("Still unknown", systemImage: "questionmark.circle")
                             .font(.headline)
-                        ForEach(understanding.unknowns) { unknown in
+                        ForEach(displayedUnknowns) { unknown in
                             Text(unknown.prompt)
                                 .font(.subheadline)
                                 .foregroundStyle(Color.openLARPSoftInk)
@@ -365,26 +382,68 @@ struct GuidedCareerOnboardingView: View {
                 }
             }
 
-            HStack(spacing: 10) {
-                Button("Edit outcome") {
-                    flow.goTo(.outcome)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    reviewEditButtons
                 }
-                Button("Edit reality") {
-                    flow.goTo(.currentReality)
-                }
-                Button("Edit commitment") {
-                    flow.goTo(.commitment)
+                VStack(alignment: .leading, spacing: 8) {
+                    reviewEditButtons
                 }
             }
             .buttonStyle(.borderless)
             .font(.caption.weight(.semibold))
+            .disabled(isOnboardingWorkRunning)
+        }
+    }
+
+    private func adaptiveQuestionSection(_ question: V0AdaptiveCareerQuestion) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+            Label("One detail would improve your first quest", systemImage: "questionmark.bubble.fill")
+                .font(.headline)
+            Text(question.question)
+                .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(question.rationale)
+                .font(.caption)
+                .foregroundStyle(Color.openLARPSoftInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !question.options.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], spacing: 8) {
+                    ForEach(question.options, id: \.self) { option in
+                        choiceButton(
+                            title: option,
+                            isSelected: adaptiveAnswer == option
+                        ) {
+                            adaptiveAnswer = option
+                        }
+                    }
+                }
+            }
+
+            TextField("Answer only if you know", text: $adaptiveAnswer, axis: .vertical)
+                .lineLimit(3, reservesSpace: true)
+                .textFieldStyle(.roundedBorder)
+                .focused($focusedField, equals: .adaptiveAnswer)
+                .accessibilityLabel(question.question)
+                .accessibilityHint("Leave this blank and choose keep unknown if you are not sure.")
+
+            Button("Keep this unknown") {
+                adaptiveQuestion = nil
+                adaptiveAnswer = ""
+                validationMessage = nil
+            }
+            .buttonStyle(.borderless)
+            .font(.caption.weight(.semibold))
+            .accessibilityLabel("Keep \(question.factKind.title) unknown")
         }
     }
 
     private func hypothesisReviewSection(_ facts: [CareerFactRecord]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Divider()
-            Label("Needs your confirmation", systemImage: "sparkles")
+            Label("AI suggestion — needs your confirmation", systemImage: "sparkles")
                 .font(.headline)
             Text("Confirm only what is true. Correct the wording or reject the suggestion before approval.")
                 .font(.caption)
@@ -409,15 +468,12 @@ struct GuidedCareerOnboardingView: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Edited value for \(fact.kind.title)")
 
-                    HStack(spacing: 12) {
-                        Button("Confirm") {
-                            resolveHypothesis(fact, action: .confirm)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) {
+                            hypothesisActionButtons(for: fact)
                         }
-                        Button("Use edit") {
-                            resolveHypothesis(fact, action: .edit)
-                        }
-                        Button("Reject", role: .destructive) {
-                            resolveHypothesis(fact, action: .reject)
+                        VStack(alignment: .leading, spacing: 8) {
+                            hypothesisActionButtons(for: fact)
                         }
                     }
                     .buttonStyle(.borderless)
@@ -426,6 +482,35 @@ struct GuidedCareerOnboardingView: View {
                 .padding(.vertical, 4)
             }
         }
+    }
+
+    @ViewBuilder
+    private var reviewEditButtons: some View {
+        Button("Edit outcome") {
+            returnToEditing(.outcome)
+        }
+        Button("Edit reality") {
+            returnToEditing(.currentReality)
+        }
+        Button("Edit commitment") {
+            returnToEditing(.commitment)
+        }
+    }
+
+    @ViewBuilder
+    private func hypothesisActionButtons(for fact: CareerFactRecord) -> some View {
+        Button("Confirm") {
+            resolveHypothesis(fact, action: .confirm)
+        }
+        .accessibilityLabel("Confirm \(fact.kind.title) AI suggestion")
+        Button("Use edit") {
+            resolveHypothesis(fact, action: .edit)
+        }
+        .accessibilityLabel("Use edited \(fact.kind.title) AI suggestion")
+        Button("Reject", role: .destructive) {
+            resolveHypothesis(fact, action: .reject)
+        }
+        .accessibilityLabel("Reject \(fact.kind.title) AI suggestion")
     }
 
     private func reviewSection(
@@ -492,14 +577,35 @@ struct GuidedCareerOnboardingView: View {
     private var canUsePrimaryAction: Bool {
         switch flow.step {
         case .outcome:
-            !draft.targetOutcome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return !draft.targetOutcome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .currentReality:
-            !draft.timeline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return !draft.timeline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .commitment:
-            true
+            return true
         case .review:
-            reviewUnderstanding?.pendingHypotheses.isEmpty == true
+            if adaptiveQuestion != nil {
+                return !adaptiveAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            if !didFinishAdaptiveRequest {
+                return reviewUnderstanding != nil
+            }
+            return reviewUnderstanding?.pendingHypotheses.isEmpty == true
         }
+    }
+
+    private var primaryActionTitle: String {
+        guard flow.step == .review else { return flow.step.primaryActionTitle }
+        if adaptiveQuestion != nil {
+            return "Use This Answer"
+        }
+        if !didFinishAdaptiveRequest {
+            return "Confirm Facts & Personalize My Check"
+        }
+        return flow.step.primaryActionTitle
+    }
+
+    private var isOnboardingWorkRunning: Bool {
+        store.isAdaptiveIntakeRunning || store.isGoalSetupRunning
     }
 
     private var stepSubtitle: String {
@@ -509,6 +615,16 @@ struct GuidedCareerOnboardingView: View {
         case .commitment: "Your plan will respect the limits you name here."
         case .review: "Nothing becomes durable until you approve this understanding."
         }
+    }
+
+    private var reviewPromptDetail: String {
+        if adaptiveQuestion != nil {
+            return "Answer only if you know. You can keep this detail unknown, and no AI suggestion becomes fact without your decision."
+        }
+        if didFinishAdaptiveRequest {
+            return "Only the facts and suggestions you explicitly accepted will shape your readiness check."
+        }
+        return "Confirm what you entered first. OpenLARP may ask one useful follow-up, and every AI suggestion stays separate until you decide."
     }
 
     private var primaryActionSystemImage: String {
@@ -522,31 +638,30 @@ struct GuidedCareerOnboardingView: View {
     private func performPrimaryAction() {
         validationMessage = nil
         if flow.step == .review {
-            guard let reviewUnderstanding else {
-                validationMessage = "Return to the previous step and review the current answers again."
+            if let adaptiveQuestion {
+                applyAdaptiveAnswer(to: adaptiveQuestion)
                 return
             }
-            let goal = draft.makeGoal()
-            let expectedOwnerScope = ownerScope
-            Task {
-                let succeeded = await store.approveCareerUnderstanding(
-                    reviewUnderstanding,
-                    goal: goal,
-                    expectedOwnerScope: expectedOwnerScope
-                )
-                if succeeded, let content = CookedDiagnosticResultContent(state: store.state) {
-                    onGoalConfirmed(content)
-                } else if validationMessage == nil {
-                    validationMessage = store.errorMessage ?? "OpenLARP could not save this understanding yet. Your answers remain available to review."
-                }
+            if !didFinishAdaptiveRequest {
+                requestAdaptiveIntake()
+                return
             }
+            approveCurrentUnderstanding()
             return
         }
 
         do {
             try flow.advance(using: draft)
             if flow.step == .review {
-                reviewUnderstanding = draft.makeUnderstanding(reviewedAt: Date())
+                let reviewedAt = Date()
+                reviewUnderstanding = reviewUnderstanding?.rebuildingReview(
+                    using: draft,
+                    reviewedAt: reviewedAt
+                ) ?? draft.makeUnderstanding(reviewedAt: reviewedAt)
+                adaptiveQuestion = nil
+                adaptiveAnswer = ""
+                didFinishAdaptiveRequest = false
+                hypothesisEdits = [:]
                 store.recordCareerUnderstandingReviewed()
             }
         } catch CareerOnboardingFlowError.targetOutcomeRequired {
@@ -558,7 +673,112 @@ struct GuidedCareerOnboardingView: View {
         }
     }
 
-    private enum HypothesisAction {
+    private func requestAdaptiveIntake() {
+        guard var understanding = reviewUnderstanding else {
+            validationMessage = "Return to the previous step and review the current answers again."
+            return
+        }
+        do {
+            try understanding.confirmUserEntriesForAdaptiveIntake(at: Date())
+            reviewUnderstanding = understanding
+        } catch {
+            validationMessage = "Review the facts again before OpenLARP asks a follow-up."
+            return
+        }
+
+        let expectedOwnerScope = ownerScope
+        Task {
+            do {
+                let response = try await store.generateAdaptiveCareerIntake(
+                    for: understanding,
+                    expectedOwnerScope: expectedOwnerScope
+                )
+                guard flow.step == .review,
+                      expectedOwnerScope == ownerScope,
+                      var updatedUnderstanding = reviewUnderstanding else { return }
+                try updatedUnderstanding.addAdaptiveHypotheses(from: response, at: Date())
+                reviewUnderstanding = updatedUnderstanding
+                adaptiveQuestion = response.questions.first
+                adaptiveAnswer = ""
+                didFinishAdaptiveRequest = true
+                validationMessage = nil
+
+                if adaptiveQuestion == nil && updatedUnderstanding.pendingHypotheses.isEmpty {
+                    await approveUnderstanding(updatedUnderstanding, expectedOwnerScope: expectedOwnerScope)
+                }
+            } catch {
+                guard expectedOwnerScope == ownerScope else { return }
+                didFinishAdaptiveRequest = true
+                validationMessage = "OpenLARP could not load a personalized follow-up. Your confirmed answers are still ready for an honest local readiness check."
+            }
+        }
+    }
+
+    private func applyAdaptiveAnswer(to question: V0AdaptiveCareerQuestion) {
+        guard var understanding = reviewUnderstanding else { return }
+        var updatedDraft = draft
+        let supersededHypothesisIDs = Set(understanding.pendingHypotheses
+            .filter { $0.kind == question.factKind }
+            .map(\.id))
+        do {
+            try updatedDraft.applyAdaptiveAnswer(adaptiveAnswer, for: question.factKind)
+            try understanding.answerAdaptiveQuestion(
+                question,
+                answer: adaptiveAnswer,
+                at: Date()
+            )
+            draft = updatedDraft
+            reviewUnderstanding = understanding
+            for id in supersededHypothesisIDs {
+                hypothesisEdits.removeValue(forKey: id)
+            }
+            adaptiveQuestion = nil
+            adaptiveAnswer = ""
+            focusedField = nil
+            validationMessage = nil
+        } catch {
+            validationMessage = "Use a specific answer, or keep this detail unknown."
+        }
+    }
+
+    private func approveCurrentUnderstanding() {
+        guard let reviewUnderstanding else {
+            validationMessage = "Return to the previous step and review the current answers again."
+            return
+        }
+        let expectedOwnerScope = ownerScope
+        Task {
+            await approveUnderstanding(reviewUnderstanding, expectedOwnerScope: expectedOwnerScope)
+        }
+    }
+
+    private func approveUnderstanding(
+        _ understanding: CareerUnderstanding,
+        expectedOwnerScope: String
+    ) async {
+        let goal = draft.makeGoal()
+        let succeeded = await store.approveCareerUnderstanding(
+            understanding,
+            goal: goal,
+            expectedOwnerScope: expectedOwnerScope
+        )
+        if succeeded, let content = CookedDiagnosticResultContent(state: store.state) {
+            onGoalConfirmed(content)
+        } else if validationMessage == nil {
+            validationMessage = store.errorMessage ?? "OpenLARP could not save this understanding yet. Your answers remain available to review."
+        }
+    }
+
+    private func returnToEditing(_ step: CareerOnboardingStep) {
+        flow.goTo(step)
+        adaptiveQuestion = nil
+        adaptiveAnswer = ""
+        didFinishAdaptiveRequest = false
+        hypothesisEdits = [:]
+        validationMessage = nil
+    }
+
+    private enum HypothesisAction: Equatable {
         case confirm
         case edit
         case reject
@@ -566,20 +786,30 @@ struct GuidedCareerOnboardingView: View {
 
     private func resolveHypothesis(_ fact: CareerFactRecord, action: HypothesisAction) {
         guard var understanding = reviewUnderstanding else { return }
+        var updatedDraft = draft
         do {
             switch action {
             case .confirm:
+                try updatedDraft.applyAdaptiveAnswer(fact.value, for: fact.kind)
                 try understanding.confirmHypothesis(id: fact.id, at: Date())
             case .edit:
+                let editedValue = hypothesisEdits[fact.id] ?? fact.value
+                try updatedDraft.applyAdaptiveAnswer(editedValue, for: fact.kind)
                 try understanding.editAndConfirmFact(
                     id: fact.id,
-                    value: hypothesisEdits[fact.id] ?? fact.value,
+                    value: editedValue,
                     at: Date()
                 )
             case .reject:
                 try understanding.rejectFact(id: fact.id, at: Date())
             }
             hypothesisEdits.removeValue(forKey: fact.id)
+            if action != .reject, adaptiveQuestion?.factKind == fact.kind {
+                adaptiveQuestion = nil
+                adaptiveAnswer = ""
+                focusedField = nil
+            }
+            draft = updatedDraft
             reviewUnderstanding = understanding
             validationMessage = nil
         } catch {
@@ -595,6 +825,9 @@ struct GuidedCareerOnboardingView: View {
         validationMessage = nil
         didChooseLocalEntry = false
         hypothesisEdits = [:]
+        adaptiveQuestion = nil
+        adaptiveAnswer = ""
+        didFinishAdaptiveRequest = false
         focusedField = nil
     }
 }

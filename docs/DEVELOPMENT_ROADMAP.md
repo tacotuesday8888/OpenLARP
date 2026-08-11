@@ -10,7 +10,7 @@ OpenLARP currently has:
 
 - A private GitHub repository
 - A native SwiftUI iOS app shell with Today, Map, Progress, and Profile tabs
-- Guided four-step career onboarding with explicit review and approval
+- Guided four-step career onboarding with explicit fact confirmation, at most one material adaptive follow-up, and final approval
 - Durable career understanding that separates user-confirmed facts, unconfirmed AI hypotheses, rejected suggestions, and explicit unknowns
 - Backward-compatible schema-11 migration that preserves legacy facts without presenting new defaults as prior user claims
 - Knownness-aware cloud goal mapping that omits newer legacy defaults when the provenanced understanding still marks them unknown
@@ -33,7 +33,6 @@ OpenLARP currently has:
 OpenLARP does not yet have:
 
 - A deployed and live-smoked Genkit/Gemini path (the implementation remains disabled until the private service, callable configuration, IAM, and short-lived runtime policy are deployed)
-- Live adaptive onboarding questions and AI-generated career hypotheses (the safe provenance and confirmation contract is present)
 - Fully server-authoritative career graph sync
 - Push notifications
 - Live App Store subscriptions/paywalls
@@ -125,7 +124,7 @@ Success criteria:
 
 Goal: connect AI to narrow, controlled V0 jobs.
 
-Status: partially complete. Narrow grounded Genkit/Gemini workflows, strict schemas, post-generation safety validation, a private Cloud Run service, authenticated Firebase callable routing, per-user quota, provider budget controls, expiring workflow policy, deterministic fallbacks, adversarial truthfulness evals, redacted smoke tooling, and CI gates are implemented locally. The current iOS flows still use deterministic behavior because the private service/callable configuration have not been deployed or live-smoked, and adaptive intake has not yet been integrated into the first-run UI.
+Status: partially complete. Narrow grounded Genkit/Gemini workflows, strict schemas, post-generation safety validation, a private Cloud Run service, authenticated Firebase callable routing, per-user quota, provider budget controls, expiring workflow policy, deterministic fallbacks, adversarial truthfulness evals, redacted smoke tooling, and CI gates are implemented locally. Adaptive intake is integrated into first-run review with a one-question limit, explicit unknown handling, and confirm/edit/reject decisions for AI hypotheses. Live service behavior still requires deployment and authenticated development smoke validation.
 
 Work:
 

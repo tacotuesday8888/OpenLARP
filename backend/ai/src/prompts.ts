@@ -32,7 +32,7 @@ export function buildLiveWorkflowPrompt(envelope: RequestEnvelope): LiveWorkflow
         [
           "Ask only questions that materially change the first useful career action.",
           "Do not repeat answered questions or revive a rejected hypothesis.",
-          "Generate no more questions than maxQuestions. Any new hypothesis must remain awaitingConfirmation."
+          "Generate no more questions than maxQuestions. Return at most max(0, 2 - pendingHypotheses.length) new hypotheses. Any new hypothesis must remain awaitingConfirmation."
         ],
         adaptiveCareerIntakePayloadSchema.parse(envelope.payload)
       );

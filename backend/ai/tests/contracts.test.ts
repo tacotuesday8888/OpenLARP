@@ -312,6 +312,30 @@ describe("OpenLARP AI backend contracts", () => {
       })),
       hypotheses: []
     })).toThrow();
+    expect(adaptiveCareerIntakePayloadSchema.parse({
+      ...payload,
+      confirmedFacts: [{
+        id: "44444444-4444-4444-8444-444444444444",
+        kind: "existingProof",
+        value: "A class app demo",
+        source: "aiHypothesis",
+        confirmationState: "confirmed",
+        lastUpdatedAt: "2026-08-10T10:02:00.000Z"
+      }]
+    }).confirmedFacts[0]).toMatchObject({
+      source: "aiHypothesis",
+      confirmationState: "confirmed"
+    });
+    expect(() => adaptiveCareerIntakePayloadSchema.parse({
+      ...payload,
+      confirmedFacts: [{
+        id: "44444444-4444-4444-8444-444444444444",
+        kind: "existingProof",
+        value: "A class app demo",
+        source: "aiHypothesis",
+        lastUpdatedAt: "2026-08-10T10:02:00.000Z"
+      }]
+    })).toThrow();
     expect(() => adaptiveCareerIntakeResponseSchema.parse({
       questions: [],
       hypotheses: [{
@@ -319,6 +343,14 @@ describe("OpenLARP AI backend contracts", () => {
         value: "Shipped a production app",
         confirmationState: "confirmed"
       }]
+    })).toThrow();
+    expect(() => adaptiveCareerIntakeResponseSchema.parse({
+      questions: [],
+      hypotheses: Array.from({ length: 3 }, (_, index) => ({
+        kind: "experience",
+        value: `Unconfirmed experience hypothesis ${index}`,
+        confirmationState: "awaitingConfirmation"
+      }))
     })).toThrow();
   });
 

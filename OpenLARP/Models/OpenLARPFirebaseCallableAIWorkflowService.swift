@@ -21,6 +21,7 @@ enum FirebaseCallableAIWorkflowServiceError: LocalAIWorkflowFallbackEligibleErro
     case sdkUnavailable
     case configurationMissing
     case authenticationRequired
+    case serviceUnavailable
     case payloadEncodingFailed
     case responseDecodingFailed
     case contractMismatch(String)
@@ -33,6 +34,8 @@ enum FirebaseCallableAIWorkflowServiceError: LocalAIWorkflowFallbackEligibleErro
             "Firebase is linked but not configured for this build."
         case .authenticationRequired:
             "Sign in before running Firebase callable AI workflows."
+        case .serviceUnavailable:
+            "The Firebase callable AI service is temporarily unavailable."
         case .payloadEncodingFailed:
             "The OpenLARP AI workflow request could not be encoded for Firebase Functions."
         case .responseDecodingFailed:
@@ -44,11 +47,44 @@ enum FirebaseCallableAIWorkflowServiceError: LocalAIWorkflowFallbackEligibleErro
 
     var allowsLocalWorkflowFallback: Bool {
         switch self {
-        case .sdkUnavailable, .configurationMissing, .authenticationRequired:
+        case .sdkUnavailable, .configurationMissing, .authenticationRequired, .serviceUnavailable:
             true
         case .payloadEncodingFailed, .responseDecodingFailed, .contractMismatch:
             false
         }
+    }
+
+    static func recoverableCallableError(from error: Error) -> FirebaseCallableAIWorkflowServiceError? {
+        let nsError = error as NSError
+
+        #if canImport(FirebaseFunctions)
+        if nsError.domain == FunctionsErrorDomain,
+           let code = FunctionsErrorCode(rawValue: nsError.code) {
+            switch code {
+            case .deadlineExceeded, .resourceExhausted, .unavailable:
+                return .serviceUnavailable
+            case .unauthenticated:
+                return .authenticationRequired
+            default:
+                return nil
+            }
+        }
+        #endif
+
+        guard nsError.domain == NSURLErrorDomain else { return nil }
+        let recoverableCodes: Set<URLError.Code> = [
+            .timedOut,
+            .cannotFindHost,
+            .cannotConnectToHost,
+            .networkConnectionLost,
+            .dnsLookupFailed,
+            .notConnectedToInternet,
+            .internationalRoamingOff,
+            .callIsActive,
+            .dataNotAllowed
+        ]
+        guard recoverableCodes.contains(URLError.Code(rawValue: nsError.code)) else { return nil }
+        return .serviceUnavailable
     }
 }
 
@@ -115,7 +151,14 @@ struct FirebaseFunctionsCallableInvoker: FirebaseCallableInvoking {
             encoder: FirebaseCallableAIWorkflowJSON.firebaseDataEncoder(),
             decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
         )
-        return try await callable.call(envelope)
+        do {
+            return try await callable.call(envelope)
+        } catch {
+            if let recoverable = FirebaseCallableAIWorkflowServiceError.recoverableCallableError(from: error) {
+                throw recoverable
+            }
+            throw error
+        }
         #else
         throw FirebaseCallableAIWorkflowServiceError.sdkUnavailable
         #endif
@@ -138,6 +181,35 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
         self.invoker = invoker ?? FirebaseFunctionsCallableInvoker(configuration: configuration)
         self.makeRequestID = requestID
         self.preflight = preflight
+    }
+
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        let response: FirebaseCallableAIWorkflowResponse<FirebaseCallableAdaptiveCareerIntakeResult> = try await callWorkflow(
+            kind: .adaptiveCareerIntake,
+            requestedAt: request.requestedAt,
+            requestID: request.requestID,
+            privacy: .localDefault,
+            payload: FirebaseCallableAdaptiveCareerIntakePayload(request: request)
+        )
+        let result = V0AdaptiveCareerIntakeResponse(
+            requestID: response.requestID,
+            run: try response.workflowRun(
+                expectedKind: .adaptiveCareerIntake,
+                requestedAt: request.requestedAt
+            ),
+            questions: response.result.questions,
+            hypotheses: response.result.hypotheses
+        )
+        do {
+            try result.validate(for: request)
+        } catch {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch(
+                "Firebase callable adaptive intake response did not match the requested unknown facts."
+            )
+        }
+        return result
     }
 
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
@@ -200,11 +272,12 @@ struct FirebaseCallableV0AIWorkflowService: V0AIWorkflowServicing {
     private func callWorkflow<Payload: Codable & Equatable & Sendable, Result: Decodable>(
         kind: V0AIWorkflowKind,
         requestedAt: Date,
+        requestID requestedRequestID: UUID? = nil,
         privacy: CareerUserPrivacySettings,
         payload: Payload
     ) async throws -> FirebaseCallableAIWorkflowResponse<Result> {
         let expectedUserID = try preflight()
-        let requestID = makeRequestID()
+        let requestID = requestedRequestID ?? makeRequestID()
         let envelope = V0AIBackendRequestEnvelope(
             kind: kind,
             providerRoute: .firebaseCallableGenkit,
@@ -347,6 +420,65 @@ struct FirebaseCallableAIWorkflowResponse<Result: Decodable>: Decodable, @unchec
 
 private struct FirebaseCallableQuestPlanResult: Decodable {
     var quests: [FirebaseCallableQuestDTO]
+}
+
+private struct FirebaseCallableAdaptiveCareerIntakeResult: Decodable {
+    var questions: [V0AdaptiveCareerQuestion]
+    var hypotheses: [V0AdaptiveCareerHypothesis]
+}
+
+private struct FirebaseCallableAdaptiveCareerIntakePayload: Codable, Equatable, Sendable {
+    var confirmedFacts: [FirebaseCallableAdaptiveFactDTO]
+    var pendingHypotheses: [FirebaseCallableAdaptiveHypothesisDTO]
+    var rejectedHypothesisIDs: [UUID]
+    var unknownKinds: [CareerFactKind]
+    var questionHistory: [V0AdaptiveCareerQuestionAnswer]
+    var maxQuestions: Int
+
+    init(request: V0AdaptiveCareerIntakeRequest) {
+        confirmedFacts = request.confirmedFacts.map(FirebaseCallableAdaptiveFactDTO.init)
+        pendingHypotheses = request.pendingHypotheses.map(FirebaseCallableAdaptiveHypothesisDTO.init)
+        rejectedHypothesisIDs = request.rejectedHypothesisIDs
+        unknownKinds = request.unknownKinds
+        questionHistory = request.questionHistory
+        maxQuestions = request.maxQuestions
+    }
+}
+
+private struct FirebaseCallableAdaptiveFactDTO: Codable, Equatable, Sendable {
+    var id: UUID
+    var kind: CareerFactKind
+    var value: String
+    var source: CareerFactSource
+    var confirmationState: CareerFactConfirmationState?
+    var lastUpdatedAt: Date
+
+    init(fact: CareerFactRecord) {
+        id = fact.id
+        kind = fact.kind
+        value = fact.value
+        source = fact.provenance.source
+        confirmationState = fact.provenance.source == .aiHypothesis ? .confirmed : nil
+        lastUpdatedAt = fact.lastUpdatedAt
+    }
+}
+
+private struct FirebaseCallableAdaptiveHypothesisDTO: Codable, Equatable, Sendable {
+    var id: UUID
+    var kind: CareerFactKind
+    var value: String
+    var source: CareerFactSource
+    var confirmationState: CareerFactConfirmationState
+    var lastUpdatedAt: Date
+
+    init(fact: CareerFactRecord) {
+        id = fact.id
+        kind = fact.kind
+        value = fact.value
+        source = fact.provenance.source
+        confirmationState = fact.confirmationState
+        lastUpdatedAt = fact.lastUpdatedAt
+    }
 }
 
 private struct FirebaseCallableDiagnosticPayload: Codable, Equatable, Sendable {

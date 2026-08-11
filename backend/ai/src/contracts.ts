@@ -85,10 +85,18 @@ const intakeFactBaseSchema = z.object({
   lastUpdatedAt: z.string().datetime()
 });
 
-export const adaptiveCareerIntakePayloadSchema = z.object({
-  confirmedFacts: z.array(intakeFactBaseSchema.extend({
+const confirmedIntakeFactSchema = z.union([
+  intakeFactBaseSchema.extend({
     source: z.enum(["userEntry", "userEdit", "legacyMigration"])
-  })).max(24),
+  }),
+  intakeFactBaseSchema.extend({
+    source: z.literal("aiHypothesis"),
+    confirmationState: z.literal("confirmed")
+  })
+]);
+
+export const adaptiveCareerIntakePayloadSchema = z.object({
+  confirmedFacts: z.array(confirmedIntakeFactSchema).max(24),
   pendingHypotheses: z.array(intakeFactBaseSchema.extend({
     source: z.literal("aiHypothesis"),
     confirmationState: z.literal("awaitingConfirmation")
@@ -116,7 +124,7 @@ export const adaptiveCareerIntakeResponseSchema = z.object({
     kind: careerFactKindSchema,
     value: z.string().min(1).max(4000),
     confirmationState: z.literal("awaitingConfirmation")
-  })).max(6)
+  })).max(2)
 });
 
 export const readinessMetricsSchema = z.object({

@@ -1,6 +1,7 @@
 import Foundation
 
 enum V0AIWorkflowKind: String, Codable, CaseIterable, Identifiable {
+    case adaptiveCareerIntake
     case cookedDiagnostic
     case questPlan
     case proofQualityCheck
@@ -20,6 +21,173 @@ enum V0AIProviderRoute: String, Codable, CaseIterable, Identifiable {
 }
 
 extension V0AIProviderRoute: Sendable {}
+
+enum V0AdaptiveCareerResponseType: String, Codable, Equatable, Sendable {
+    case freeText
+    case singleChoice
+    case duration
+    case confidence
+}
+
+struct V0AdaptiveCareerQuestion: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var factKind: CareerFactKind
+    var question: String
+    var rationale: String
+    var responseType: V0AdaptiveCareerResponseType
+    var options: [String]
+}
+
+struct V0AdaptiveCareerHypothesis: Codable, Equatable, Sendable {
+    var kind: CareerFactKind
+    var value: String
+    var confirmationState: CareerFactConfirmationState
+
+    init(
+        kind: CareerFactKind,
+        value: String,
+        confirmationState: CareerFactConfirmationState = .awaitingConfirmation
+    ) {
+        self.kind = kind
+        self.value = value
+        self.confirmationState = confirmationState
+    }
+}
+
+struct V0AdaptiveCareerQuestionAnswer: Codable, Equatable, Sendable {
+    var factKind: CareerFactKind
+    var question: String
+    var answer: String
+}
+
+struct V0AdaptiveCareerIntakeRequest: Equatable, Sendable {
+    private static let questionPriority: [CareerFactKind] = [
+        .existingProof,
+        .experience,
+        .constraints,
+        .biggestBlocker,
+        .timeline,
+        .currentStage,
+        .confidence,
+        .dailyCommitment,
+        .urgency,
+        .outcomeType,
+        .targetOutcome
+    ]
+
+    var confirmedFacts: [CareerFactRecord]
+    var pendingHypotheses: [CareerFactRecord]
+    var rejectedHypothesisIDs: [UUID]
+    var unknownKinds: [CareerFactKind]
+    var questionHistory: [V0AdaptiveCareerQuestionAnswer]
+    var maxQuestions: Int
+    var requestedAt: Date
+    var requestID: UUID
+
+    init(
+        understanding: CareerUnderstanding,
+        questionHistory: [V0AdaptiveCareerQuestionAnswer] = [],
+        maxQuestions: Int = 1,
+        requestedAt: Date,
+        requestID: UUID = UUID()
+    ) {
+        confirmedFacts = Array(understanding.confirmedFacts.prefix(24))
+        pendingHypotheses = Array(understanding.pendingHypotheses.prefix(12))
+        rejectedHypothesisIDs = Array(understanding.rejectedFacts
+            .filter { $0.provenance.source == .aiHypothesis }
+            .map(\.id)
+            .prefix(24))
+        let unknownSet = Set(understanding.unknowns.map(\.kind))
+        unknownKinds = Self.questionPriority.filter(unknownSet.contains)
+        self.questionHistory = questionHistory.prefix(8).compactMap { item in
+            guard let question = Self.bounded(item.question, limit: 240),
+                  let answer = Self.bounded(item.answer, limit: 4_000) else {
+                return nil
+            }
+            return V0AdaptiveCareerQuestionAnswer(
+                factKind: item.factKind,
+                question: question,
+                answer: answer
+            )
+        }
+        self.maxQuestions = max(0, min(maxQuestions, 3))
+        self.requestedAt = requestedAt
+        self.requestID = requestID
+    }
+
+    private static func bounded(_ value: String, limit: Int) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(limit))
+    }
+}
+
+enum V0AdaptiveCareerIntakeContractError: Error, Equatable {
+    case requestIDMismatch
+    case unexpectedWorkflowKind
+    case tooManyQuestions
+    case duplicateQuestion
+    case questionForKnownFact
+    case invalidQuestion
+    case invalidHypothesis
+}
+
+struct V0AdaptiveCareerIntakeResponse: Equatable, Sendable {
+    var requestID: UUID
+    var run: V0AIWorkflowRun
+    var questions: [V0AdaptiveCareerQuestion]
+    var hypotheses: [V0AdaptiveCareerHypothesis]
+
+    func validate(for request: V0AdaptiveCareerIntakeRequest) throws {
+        guard requestID == request.requestID else {
+            throw V0AdaptiveCareerIntakeContractError.requestIDMismatch
+        }
+        guard run.kind == .adaptiveCareerIntake else {
+            throw V0AdaptiveCareerIntakeContractError.unexpectedWorkflowKind
+        }
+        guard questions.count <= request.maxQuestions else {
+            throw V0AdaptiveCareerIntakeContractError.tooManyQuestions
+        }
+        let questionIDs = questions.map(\.id)
+        let questionKinds = questions.map(\.factKind)
+        guard questions.allSatisfy({ question in
+            (1...64).contains(question.id.count) &&
+                !question.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                (1...240).contains(question.question.count) &&
+                !question.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                (1...240).contains(question.rationale.count) &&
+                !question.rationale.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                question.options.count <= 6 &&
+                question.options.allSatisfy {
+                    (1...120).contains($0.count) &&
+                        !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+        }) else {
+            throw V0AdaptiveCareerIntakeContractError.invalidQuestion
+        }
+        guard Set(questionIDs).count == questionIDs.count,
+              Set(questionKinds).count == questionKinds.count else {
+            throw V0AdaptiveCareerIntakeContractError.duplicateQuestion
+        }
+        let unknownKinds = Set(request.unknownKinds)
+        guard questionKinds.allSatisfy(unknownKinds.contains) else {
+            throw V0AdaptiveCareerIntakeContractError.questionForKnownFact
+        }
+        let pendingHypothesisKinds = Set(request.pendingHypotheses.map(\.kind))
+        let hypothesisKinds = hypotheses.map(\.kind)
+        guard hypotheses.count + request.pendingHypotheses.count <= 2,
+              Set(hypothesisKinds).count == hypothesisKinds.count,
+              hypotheses.allSatisfy({
+                  $0.confirmationState == .awaitingConfirmation &&
+                      unknownKinds.contains($0.kind) &&
+                      !pendingHypothesisKinds.contains($0.kind) &&
+                      (1...4_000).contains($0.value.count) &&
+                      !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              }) else {
+            throw V0AdaptiveCareerIntakeContractError.invalidHypothesis
+        }
+    }
+}
 
 struct V0AISafetyRules: Codable, Equatable {
     var hardBannedClaims: [String]
@@ -536,6 +704,9 @@ protocol LocalAIWorkflowFallbackEligibleError: Error {
 // keeping provider SDKs, credentials, and direct LLM calls out of this app target.
 @MainActor
 protocol V0AIWorkflowServicing {
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse
     func reviewProof(_ request: V0ProofReviewRequest) async throws -> V0ProofReviewResponse
@@ -543,6 +714,29 @@ protocol V0AIWorkflowServicing {
 }
 
 struct LocalMockV0AIWorkflowService: V0AIWorkflowServicing {
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        let questions = request.unknownKinds.prefix(request.maxQuestions).map { kind in
+            V0AdaptiveCareerQuestion(
+                id: "adaptive-\(kind.rawValue)",
+                factKind: kind,
+                question: kind.unknownPrompt,
+                rationale: "This missing detail changes which first action is realistic and useful.",
+                responseType: .freeText,
+                options: []
+            )
+        }
+        let response = V0AdaptiveCareerIntakeResponse(
+            requestID: request.requestID,
+            run: run(kind: .adaptiveCareerIntake, requestedAt: request.requestedAt),
+            questions: Array(questions),
+            hypotheses: []
+        )
+        try response.validate(for: request)
+        return response
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         V0DiagnosticResponse(
             run: run(kind: .cookedDiagnostic, requestedAt: request.requestedAt),
@@ -596,6 +790,19 @@ struct FallbackV0AIWorkflowService: V0AIWorkflowServicing {
     ) {
         self.primary = primary
         self.fallback = fallback
+    }
+
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        do {
+            return try await primary.generateAdaptiveCareerIntake(request)
+        } catch {
+            guard shouldUseLocalFallback(for: error) else { throw error }
+            var response = try await fallback.generateAdaptiveCareerIntake(request)
+            response.run = response.run.markedAsFallback(failureMessage: String(describing: error))
+            return response
+        }
     }
 
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {

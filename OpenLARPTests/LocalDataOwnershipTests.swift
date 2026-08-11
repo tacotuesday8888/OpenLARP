@@ -432,6 +432,12 @@ private final class DelayedDiagnosticWorkflowService: V0AIWorkflowServicing {
     private(set) var didStartDiagnostic = false
     private let base = LocalMockV0AIWorkflowService()
 
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        try await base.generateAdaptiveCareerIntake(request)
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         didStartDiagnostic = true
         await withCheckedContinuation { continuation = $0 }

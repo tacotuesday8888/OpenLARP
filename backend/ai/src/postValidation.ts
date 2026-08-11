@@ -55,11 +55,17 @@ export function validateGeneratedWorkflowResult(
     }
     const unknownKinds = new Set(intakePayload.data.unknownKinds);
     const questionKinds = intakeResult.questions.map((question) => question.factKind);
+    const pendingHypothesisKinds = new Set(
+      intakePayload.data.pendingHypotheses.map((hypothesis) => hypothesis.kind)
+    );
+    const hypothesisKinds = intakeResult.hypotheses.map((hypothesis) => hypothesis.kind);
     if (
       intakeResult.questions.length > intakePayload.data.maxQuestions ||
+      intakeResult.hypotheses.length + intakePayload.data.pendingHypotheses.length > 2 ||
       questionKinds.some((kind) => !unknownKinds.has(kind)) ||
       new Set(questionKinds).size !== questionKinds.length ||
-      intakeResult.hypotheses.some((hypothesis) => !unknownKinds.has(hypothesis.kind))
+      hypothesisKinds.some((kind) => !unknownKinds.has(kind) || pendingHypothesisKinds.has(kind)) ||
+      new Set(hypothesisKinds).size !== hypothesisKinds.length
     ) {
       return { ok: false, reason: "invalidOutput" };
     }
