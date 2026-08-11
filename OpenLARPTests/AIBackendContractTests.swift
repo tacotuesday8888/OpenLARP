@@ -135,7 +135,7 @@ final class AIBackendContractTests: XCTestCase {
         XCTAssertEqual(request.relevantProof?.hasLink, true)
         XCTAssertFalse(request.allowsLongTermMemoryWrite)
         XCTAssertFalse(request.externalActionsAllowed)
-        let requestJSON = try encodedJSONObjectString(request)
+        let requestJSON = try encodedJSONString(request)
         XCTAssertFalse(requestJSON.contains("May have a private portfolio file"))
         XCTAssertFalse(requestJSON.contains("private-proof.png"))
         XCTAssertFalse(requestJSON.contains("https://example.com/proof"))
