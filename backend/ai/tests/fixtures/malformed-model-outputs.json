@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "missing-required-fields",
+      "output": {
+        "score": 48
+      }
+    },
+    {
+      "id": "wrong-score-type",
+      "output": {
+        "score": "high",
+        "label": "Ready"
+      }
+    },
+    {
+      "id": "score-out-of-range",
+      "output": {
+        "score": 140,
+        "label": "Ready"
+      }
+    },
+    {
+      "id": "empty-object",
+      "output": {}
+    },
+    {
+      "id": "unrelated-shape",
+      "output": {
+        "answer": "Looks good",
+        "confidence": 1
+      }
+    }
+  ]
+}

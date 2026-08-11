@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "invented-employer",
+      "output": {
+        "strongestSignal": "You worked at Apple for three years.",
+        "strongestSignals": ["You worked at Apple for three years."]
+      }
+    },
+    {
+      "id": "invented-school",
+      "output": {
+        "strongestSignal": "You graduated from Stanford with an engineering degree.",
+        "strongestSignals": ["You graduated from Stanford with an engineering degree."]
+      }
+    },
+    {
+      "id": "invented-certificate",
+      "output": {
+        "strongestSignal": "You earned a certificate in advanced machine learning.",
+        "strongestSignals": ["You earned a certificate in advanced machine learning."]
+      }
+    },
+    {
+      "id": "false-attachment-inspection",
+      "output": {
+        "fastestFix": "I reviewed the attachment and verified every claim."
+      }
+    },
+    {
+      "id": "false-external-action",
+      "output": {
+        "firstAction": "We submitted your application to Acme and contacted the recruiter."
+      }
+    }
+  ]
+}

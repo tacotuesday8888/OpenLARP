@@ -1,4 +1,5 @@
 import type {
+  AdaptiveCareerIntakePayload,
   AgentScanPayload,
   CareerBriefPayload,
   DiagnosticPayload,
@@ -11,6 +12,43 @@ import type {
 } from "./contracts.js";
 import { assertSafeGeneratedText } from "./safety.js";
 
+const adaptiveQuestionCopy = {
+  outcomeType: "What kind of outcome are you pursuing?",
+  targetOutcome: "What specific career outcome do you want?",
+  currentStage: "What is your current career stage?",
+  timeline: "When do you want to reach this outcome?",
+  urgency: "How urgent is this goal?",
+  experience: "What relevant experience have you actually completed?",
+  existingProof: "What work can you already show or explain?",
+  constraints: "What limits should the plan respect?",
+  confidence: "How confident do you feel about this goal today?",
+  dailyCommitment: "How much time can you realistically spend each day?",
+  biggestBlocker: "What is the biggest blocker right now?"
+} as const;
+
+export function makeAdaptiveCareerIntake(payload: AdaptiveCareerIntakePayload) {
+  const questions = payload.unknownKinds.slice(0, payload.maxQuestions).map((factKind) => ({
+    id: `adaptive-${factKind}`,
+    factKind,
+    question: adaptiveQuestionCopy[factKind],
+    rationale: "This missing detail changes which first action is realistic and useful.",
+    responseType: factKind === "confidence"
+      ? "confidence" as const
+      : factKind === "dailyCommitment"
+        ? "duration" as const
+        : factKind === "outcomeType" || factKind === "urgency"
+          ? "singleChoice" as const
+          : "freeText" as const,
+    options: factKind === "outcomeType"
+      ? ["Job", "Internship", "Promotion", "Career change"]
+      : factKind === "urgency"
+        ? ["Exploring", "Steady", "Urgent"]
+        : []
+  }));
+
+  return { questions, hypotheses: [] };
+}
+
 export function makeDiagnostic(payload: DiagnosticPayload) {
   const targetRole = payload.goal.targetRole;
   const hasProof = payload.goal.existingProof.trim().length > 0;
@@ -22,7 +60,16 @@ export function makeDiagnostic(payload: DiagnosticPayload) {
       ? "You already have starting proof that can be sharpened."
       : "You named a target clearly enough to build a first proof sprint.",
     fastestFix: "Create one small artifact that demonstrates a real target-role requirement.",
-    readinessBaseline: hasProof ? 48 : 38
+    readinessBaseline: hasProof ? 48 : 38,
+    strongestSignals: [hasProof
+      ? "You already have starting proof that can be sharpened."
+      : "You named a target clearly enough to build a first proof sprint."],
+    readinessGaps: [`The ${targetRole} goal needs stronger evidence tied to real role requirements.`],
+    missingInformation: hasProof
+      ? ["The strength and relevance of the existing proof have not been independently verified."]
+      : ["No existing proof was provided for this baseline."],
+    uncertaintyExplanation: "This baseline uses only the information supplied by the user and does not verify unsupported claims.",
+    firstAction: `Map three repeated requirements from two current ${targetRole} role descriptions.`
   };
   assertSafeGeneratedText(JSON.stringify(response));
   return response;

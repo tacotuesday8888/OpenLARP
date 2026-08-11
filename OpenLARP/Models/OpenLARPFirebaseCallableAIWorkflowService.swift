@@ -248,8 +248,50 @@ struct FirebaseCallableAIWorkflowResponse<Result: Decodable>: Decodable, @unchec
     var evaluatedAt: Date
     var providerRoute: V0AIProviderRoute
     var liveModelCallsEnabled: Bool
+    var liveModelUsed: Bool
+    var usedFallback: Bool
+    var fallbackReason: String?
+    var promptVersion: String?
+    var policyRevision: String?
     var externalActionTaken: Bool
     var result: Result
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case schemaVersion
+        case requestID
+        case kind
+        case userID
+        case evaluatedAt
+        case providerRoute
+        case liveModelCallsEnabled
+        case liveModelUsed
+        case usedFallback
+        case fallbackReason
+        case promptVersion
+        case policyRevision
+        case externalActionTaken
+        case result
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        requestID = try container.decode(UUID.self, forKey: .requestID)
+        kind = try container.decode(V0AIWorkflowKind.self, forKey: .kind)
+        userID = try container.decode(String.self, forKey: .userID)
+        evaluatedAt = try container.decode(Date.self, forKey: .evaluatedAt)
+        providerRoute = try container.decode(V0AIProviderRoute.self, forKey: .providerRoute)
+        liveModelCallsEnabled = try container.decode(Bool.self, forKey: .liveModelCallsEnabled)
+        liveModelUsed = try container.decodeIfPresent(Bool.self, forKey: .liveModelUsed) ?? false
+        usedFallback = try container.decodeIfPresent(Bool.self, forKey: .usedFallback) ?? false
+        fallbackReason = try container.decodeIfPresent(String.self, forKey: .fallbackReason)
+        promptVersion = try container.decodeIfPresent(String.self, forKey: .promptVersion)
+        policyRevision = try container.decodeIfPresent(String.self, forKey: .policyRevision)
+        externalActionTaken = try container.decode(Bool.self, forKey: .externalActionTaken)
+        result = try container.decode(Result.self, forKey: .result)
+    }
 
     func validateRequestID(_ expectedRequestID: UUID) throws {
         guard requestID == expectedRequestID else {
@@ -276,15 +318,29 @@ struct FirebaseCallableAIWorkflowResponse<Result: Decodable>: Decodable, @unchec
         guard providerRoute == .firebaseCallableGenkit else {
             throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflow returned an unexpected provider route.")
         }
-        guard !liveModelCallsEnabled, !externalActionTaken else {
-            throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflow returned a live-model or external-action response before production gates are enabled.")
+        guard !externalActionTaken else {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflows cannot take external actions.")
+        }
+        guard !liveModelUsed || (liveModelCallsEnabled && !usedFallback) else {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflow returned inconsistent live-model metadata.")
+        }
+        guard usedFallback == (fallbackReason != nil) else {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflow returned inconsistent fallback metadata.")
+        }
+        guard !liveModelUsed || (promptVersion != nil && policyRevision != nil) else {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflow omitted required live-model policy metadata.")
+        }
+        guard !liveModelCallsEnabled || liveModelUsed || usedFallback else {
+            throw FirebaseCallableAIWorkflowServiceError.contractMismatch("Firebase callable AI workflow did not explain why enabled live generation was not used.")
         }
 
         return V0AIWorkflowRun(
             kind: expectedKind,
             providerRoute: .firebaseCallableGenkit,
             requestedAt: requestedAt,
-            completedAt: evaluatedAt
+            completedAt: evaluatedAt,
+            usedFallback: usedFallback,
+            failureMessage: usedFallback ? AIWorkflowAuditRecord.fallbackFailureSummary : nil
         )
     }
 }

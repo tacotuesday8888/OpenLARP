@@ -7,11 +7,12 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:evals": "vitest run tests/evals.test.ts"
   },
   "dependencies": {
-    "@genkit-ai/google-genai": "1.37.0",
-    "genkit": "1.37.0",
+    "@genkit-ai/google-genai": "1.40.1",
+    "genkit": "1.40.1",
     "zod": "3.25.76"
   },
   "devDependencies": {

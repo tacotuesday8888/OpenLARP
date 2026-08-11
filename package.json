@@ -4,20 +4,28 @@
   "type": "module",
   "workspaces": [
     "backend/ai",
+    "backend/ai-service",
     "backend/functions",
     "firebase-rules"
   ],
+  "overrides": {
+    "brace-expansion": "2.1.4",
+    "fast-uri": "3.1.5"
+  },
   "scripts": {
-    "typecheck:backend": "npm --workspace backend/ai run typecheck && npm --workspace backend/functions run typecheck",
-    "test:backend": "npm --workspace backend/ai test && npm --workspace backend/functions test",
-    "build:backend": "npm --workspace backend/functions run build",
+    "typecheck:backend": "npm --workspace backend/ai run typecheck && npm --workspace backend/ai-service run typecheck && npm --workspace backend/functions run typecheck",
+    "test:backend": "npm --workspace backend/ai test && npm --workspace backend/ai-service test && npm --workspace backend/functions test",
+    "test:evals": "npm --workspace backend/ai run test:evals",
+    "build:backend": "npm --workspace backend/ai-service run build && npm --workspace backend/functions run build",
+    "audit:production": "node scripts/production-dependency-audit.mjs",
     "public:safety": "node scripts/public-repo-safety-check.mjs",
     "beta:gate": "node scripts/beta-release-gate.mjs",
     "test:rules": "npm --workspace firebase-rules test",
     "test:rules:emulators": "JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21} PATH=\"${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}/bin:$PATH\" firebase emulators:exec --project openlarp-rules-test --only firestore,storage \"npm run test:rules\"",
     "test:scripts": "npm run public:safety && vitest run scripts/tests",
     "firebase:live-readiness": "scripts/firebase-live-readiness.sh",
-    "firebase:signed-in-smoke": "scripts/firebase-signed-in-smoke.sh"
+    "firebase:signed-in-smoke": "scripts/firebase-signed-in-smoke.sh",
+    "live-ai:smoke": "scripts/live-ai-smoke.sh"
   },
   "devDependencies": {
     "firebase": "12.15.0",

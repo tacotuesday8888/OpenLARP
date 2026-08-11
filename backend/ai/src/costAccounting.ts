@@ -27,7 +27,7 @@ export function estimateProviderUsage(input: OpenLARPAIProviderUsageInput): Open
   const maxOutputTokens = input.config.maxOutputTokens;
   const estimatedTotalTokens = estimatedInputTokens + maxOutputTokens;
   const estimatedCostMicros = input.budgetPolicy
-    ? estimatedMicros({
+    ? providerCostMicros({
         inputTokens: estimatedInputTokens,
         outputTokens: maxOutputTokens,
         budgetPolicy: input.budgetPolicy
@@ -76,12 +76,27 @@ function estimateTokensFromJSON(value: unknown): number {
   return Math.max(1, Math.ceil(serialized.length / 4));
 }
 
-function estimatedMicros(input: {
+export function providerCostMicros(input: {
   inputTokens: number;
   outputTokens: number;
   budgetPolicy: OpenLARPAIProviderBudgetPolicy;
 }): number {
+  if (!isNonnegativeSafeInteger(input.inputTokens) || !isNonnegativeSafeInteger(input.outputTokens)) {
+    throw new Error("Provider token counts must be nonnegative safe integers.");
+  }
+  if (!isNonnegativeSafeInteger(input.budgetPolicy.inputTokenMicrosPerThousand)
+    || !isNonnegativeSafeInteger(input.budgetPolicy.outputTokenMicrosPerThousand)) {
+    throw new Error("Provider token pricing must use nonnegative safe integer micros.");
+  }
   const inputMicros = Math.ceil(input.inputTokens * input.budgetPolicy.inputTokenMicrosPerThousand / 1000);
   const outputMicros = Math.ceil(input.outputTokens * input.budgetPolicy.outputTokenMicrosPerThousand / 1000);
-  return inputMicros + outputMicros;
+  const total = inputMicros + outputMicros;
+  if (!Number.isSafeInteger(total)) {
+    throw new Error("Provider cost exceeded the safe integer range.");
+  }
+  return total;
+}
+
+function isNonnegativeSafeInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
 }
