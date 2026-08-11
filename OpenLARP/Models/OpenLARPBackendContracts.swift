@@ -1050,6 +1050,248 @@ struct LocalMockAccountDeletionService: AccountDeletionServicing {
     }
 }
 
+enum CareerStateSyncStatus: String, Codable, Equatable, CaseIterable {
+    case neverSynced
+    case syncing
+    case inSync
+    case conflict
+    case failed
+}
+
+struct CareerStateSyncMetadata: Codable, Equatable {
+    var schemaVersion: Int
+    var status: CareerStateSyncStatus
+    var revision: Int?
+    var basePayloadHash: String?
+    var lastAttemptAt: Date?
+    var lastCompletedAt: Date?
+    var serverUpdatedAt: Date?
+
+    static let empty = CareerStateSyncMetadata(
+        schemaVersion: 1,
+        status: .neverSynced,
+        revision: nil,
+        basePayloadHash: nil,
+        lastAttemptAt: nil,
+        lastCompletedAt: nil,
+        serverUpdatedAt: nil
+    )
+
+    func started(at timestamp: Date) -> CareerStateSyncMetadata {
+        var copy = self
+        copy.status = .syncing
+        copy.lastAttemptAt = timestamp
+        return copy
+    }
+
+    func completed(
+        revision: Int,
+        payloadHash: String?,
+        serverUpdatedAt: Date?,
+        at timestamp: Date
+    ) -> CareerStateSyncMetadata {
+        CareerStateSyncMetadata(
+            schemaVersion: 1,
+            status: .inSync,
+            revision: revision > 0 ? revision : nil,
+            basePayloadHash: payloadHash,
+            lastAttemptAt: lastAttemptAt ?? timestamp,
+            lastCompletedAt: timestamp,
+            serverUpdatedAt: serverUpdatedAt
+        )
+    }
+
+    func markedConflict(at timestamp: Date) -> CareerStateSyncMetadata {
+        var copy = self
+        copy.status = .conflict
+        copy.lastAttemptAt = timestamp
+        return copy
+    }
+
+    func markedFailed(at timestamp: Date) -> CareerStateSyncMetadata {
+        var copy = self
+        copy.status = .failed
+        copy.lastAttemptAt = timestamp
+        return copy
+    }
+}
+
+struct CareerStateCloudPayload: Codable, Equatable {
+    var schemaVersion: Int
+    var includesPrivateEvidence: Bool
+    var state: OpenLARPState
+
+    init(state source: OpenLARPState) {
+        let includesPrivateEvidence = source.userProfile?.privacy.allowsPrivateEvidenceCloudSync ?? false
+        var cloudState = source
+        if var profile = cloudState.userProfile {
+            profile.accountID = nil
+            profile.email = nil
+            cloudState.userProfile = profile
+        }
+        cloudState.questReminders = .off
+        cloudState.careerStateSync = .empty
+        cloudState.proofDraft = nil
+        cloudState.proofDraftQuestID = nil
+        cloudState.proofDraftQualityResult = nil
+        cloudState.betaEvents = []
+        cloudState.aiWorkflowRuns = []
+        cloudState.backendEvents = []
+        cloudState.subscriptionState = .notStarted()
+        cloudState.privateEvidenceBackupCleanupResult = nil
+        cloudState.accountDeletionResult = nil
+        if includesPrivateEvidence {
+            cloudState.progress.recentProof = cloudState.progress.recentProof.map { proof in
+                var proof = proof
+                proof.attachments = []
+                return proof
+            }
+            cloudState.outcomeLog.removeAll { $0.isDeleted }
+        } else {
+            cloudState.progress.recentProof = []
+            cloudState.outcomeLog.removeAll { $0.isPrivate || $0.isDeleted }
+        }
+        cloudState.agentBrief = .empty
+
+        self.schemaVersion = 1
+        self.includesPrivateEvidence = includesPrivateEvidence
+        state = cloudState
+    }
+
+    func restoredState(preserving localState: OpenLARPState) -> OpenLARPState? {
+        guard schemaVersion == 1,
+              state.schemaVersion == OpenLARPState.currentSchemaVersion else {
+            return nil
+        }
+        var restored = state
+        restored.questReminders = localState.questReminders
+        restored.betaEvents = localState.betaEvents
+        restored.aiWorkflowRuns = localState.aiWorkflowRuns
+        restored.backendEvents = localState.backendEvents
+        restored.subscriptionState = localState.subscriptionState
+        restored.privateEvidenceBackupCleanupResult = localState.privateEvidenceBackupCleanupResult
+        restored.accountDeletionResult = localState.accountDeletionResult
+        restored.careerStateSync = localState.careerStateSync
+
+        if includesPrivateEvidence {
+            let attachmentsByProofID = localState.progress.recentProof.reduce(into: [UUID: [ProofAttachment]]()) {
+                $0[$1.id] = $1.attachments
+            }
+            restored.progress.recentProof = restored.progress.recentProof.map { proof in
+                var proof = proof
+                proof.attachments = attachmentsByProofID[proof.id] ?? []
+                return proof
+            }
+        } else {
+            restored.progress.recentProof = localState.progress.recentProof
+            restored.progress.proofCount = max(
+                restored.progress.proofCount,
+                restored.progress.recentProof.count
+            )
+            let cloudOutcomeIDs = Set(restored.outcomeLog.map(\.id))
+            restored.outcomeLog.append(contentsOf: localState.outcomeLog.filter {
+                $0.isPrivate && !cloudOutcomeIDs.contains($0.id)
+            })
+        }
+        let canPreserveDraft = localState.proofDraftQuestID.map { draftQuestID in
+            restored.plan.contains { $0.id == draftQuestID }
+        } ?? localState.proofDraft == nil
+        if canPreserveDraft {
+            restored.proofDraft = localState.proofDraft
+            restored.proofDraftQuestID = localState.proofDraftQuestID
+            restored.proofDraftQualityResult = localState.proofDraftQualityResult
+        } else {
+            restored.proofDraft = nil
+            restored.proofDraftQuestID = nil
+            restored.proofDraftQualityResult = nil
+        }
+        restored.agentBrief = AgentBriefFactory.makeBrief(for: restored, generatedAt: restored.updatedAt)
+        return restored
+    }
+}
+
+enum CareerStateSyncAction: String, Codable, Equatable {
+    case reconcile
+    case keepLocal
+    case useCloud
+}
+
+struct CareerStateSyncRequest: Encodable, Equatable {
+    var schemaVersion: Int
+    var action: CareerStateSyncAction
+    var requestedAt: Date
+    var hasMeaningfulLocalData: Bool
+    var expectedRevision: Int?
+    var basePayloadHash: String?
+    var payload: CareerStateCloudPayload
+    var session: BackendUserSession
+
+    init(
+        state: OpenLARPState,
+        session: BackendUserSession,
+        action: CareerStateSyncAction = .reconcile,
+        expectedRevision: Int? = nil,
+        requestedAt: Date = Date()
+    ) {
+        schemaVersion = 1
+        self.action = action
+        self.requestedAt = requestedAt
+        hasMeaningfulLocalData = state.hasMeaningfulCareerData
+        self.expectedRevision = expectedRevision ?? state.careerStateSync.revision
+        basePayloadHash = state.careerStateSync.basePayloadHash
+        payload = CareerStateCloudPayload(state: state)
+        self.session = session.redactedForCareerGraphSync()
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case action
+        case requestedAt
+        case hasMeaningfulLocalData
+        case expectedRevision
+        case basePayloadHash
+        case payload
+    }
+}
+
+enum CareerStateSyncResultStatus: String, Codable, Equatable {
+    case noData
+    case uploaded
+    case restored
+    case inSync
+    case conflict
+}
+
+struct CareerStateSyncResult: Codable, Equatable {
+    var schemaVersion: Int
+    var status: CareerStateSyncResultStatus
+    var revision: Int
+    var payloadHash: String?
+    var cloudPayload: CareerStateCloudPayload?
+    var serverUpdatedAt: Date?
+    var completedAt: Date
+    var didWrite: Bool
+}
+
+protocol CareerStateSyncServicing: Sendable {
+    func sync(_ request: CareerStateSyncRequest) async throws -> CareerStateSyncResult
+}
+
+struct LocalMockCareerStateSyncService: CareerStateSyncServicing {
+    func sync(_ request: CareerStateSyncRequest) async throws -> CareerStateSyncResult {
+        CareerStateSyncResult(
+            schemaVersion: 1,
+            status: .noData,
+            revision: 0,
+            payloadHash: nil,
+            cloudPayload: nil,
+            serverUpdatedAt: nil,
+            completedAt: request.requestedAt,
+            didWrite: false
+        )
+    }
+}
+
 struct CareerGraphSyncPreparationRequest: Codable, Equatable {
     var schemaVersion: Int
     var requestedAt: Date

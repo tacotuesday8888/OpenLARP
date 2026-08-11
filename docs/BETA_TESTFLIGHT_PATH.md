@@ -18,6 +18,7 @@ This document tracks the practical path from the current local product foundatio
 - Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
 - Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled, and its deploy package is kept free of Genkit runtime dependencies.
 - Deterministic Firebase Callable Functions are deployed to the `openlarp-dev-langqi` dev project in `us-central1` with Node.js 22: `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and `deleteOpenLARPAccount`.
+- `syncOpenLARPCareerState` is implemented and locally verified for versioned cross-device restore and conflict repair, but is not included in the current dev deployment yet.
 - The live callable endpoint is reachable and rejects unsigned workflow requests with `UNAUTHENTICATED`.
 - Functions Artifact Registry cleanup policies are installed for the dev project so old deployment images do not accumulate without a retention policy.
 - The iOS app now tries the Firebase callable Genkit route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.

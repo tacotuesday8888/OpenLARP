@@ -67,6 +67,7 @@ struct OpenLARPAppStoreFactory {
             aiWorkflowService: LocalMockV0AIWorkflowService(),
             agentService: MockCareerAgentService(),
             careerGraphSyncService: LocalMockCareerGraphSyncService(),
+            careerStateSyncService: LocalMockCareerStateSyncService(),
             authenticationService: MockOpenLARPAuthenticationService(),
             backendEventSyncService: LocalMockBackendEventSyncService(),
             privateEvidenceCloudSyncConsentService: LocalMockPrivateEvidenceCloudSyncConsentService(),
@@ -98,6 +99,7 @@ struct OpenLARPAppStoreFactory {
                     proofAttachmentReceiptPromoter: FirebaseCallableProofAttachmentReceiptPromoter()
                 )
             ),
+            careerStateSyncService: FirebaseCallableCareerStateSyncService(),
             authenticationService: authenticationService,
             backendEventSyncService: FirebaseReadyBackendEventSyncService(),
             privateEvidenceCloudSyncConsentService: FirebaseCallablePrivateEvidenceCloudSyncConsentService(),

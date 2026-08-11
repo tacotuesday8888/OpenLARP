@@ -397,6 +397,7 @@ struct LocalProofAttachmentReceiptPromoter: CareerGraphProofAttachmentReceiptPro
 }
 
 struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
+    var careerStateSyncFunctionName: String
     var backendEventSyncFunctionName: String
     var proofUploadPromotionFunctionName: String
     var privateEvidenceConsentFunctionName: String
@@ -410,6 +411,7 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
     static let localEmulator = OpenLARPFirebaseCallableBackendConfiguration(usesEmulator: true)
 
     init(
+        careerStateSyncFunctionName: String = "syncOpenLARPCareerState",
         backendEventSyncFunctionName: String = "acknowledgeBackendEvents",
         proofUploadPromotionFunctionName: String = "promoteProofUploadReceipt",
         privateEvidenceConsentFunctionName: String = "setPrivateEvidenceCloudSyncConsent",
@@ -419,6 +421,7 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
         emulatorHost: String = "localhost",
         emulatorPort: Int = 5001
     ) {
+        self.careerStateSyncFunctionName = careerStateSyncFunctionName
         self.backendEventSyncFunctionName = backendEventSyncFunctionName
         self.proofUploadPromotionFunctionName = proofUploadPromotionFunctionName
         self.privateEvidenceConsentFunctionName = privateEvidenceConsentFunctionName
@@ -427,6 +430,94 @@ struct OpenLARPFirebaseCallableBackendConfiguration: Equatable {
         self.usesEmulator = usesEmulator
         self.emulatorHost = emulatorHost
         self.emulatorPort = emulatorPort
+    }
+}
+
+private struct FirebaseCareerStateSyncResponse: Codable, Equatable {
+    var ok: Bool
+    var schemaVersion: Int
+    var userID: String
+    var status: CareerStateSyncResultStatus
+    var revision: Int
+    var payloadHash: String?
+    var cloudPayload: CareerStateCloudPayload?
+    var serverUpdatedAt: Date?
+    var completedAt: Date
+    var didWrite: Bool
+    var externalActionTaken: Bool
+
+    func validatedResult(for request: CareerStateSyncRequest) throws -> CareerStateSyncResult {
+        let expectsCloudPayload = status == .restored || status == .conflict
+        let expectsWrite = status == .uploaded
+        let hasValidSnapshotMetadata = status == .noData
+            ? payloadHash == nil && serverUpdatedAt == nil
+            : payloadHash.map(Self.isSHA256Hash) == true && serverUpdatedAt != nil
+        guard ok,
+              schemaVersion == 1,
+              userID == request.session.ownerUserID,
+              revision >= 0,
+              hasValidSnapshotMetadata,
+              (revision == 0) == (status == .noData),
+              didWrite == expectsWrite,
+              (cloudPayload != nil) == expectsCloudPayload,
+              cloudPayload.map { $0.schemaVersion == 1 } ?? !expectsCloudPayload,
+              externalActionTaken == false
+        else {
+            throw FirebaseBackendServiceError.contractMismatch(
+                "Career state sync response did not match the signed-in user or conflict contract."
+            )
+        }
+
+        return CareerStateSyncResult(
+            schemaVersion: schemaVersion,
+            status: status,
+            revision: revision,
+            payloadHash: payloadHash,
+            cloudPayload: cloudPayload,
+            serverUpdatedAt: serverUpdatedAt,
+            completedAt: completedAt,
+            didWrite: didWrite
+        )
+    }
+
+    private static func isSHA256Hash(_ value: String) -> Bool {
+        let lowercaseHex = Set<Character>("0123456789abcdef")
+        return value.count == 64 && value.allSatisfy { lowercaseHex.contains($0) }
+    }
+}
+
+struct FirebaseCallableCareerStateSyncService: CareerStateSyncServicing {
+    private let configuration: OpenLARPFirebaseCallableBackendConfiguration
+
+    init(configuration: OpenLARPFirebaseCallableBackendConfiguration = .production) {
+        self.configuration = configuration
+    }
+
+    func sync(_ request: CareerStateSyncRequest) async throws -> CareerStateSyncResult {
+        guard request.session.isAuthenticated else {
+            throw FirebaseBackendServiceError.authenticationRequired
+        }
+
+        #if canImport(FirebaseFunctions) && canImport(FirebaseCore) && canImport(FirebaseSharedSwift)
+        guard FirebaseApp.app() != nil else {
+            throw FirebaseBackendServiceError.configurationMissing
+        }
+        let functions = Functions.functions()
+        if configuration.usesEmulator {
+            functions.useEmulator(withHost: configuration.emulatorHost, port: configuration.emulatorPort)
+        }
+        let callable: Callable<CareerStateSyncRequest, FirebaseCareerStateSyncResponse> = functions.httpsCallable(
+            configuration.careerStateSyncFunctionName,
+            requestAs: CareerStateSyncRequest.self,
+            responseAs: FirebaseCareerStateSyncResponse.self,
+            encoder: FirebaseCallableAIWorkflowJSON.firebaseDataEncoder(),
+            decoder: FirebaseCallableAIWorkflowJSON.firebaseDataDecoder()
+        )
+        let response = try await callable.call(request)
+        return try response.validatedResult(for: request)
+        #else
+        throw FirebaseBackendServiceError.sdkUnavailable
+        #endif
     }
 }
 

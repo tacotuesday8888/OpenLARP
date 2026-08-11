@@ -30,6 +30,7 @@ OpenLARP currently has:
 - Optional Apple/Google account entry for service-enabled beta builds with a clearly explained device-only path; public local-only builds skip service controls, and service onboarding waits for the protected account workspace to resolve before accepting answers
 - A development Firebase project with deployed Firestore/Storage rules and deterministic Gen 2 callable functions
 - Server-trusted proof upload receipt promotion: the client uploads Storage bytes, then a callable verifies Storage metadata and writes the uploaded Firestore receipt
+- Versioned Rich V0 career-state snapshots with authenticated cross-device restore, compare-and-set revisions, explicit conflict choices, local-first failure behavior, and private-evidence consent gates; deployment and signed-in smoke remain pending
 - Backend AI contracts, grounded structured Gemini workflows, post-generation truthfulness checks, a private Cloud Run runtime, authenticated callable dispatch, expiring runtime policy, per-user quota, provider budget ledger, deterministic fallbacks, adversarial evals, and CI/operations gates; deployment and live-development smoke remain pending
 - RevenueCat/subscription contracts and local entitlement state, without live App Store products
 - GitHub Actions CI plus local backend, rules, simulator, and unsigned iOS build validation gates
@@ -37,7 +38,7 @@ OpenLARP currently has:
 OpenLARP does not yet have:
 
 - A deployed and live-smoked Genkit/Gemini path (the implementation remains disabled until the private service, callable configuration, IAM, and short-lived runtime policy are deployed)
-- Fully server-authoritative career graph sync
+- Fully server-authoritative derived career graph writes beyond the bounded Rich V0 snapshot
 - Remote push infrastructure or server-authored notification campaigns; V0 quest reminders are local and device-controlled
 - Live App Store subscriptions/paywalls
 - Production analytics dashboards
@@ -151,7 +152,7 @@ Success criteria:
 
 Goal: make V0 usable across sessions/devices.
 
-Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, server-owned private evidence cloud sync consent gates, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned uploaded proof backup cleanup after revoked consent, server-owned backend event acknowledgement, server-owned account deletion, in-app account data controls, server-side per-user callable quotas, backend-only provider token/cost estimates, live readiness checks, signed-in CLI smoke tooling, iOS App Check provider scaffolding, private AI-service implementation, provider budget controls, expiring kill-switch policy, evals, and release gates exist. The remaining trust work includes the private service/IAM/callable deployment and live smoke, signed-in simulator/device account UX testing, account-controls privacy/legal/support copy, Firebase Console App Check registration and enforcement, derived readiness/history writes, and production-grade sync repair UX.
+Status: partially complete for beta infrastructure. Firebase Auth/Google Sign-In, Firestore, Storage, Cloud Functions, Security Rules, backend events, career graph sync previews, versioned Rich V0 state snapshots with safe cross-device restore and explicit conflict repair, server-owned private evidence cloud sync consent gates, proof upload Storage writes, server-trusted proof upload receipt promotion, server-owned uploaded proof backup cleanup after revoked consent, server-owned backend event acknowledgement, server-owned account deletion, in-app account data controls, server-side per-user callable quotas, backend-only provider token/cost estimates, live readiness checks, signed-in CLI smoke tooling, iOS App Check provider scaffolding, private AI-service implementation, provider budget controls, expiring kill-switch policy, evals, and release gates exist. The remaining trust work includes deployment/live smoke for the new callable and private service, signed-in simulator/device account UX testing, account-controls privacy/legal/support copy, Firebase Console App Check registration and enforcement, and server-authoritative derived career graph writes beyond the bounded snapshot.
 
 Work:
 
@@ -162,6 +163,7 @@ Work:
 - Register App Check in Firebase Console, keep simulator debug tokens private, verify metrics from opt-in simulator/debug and App Attest device builds, then enable enforcement
 - Deploy with reviewed current provider pricing and a small daily budget, keep metadata-only observability/evals/audits green, and complete an authenticated live smoke before enabling even controlled beta traffic
 - Keep explicit server-owned private evidence cloud sync consent separate from public sharing language
+- Keep career-state restore local-first: an offline or malformed response must leave the protected owner workspace unchanged, and divergent revisions require an explicit device/cloud choice
 - Keep uploaded proof backup cleanup separate from consent revocation, and verify the user-facing account/private-data controls before broad beta
 
 Success criteria:

@@ -28,6 +28,7 @@ final class OpenLARPStore {
     private let aiWorkflowService: any V0AIWorkflowServicing
     private let agentService: CareerAgentBriefServicing
     private let careerGraphSyncService: any CareerGraphSyncServicing
+    private let careerStateSyncService: any CareerStateSyncServicing
     private let authenticationService: any OpenLARPAuthenticationServicing
     private let backendEventSyncService: any BackendEventSyncServicing
     private let privateEvidenceCloudSyncConsentService: any PrivateEvidenceCloudSyncConsentServicing
@@ -58,6 +59,7 @@ final class OpenLARPStore {
     var isSprintTransitionRunning = false
     var isProofChecking = false
     var isPreparingCareerGraphSyncPreview = false
+    var isSynchronizingCareerState = false
     var isRestoringAuthenticationSession = false
     var didFinishInitialAuthenticationResolution = false
     var isSigningInWithGoogle = false
@@ -76,6 +78,7 @@ final class OpenLARPStore {
     var questReminderAuthorizationStatus: QuestReminderAuthorizationStatus = .unknown
     var authenticationResult: OpenLARPAuthenticationResult?
     var careerGraphSyncPreview: CareerGraphSyncPreview?
+    var careerStateSyncConflict: CareerStateSyncResult?
     var currentSubscriptionOffering: RevenueCatOfferingSnapshot?
     private var careerGraphSyncPreviewGeneration = 0
     private var activePrivateEvidenceBackupCleanupResult: PrivateEvidenceBackupCleanupResult?
@@ -181,6 +184,7 @@ final class OpenLARPStore {
         aiWorkflowService: any V0AIWorkflowServicing = LocalMockV0AIWorkflowService(),
         agentService: CareerAgentBriefServicing = MockCareerAgentService(),
         careerGraphSyncService: any CareerGraphSyncServicing = LocalMockCareerGraphSyncService(),
+        careerStateSyncService: any CareerStateSyncServicing = LocalMockCareerStateSyncService(),
         authenticationService: (any OpenLARPAuthenticationServicing)? = nil,
         backendEventSyncService: any BackendEventSyncServicing = LocalMockBackendEventSyncService(),
         privateEvidenceCloudSyncConsentService: any PrivateEvidenceCloudSyncConsentServicing = LocalMockPrivateEvidenceCloudSyncConsentService(),
@@ -226,6 +230,7 @@ final class OpenLARPStore {
             self.aiWorkflowService = LocalMockV0AIWorkflowService()
             self.agentService = MockCareerAgentService()
             self.careerGraphSyncService = LocalMockCareerGraphSyncService()
+            self.careerStateSyncService = LocalMockCareerStateSyncService()
             self.authenticationService = MockOpenLARPAuthenticationService()
             self.backendEventSyncService = LocalMockBackendEventSyncService()
             self.privateEvidenceCloudSyncConsentService = LocalMockPrivateEvidenceCloudSyncConsentService()
@@ -238,6 +243,7 @@ final class OpenLARPStore {
             self.aiWorkflowService = aiWorkflowService
             self.agentService = agentService
             self.careerGraphSyncService = careerGraphSyncService
+            self.careerStateSyncService = careerStateSyncService
             self.authenticationService = resolvedAuthenticationService
             self.backendEventSyncService = backendEventSyncService
             self.privateEvidenceCloudSyncConsentService = privateEvidenceCloudSyncConsentService
@@ -1631,6 +1637,7 @@ final class OpenLARPStore {
                 )
             }
             applyPrivateEvidenceCloudSyncConsent(isEnabled)
+            await synchronizeCareerState(shouldSurfaceError: false)
             errorMessage = nil
         } catch {
             guard isCurrentLocalOwnerOperation(ownerContext) else { return }
@@ -2167,11 +2174,131 @@ final class OpenLARPStore {
             recordBetaEvent(.syncPreviewPrepared, occurredAt: requestedAt)
             errorMessage = nil
             save()
+            if session.isAuthenticated {
+                await synchronizeCareerState(shouldSurfaceError: true)
+            }
         } catch {
             guard isCurrentLocalOwnerOperation(ownerContext) else { return }
             guard previewGeneration == careerGraphSyncPreviewGeneration else { return }
             clearCareerGraphSyncPreview()
             errorMessage = "The local career graph preview could not be prepared."
+        }
+    }
+
+    func synchronizeCareerState(
+        action: CareerStateSyncAction = .reconcile,
+        expectedRevision: Int? = nil,
+        shouldSurfaceError: Bool = true
+    ) async {
+        guard !isSynchronizingCareerState else { return }
+        guard releaseConfiguration.serviceMode != .localOnly,
+              releaseConfiguration.isEnabled(.cloudSync) else { return }
+        let session = currentBackendSession()
+        guard session.isAuthenticated else {
+            if shouldSurfaceError {
+                errorMessage = "Sign in before syncing progress across devices."
+            }
+            return
+        }
+
+        let requestedAt = now()
+        let ownerContext = captureLocalOwnerOperationContext()
+        let originalState = state
+        state.careerStateSync = state.careerStateSync.started(at: requestedAt)
+        guard save() else {
+            state = originalState
+            return
+        }
+        let request = CareerStateSyncRequest(
+            state: state,
+            session: session,
+            action: action,
+            expectedRevision: expectedRevision,
+            requestedAt: requestedAt
+        )
+
+        isSynchronizingCareerState = true
+        defer { isSynchronizingCareerState = false }
+        do {
+            let result = try await careerStateSyncService.sync(request)
+            guard isCurrentLocalOwnerOperation(ownerContext),
+                  currentBackendSession().ownerUserID == session.ownerUserID else { return }
+            try applyCareerStateSyncResult(result, session: session, originalState: originalState)
+            errorMessage = nil
+            if result.status == .restored {
+                await reconcileQuestReminders()
+            }
+        } catch {
+            guard isCurrentLocalOwnerOperation(ownerContext) else { return }
+            state.careerStateSync = originalState.careerStateSync.markedFailed(at: requestedAt)
+            _ = save()
+            if shouldSurfaceError {
+                errorMessage = "Your progress is safe on this device, but cloud sync could not finish. Try again when you are online."
+            }
+        }
+    }
+
+    func resolveCareerStateConflictKeepingThisDevice() async {
+        guard let conflict = careerStateSyncConflict else { return }
+        await synchronizeCareerState(
+            action: .keepLocal,
+            expectedRevision: conflict.revision,
+            shouldSurfaceError: true
+        )
+    }
+
+    func resolveCareerStateConflictUsingCloud() async {
+        guard careerStateSyncConflict != nil else { return }
+        await synchronizeCareerState(action: .useCloud, shouldSurfaceError: true)
+    }
+
+    private func applyCareerStateSyncResult(
+        _ result: CareerStateSyncResult,
+        session: BackendUserSession,
+        originalState: OpenLARPState
+    ) throws {
+        guard result.schemaVersion == 1,
+              result.revision >= 0 else {
+            throw FirebaseBackendServiceError.contractMismatch("Career state sync returned an invalid revision.")
+        }
+
+        switch result.status {
+        case .conflict:
+            guard result.cloudPayload != nil else {
+                throw FirebaseBackendServiceError.contractMismatch("Career state conflict did not include the cloud copy.")
+            }
+            careerStateSyncConflict = result
+            state.careerStateSync = originalState.careerStateSync.markedConflict(at: result.completedAt)
+        case .restored:
+            guard let payload = result.cloudPayload,
+                  var restored = payload.restoredState(preserving: state) else {
+                throw FirebaseBackendServiceError.contractMismatch("Cloud career state could not be safely restored.")
+            }
+            restored.careerStateSync = originalState.careerStateSync.completed(
+                revision: result.revision,
+                payloadHash: result.payloadHash,
+                serverUpdatedAt: result.serverUpdatedAt,
+                at: result.completedAt
+            )
+            state = restored
+            applyAuthenticatedAccount(session)
+            pendingProof = nil
+            pendingQualityResult = nil
+            clearCareerGraphSyncPreview()
+            careerStateSyncConflict = nil
+        case .uploaded, .inSync, .noData:
+            state.careerStateSync = originalState.careerStateSync.completed(
+                revision: result.revision,
+                payloadHash: result.payloadHash,
+                serverUpdatedAt: result.serverUpdatedAt,
+                at: result.completedAt
+            )
+            careerStateSyncConflict = nil
+        }
+
+        guard save() else {
+            state = originalState
+            throw OpenLARPLocalDataError.protectedDataUnavailable
         }
     }
 
@@ -2650,6 +2777,7 @@ final class OpenLARPStore {
             errorMessage = nil
             save()
             await reconcileQuestReminders()
+            await synchronizeCareerState(shouldSurfaceError: false)
         case .signedOut:
             guard switchLocalOwner(to: .guest) else {
                 if shouldSurfaceMessage {
@@ -2752,6 +2880,7 @@ final class OpenLARPStore {
 
     private func applyAuthenticatedAccount(_ session: BackendUserSession) {
         guard var profile = state.userProfile else { return }
+        let previousProfile = profile
         let resolvedAccountID = session.accountID ?? session.ownerUserID
         if profile.accountID != resolvedAccountID {
             profile.privacy.allowsPrivateEvidenceCloudSync = false
@@ -2759,9 +2888,15 @@ final class OpenLARPStore {
         }
         profile.accountID = resolvedAccountID
         profile.email = session.email
-        profile.updatedAt = now()
+        guard profile != previousProfile else { return }
+        let didChangeCloudPrivacy = profile.privacy != previousProfile.privacy
+        if didChangeCloudPrivacy {
+            profile.updatedAt = now()
+        }
         state.userProfile = profile
-        state.updatedAt = profile.updatedAt
+        if didChangeCloudPrivacy {
+            state.updatedAt = profile.updatedAt
+        }
     }
 
     private func isInteractiveSignIn(_ operation: OpenLARPAuthenticationOperation) -> Bool {
@@ -2941,6 +3076,7 @@ final class OpenLARPStore {
         pendingProof = nil
         pendingQualityResult = nil
         careerGraphSyncPreview = nil
+        careerStateSyncConflict = nil
         careerGraphSyncPreviewGeneration += 1
         currentSubscriptionOffering = nil
         activePrivateEvidenceBackupCleanupResult = nil
