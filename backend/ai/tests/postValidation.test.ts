@@ -142,6 +142,32 @@ describe("validateGeneratedWorkflowResult", () => {
     })).toEqual({ ok: false, reason: "invalidOutput" });
   });
 
+  it("keeps pending and newly generated adaptive hypotheses within the two-item review limit", () => {
+    const payload = adaptiveCareerIntakePayloadSchema.parse({
+      confirmedFacts: [],
+      pendingHypotheses: [{
+        id: "22222222-2222-4222-8222-222222222222",
+        kind: "existingProof",
+        value: "The class app may be available as proof.",
+        source: "aiHypothesis",
+        confirmationState: "awaitingConfirmation",
+        lastUpdatedAt: "2026-08-10T10:01:00.000Z"
+      }],
+      rejectedHypothesisIDs: [],
+      unknownKinds: ["existingProof", "constraints", "biggestBlocker"],
+      questionHistory: [],
+      maxQuestions: 1
+    });
+
+    expect(validateGeneratedWorkflowResult("adaptiveCareerIntake", payload, {
+      questions: [],
+      hypotheses: [
+        { kind: "constraints", value: "Possible constraint", confirmationState: "awaitingConfirmation" },
+        { kind: "biggestBlocker", value: "Possible blocker", confirmationState: "awaitingConfirmation" }
+      ]
+    })).toEqual({ ok: false, reason: "invalidOutput" });
+  });
+
   it("rejects output claiming the system completed an external action", () => {
     const payload = diagnosticPayloadSchema.parse({ goal });
     const result = {

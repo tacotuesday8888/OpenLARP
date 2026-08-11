@@ -1,6 +1,23 @@
 import Foundation
 import Observation
 
+enum OpenLARPAdaptiveIntakeError: LocalizedError, Equatable {
+    case alreadyRunning
+    case ownerChanged
+    case persistenceFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .alreadyRunning:
+            "OpenLARP is already refining these answers."
+        case .ownerChanged:
+            "Your account changed. Review these answers again before continuing."
+        case .persistenceFailed:
+            "OpenLARP could not safely save the adaptive intake record."
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class OpenLARPStore {
@@ -34,6 +51,7 @@ final class OpenLARPStore {
     var errorMessage: String?
     var isAgentScanning = false
     var isGoalSetupRunning = false
+    var isAdaptiveIntakeRunning = false
     var isProofChecking = false
     var isPreparingCareerGraphSyncPreview = false
     var isRestoringAuthenticationSession = false
@@ -250,6 +268,41 @@ final class OpenLARPStore {
         if !save() {
             state = originalState
         }
+    }
+
+    func generateAdaptiveCareerIntake(
+        for understanding: CareerUnderstanding,
+        expectedOwnerScope: String
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        guard !isAdaptiveIntakeRunning else {
+            throw OpenLARPAdaptiveIntakeError.alreadyRunning
+        }
+        guard expectedOwnerScope == onboardingOwnerScope else {
+            throw OpenLARPAdaptiveIntakeError.ownerChanged
+        }
+
+        let ownerContext = captureLocalOwnerOperationContext()
+        let request = V0AdaptiveCareerIntakeRequest(
+            understanding: understanding,
+            requestedAt: now()
+        )
+        isAdaptiveIntakeRunning = true
+        defer { isAdaptiveIntakeRunning = false }
+
+        let response = try await aiWorkflowService.generateAdaptiveCareerIntake(request)
+        guard isCurrentLocalOwnerOperation(ownerContext),
+              expectedOwnerScope == onboardingOwnerScope else {
+            throw OpenLARPAdaptiveIntakeError.ownerChanged
+        }
+        try response.validate(for: request)
+
+        let originalState = state
+        recordAIWorkflowRun(response.run)
+        guard save() else {
+            state = originalState
+            throw OpenLARPAdaptiveIntakeError.persistenceFailed
+        }
+        return response
     }
 
     private func confirmGoal(

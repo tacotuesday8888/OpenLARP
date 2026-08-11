@@ -299,23 +299,23 @@ Get enough context to produce a credible first quest without making the user fee
 
 ### Rich V0 Review Boundary
 
-The implemented first-run flow uses four short stages: name the outcome, describe the current reality, choose a realistic commitment, and review OpenLARP's understanding. Service-enabled beta builds may first offer Apple, Google, or device-only entry; local-only public builds begin the career questions directly.
+The implemented first-run flow uses four short stages: name the outcome, describe the current reality, choose a realistic commitment, and review OpenLARP's understanding. During review, explicitly confirmed inputs may produce at most one material adaptive follow-up; the user can answer it or keep the detail unknown. Service-enabled beta builds may first offer Apple, Google, or device-only entry; local-only public builds begin the career questions directly.
 
 The review is a product trust boundary, not a cosmetic summary:
 
-- User-entered facts remain pending until the person approves the understanding.
+- User-entered facts remain pending until the person explicitly confirms them during review; nothing becomes durable until final approval.
 - AI suggestions must appear separately as hypotheses and require explicit confirm, edit, or reject action.
 - Missing optional information stays visibly unknown; OpenLARP must not fill it with a plausible story.
 - A goal, readiness check, and plan become durable only after approval.
 - The exact reviewed records—and their identifiers, provenance, edits, confirmations, and rejections—cross the approval boundary; approval must not regenerate a cleaner replacement summary.
-- If the service is unavailable, the same approved facts feed the deterministic local readiness and plan fallback.
+- If the service is unavailable, the same explicitly confirmed inputs feed the deterministic follow-up, readiness, and plan fallbacks.
 - Account-enabled builds resolve the active protected workspace before accepting answers and clear an unfinished draft if the workspace owner changes.
 
 Legacy saved goals migrate conservatively. Facts that existed in the old goal remain attributed to migration, while fields introduced later—such as urgency or daily commitment—remain unknown until reviewed.
 
 Cloud mapping follows the same knownness rule. A compatibility default may keep old local behavior running, but it is omitted from downstream career-goal fields until the provenanced understanding says the user confirmed it.
 
-The server-side adaptive intake workflow, grounding rules, post-generation validation, private service boundary, and deterministic fallback are implemented. The client-side provenance contract is ready to consume them, but the current first-run UI remains guided and deterministic until adaptive question presentation is integrated and the private service passes a live development smoke.
+The server-side adaptive intake workflow, grounding rules, post-generation validation, private service boundary, and deterministic fallback are implemented. The first-run UI now sends only explicitly confirmed facts, presents no more than one returned question and two hypotheses, preserves skipped details as unknown, and keeps every returned hypothesis pending until confirm, edit, or reject. Adaptive workflow runs are recorded without persisting the unfinished career text. The private service still requires a live authenticated development smoke before the service-backed path can be called production-ready.
 
 ## Live AI Trust Boundary
 

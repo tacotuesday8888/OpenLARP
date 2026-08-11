@@ -1458,6 +1458,12 @@ final class SubscriptionReadinessTests: XCTestCase {
 }
 
 private struct FailingSubscriptionGateAIWorkflowService: V0AIWorkflowServicing {
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        throw OpenLARPError.invalidQuestPlan
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         throw OpenLARPError.invalidQuestPlan
     }

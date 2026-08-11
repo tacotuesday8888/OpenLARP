@@ -2960,6 +2960,7 @@ final class V0EngineTests: XCTestCase {
     @MainActor
     func testV0AIWorkflowContractsExposeOnlyNarrowV0Jobs() async throws {
         XCTAssertEqual(V0AIWorkflowKind.allCases, [
+            .adaptiveCareerIntake,
             .cookedDiagnostic,
             .questPlan,
             .proofQualityCheck,
@@ -4402,6 +4403,12 @@ private struct LegacyCloudCareerGraphSnapshotPayload: Codable {
 }
 
 private struct ThrowingV0AIWorkflowService: V0AIWorkflowServicing {
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        throw TestWorkflowError.expectedFailure
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         throw TestWorkflowError.expectedFailure
     }
@@ -4420,6 +4427,12 @@ private struct ThrowingV0AIWorkflowService: V0AIWorkflowServicing {
 }
 
 private struct SensitiveThrowingV0AIWorkflowService: V0AIWorkflowServicing {
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        throw SensitiveWorkflowError()
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         throw SensitiveWorkflowError()
     }
@@ -4446,6 +4459,12 @@ private struct SensitiveWorkflowError: LocalAIWorkflowFallbackEligibleError, Cus
 }
 
 private struct InvalidPlanV0AIWorkflowService: V0AIWorkflowServicing {
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        try await LocalMockV0AIWorkflowService().generateAdaptiveCareerIntake(request)
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         V0DiagnosticResponse(
             run: V0AIWorkflowRun(
@@ -4487,6 +4506,12 @@ private struct InvalidPlanV0AIWorkflowService: V0AIWorkflowServicing {
 private final class StateChangingProofReviewService: V0AIWorkflowServicing {
     var onReviewProof: (() -> Void)?
 
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        try await LocalMockV0AIWorkflowService().generateAdaptiveCareerIntake(request)
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         try await LocalMockV0AIWorkflowService().generateDiagnostic(request)
     }
@@ -4507,6 +4532,12 @@ private final class StateChangingProofReviewService: V0AIWorkflowServicing {
 }
 
 private struct UnsupportedInspectionProofReviewService: V0AIWorkflowServicing {
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        try await LocalMockV0AIWorkflowService().generateAdaptiveCareerIntake(request)
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         try await LocalMockV0AIWorkflowService().generateDiagnostic(request)
     }

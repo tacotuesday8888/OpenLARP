@@ -1,7 +1,220 @@
 import XCTest
+import FirebaseFunctions
 @testable import OpenLARP
 
 final class AIBackendContractTests: XCTestCase {
+    @MainActor
+    func testFirebaseCallableAIWorkflowServiceSendsAdaptiveIntakeAndPreservesRequestProvenance() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "adaptiveCareerIntake",
+            result: [
+                "questions": [[
+                    "id": "adaptive-existingProof",
+                    "factKind": "existingProof",
+                    "question": "What work can you already show or explain?",
+                    "rationale": "This changes the first useful action.",
+                    "responseType": "freeText",
+                    "options": []
+                ]],
+                "hypotheses": [[
+                    "kind": "constraints",
+                    "value": "Your plan may need to fit around evening availability.",
+                    "confirmationState": "awaitingConfirmation"
+                ]]
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+        var understanding = CareerIntakeDraft(
+            outcomeType: .careerChange,
+            targetOutcome: "AI product engineer",
+            currentStatus: .newGrad,
+            timeline: "12 weeks",
+            urgency: .urgent,
+            experience: "One class project",
+            existingProof: "",
+            constraints: "",
+            confidence: 3,
+            dailyCommitmentMinutes: 30,
+            biggestBlocker: ""
+        ).makeUnderstanding(reviewedAt: sampleDate)
+        let confirmedAIHypothesis = try CareerFactRecord.aiHypothesis(
+            kind: .biggestBlocker,
+            value: "Needs role-specific proof",
+            workflowRequestID: "prior-adaptive-request",
+            createdAt: sampleDate
+        )
+        understanding.facts.append(confirmedAIHypothesis)
+        try understanding.confirmHypothesis(id: confirmedAIHypothesis.id, at: sampleDate)
+        try understanding.confirmUserEntriesForAdaptiveIntake(at: sampleDate)
+        let request = V0AdaptiveCareerIntakeRequest(
+            understanding: understanding,
+            requestedAt: sampleDate,
+            requestID: sampleRequestID
+        )
+
+        let response = try await service.generateAdaptiveCareerIntake(request)
+
+        XCTAssertEqual(response.requestID, sampleRequestID)
+        XCTAssertEqual(response.run.kind, .adaptiveCareerIntake)
+        XCTAssertEqual(response.questions.map(\.factKind), [.existingProof])
+        XCTAssertEqual(response.hypotheses.map(\.kind), [.constraints])
+        let payloadJSON = try encodedJSONObjectString(invoker.calls[0].payload)
+        XCTAssertTrue(payloadJSON.contains(#""kind" : "adaptiveCareerIntake""#))
+        XCTAssertTrue(payloadJSON.contains(#""unknownKinds" : ["#))
+        XCTAssertTrue(payloadJSON.contains(#""existingProof""#))
+        XCTAssertTrue(payloadJSON.contains(#""maxQuestions" : 1"#))
+        XCTAssertTrue(payloadJSON.contains(#""source" : "aiHypothesis""#))
+        XCTAssertTrue(payloadJSON.contains(#""confirmationState" : "confirmed""#))
+    }
+
+    @MainActor
+    func testLocalAdaptiveIntakeAsksOnlyTheHighestValueMissingQuestion() async throws {
+        var understanding = CareerIntakeDraft(
+            outcomeType: .job,
+            targetOutcome: "iOS Engineer",
+            currentStatus: .student,
+            timeline: "90 days",
+            urgency: .steady,
+            experience: "",
+            existingProof: "",
+            constraints: "",
+            confidence: 3,
+            dailyCommitmentMinutes: 20,
+            biggestBlocker: ""
+        ).makeUnderstanding(reviewedAt: sampleDate)
+        try understanding.confirmUserEntriesForAdaptiveIntake(at: sampleDate)
+        let request = V0AdaptiveCareerIntakeRequest(
+            understanding: understanding,
+            requestedAt: sampleDate,
+            requestID: sampleRequestID
+        )
+
+        let response = try await LocalMockV0AIWorkflowService().generateAdaptiveCareerIntake(request)
+
+        XCTAssertEqual(response.questions.map(\.factKind), [.existingProof])
+        XCTAssertTrue(response.hypotheses.isEmpty)
+    }
+
+    @MainActor
+    func testAdaptiveIntakeUsesDeterministicFallbackWhenFirebaseIsUnavailable() async throws {
+        let invoker = MockFirebaseCallableInvoker(
+            error: FirebaseCallableAIWorkflowServiceError.authenticationRequired
+        )
+        let service = FallbackV0AIWorkflowService(
+            primary: FirebaseCallableV0AIWorkflowService(
+                invoker: invoker,
+                requestID: { sampleRequestID },
+                preflight: { "user_123" }
+            ),
+            fallback: LocalMockV0AIWorkflowService()
+        )
+        var understanding = CareerIntakeDraft(
+            outcomeType: .job,
+            targetOutcome: "iOS Engineer",
+            currentStatus: .student,
+            timeline: "90 days",
+            urgency: .steady,
+            experience: "One class app",
+            existingProof: "",
+            constraints: "Evenings only",
+            confidence: 3,
+            dailyCommitmentMinutes: 20,
+            biggestBlocker: "Interview confidence"
+        ).makeUnderstanding(reviewedAt: sampleDate)
+        try understanding.confirmUserEntriesForAdaptiveIntake(at: sampleDate)
+        let request = V0AdaptiveCareerIntakeRequest(
+            understanding: understanding,
+            requestedAt: sampleDate,
+            requestID: sampleRequestID
+        )
+
+        let response = try await service.generateAdaptiveCareerIntake(request)
+
+        XCTAssertEqual(invoker.calls.count, 1)
+        XCTAssertEqual(response.questions.map(\.factKind), [.existingProof])
+        XCTAssertEqual(response.run.providerRoute, .localMock)
+        XCTAssertTrue(response.run.usedFallback)
+    }
+
+    func testCallableTransportErrorsAreMappedOnlyWhenLocalFallbackIsSafe() {
+        let offline = NSError(
+            domain: NSURLErrorDomain,
+            code: URLError.notConnectedToInternet.rawValue
+        )
+        let invalidRequest = NSError(
+            domain: FunctionsErrorDomain,
+            code: FunctionsErrorCode.invalidArgument.rawValue
+        )
+        let unavailable = NSError(
+            domain: FunctionsErrorDomain,
+            code: FunctionsErrorCode.unavailable.rawValue
+        )
+
+        XCTAssertEqual(
+            FirebaseCallableAIWorkflowServiceError.recoverableCallableError(from: offline),
+            .serviceUnavailable
+        )
+        XCTAssertEqual(
+            FirebaseCallableAIWorkflowServiceError.recoverableCallableError(from: unavailable),
+            .serviceUnavailable
+        )
+        XCTAssertNil(
+            FirebaseCallableAIWorkflowServiceError.recoverableCallableError(from: invalidRequest)
+        )
+    }
+
+    func testAdaptiveIntakeRejectsAnOverwhelmingHypothesisSet() throws {
+        var understanding = CareerIntakeDraft(
+            outcomeType: .job,
+            targetOutcome: "iOS Engineer",
+            currentStatus: .student,
+            timeline: "90 days",
+            urgency: .steady,
+            experience: "One class app",
+            existingProof: "",
+            constraints: "",
+            confidence: 3,
+            dailyCommitmentMinutes: 20,
+            biggestBlocker: ""
+        ).makeUnderstanding(reviewedAt: sampleDate)
+        try understanding.confirmUserEntriesForAdaptiveIntake(at: sampleDate)
+        understanding.facts.append(try CareerFactRecord.aiHypothesis(
+            kind: .existingProof,
+            value: "Possible proof",
+            workflowRequestID: "prior-request",
+            createdAt: sampleDate
+        ))
+        let request = V0AdaptiveCareerIntakeRequest(
+            understanding: understanding,
+            requestedAt: sampleDate,
+            requestID: sampleRequestID
+        )
+        let response = V0AdaptiveCareerIntakeResponse(
+            requestID: sampleRequestID,
+            run: V0AIWorkflowRun(
+                kind: .adaptiveCareerIntake,
+                providerRoute: .firebaseCallableGenkit,
+                requestedAt: sampleDate
+            ),
+            questions: [],
+            hypotheses: [
+                V0AdaptiveCareerHypothesis(kind: .constraints, value: "Possible constraint"),
+                V0AdaptiveCareerHypothesis(kind: .biggestBlocker, value: "Possible blocker")
+            ]
+        )
+
+        XCTAssertThrowsError(try response.validate(for: request)) { error in
+            XCTAssertEqual(
+                error as? V0AdaptiveCareerIntakeContractError,
+                .invalidHypothesis
+            )
+        }
+    }
+
     @MainActor
     func testFirebaseCallableAIWorkflowServiceSendsDiagnosticEnvelopeAndDecodesResponse() async throws {
         let invoker = MockFirebaseCallableInvoker(response: callableResponse(

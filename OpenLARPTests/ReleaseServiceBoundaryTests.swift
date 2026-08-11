@@ -284,6 +284,15 @@ final class ReleaseServiceBoundaryTests: XCTestCase {
 private final class RecordingRemoteWorkflowService: V0AIWorkflowServicing {
     private(set) var calls: [V0AIWorkflowKind] = []
 
+    func generateAdaptiveCareerIntake(
+        _ request: V0AdaptiveCareerIntakeRequest
+    ) async throws -> V0AdaptiveCareerIntakeResponse {
+        calls.append(.adaptiveCareerIntake)
+        var response = try await LocalMockV0AIWorkflowService().generateAdaptiveCareerIntake(request)
+        response.run.providerRoute = .firebaseCallableGenkit
+        return response
+    }
+
     func generateDiagnostic(_ request: V0DiagnosticRequest) async throws -> V0DiagnosticResponse {
         calls.append(.cookedDiagnostic)
         var response = try await LocalMockV0AIWorkflowService().generateDiagnostic(request)

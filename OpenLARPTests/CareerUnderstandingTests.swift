@@ -89,6 +89,43 @@ final class CareerUnderstandingTests: XCTestCase {
         }
     }
 
+    func testConfirmingOrEditingHypothesisResolvesItsUnknownKind() throws {
+        let confirmedHypothesis = try CareerFactRecord.aiHypothesis(
+            kind: .existingProof,
+            value: "A class app demo",
+            workflowRequestID: "request-1",
+            createdAt: referenceDate
+        )
+        let editedHypothesis = try CareerFactRecord.aiHypothesis(
+            kind: .constraints,
+            value: "Weekends only",
+            workflowRequestID: "request-1",
+            createdAt: referenceDate
+        )
+        var understanding = CareerUnderstanding.reviewing(
+            facts: [confirmedHypothesis, editedHypothesis],
+            unknowns: [
+                CareerUnknown(kind: .existingProof, lastUpdatedAt: referenceDate),
+                CareerUnknown(kind: .constraints, lastUpdatedAt: referenceDate)
+            ],
+            reviewedAt: referenceDate
+        )
+
+        try understanding.confirmHypothesis(id: confirmedHypothesis.id, at: referenceDate)
+        try understanding.editAndConfirmFact(
+            id: editedHypothesis.id,
+            value: "Evenings only",
+            at: referenceDate
+        )
+
+        XCTAssertTrue(understanding.unknowns.isEmpty)
+        XCTAssertEqual(understanding.confirmedFacts.count, 2)
+        XCTAssertEqual(
+            understanding.confirmedFacts.first(where: { $0.kind == .constraints })?.provenance.source,
+            .userEdit
+        )
+    }
+
     func testAIHypothesisRejectsBlankContentAndMissingWorkflowProvenance() {
         XCTAssertThrowsError(
             try CareerFactRecord.aiHypothesis(
@@ -111,6 +148,169 @@ final class CareerUnderstandingTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? CareerFactError, .missingSourceIdentifier)
         }
+    }
+
+    func testAdaptiveIntakeUsesOnlyExplicitlyConfirmedFactsAndPriorHypothesisDecisions() throws {
+        var understanding = CareerIntakeDraft(
+            outcomeType: .job,
+            targetOutcome: "iOS Engineer",
+            currentStatus: .newGrad,
+            timeline: "90 days",
+            urgency: .steady,
+            experience: "Coursework and one class app",
+            existingProof: "",
+            constraints: "",
+            confidence: 3,
+            dailyCommitmentMinutes: 20,
+            biggestBlocker: ""
+        ).makeUnderstanding(reviewedAt: referenceDate)
+        let rejected = try CareerFactRecord.aiHypothesis(
+            kind: .existingProof,
+            value: "May have a public portfolio",
+            workflowRequestID: "old-request",
+            createdAt: referenceDate
+        ).rejected(at: referenceDate.addingTimeInterval(1))
+        understanding.facts.append(rejected)
+
+        XCTAssertTrue(understanding.confirmedFacts.isEmpty)
+
+        try understanding.confirmUserEntriesForAdaptiveIntake(at: referenceDate.addingTimeInterval(2))
+        let request = V0AdaptiveCareerIntakeRequest(
+            understanding: understanding,
+            requestedAt: referenceDate.addingTimeInterval(3),
+            requestID: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+        )
+
+        XCTAssertTrue(request.confirmedFacts.allSatisfy {
+            $0.confirmationState == .confirmed && $0.provenance.source != .aiHypothesis
+        })
+        XCTAssertEqual(request.rejectedHypothesisIDs, [rejected.id])
+        XCTAssertEqual(request.unknownKinds, [.existingProof, .constraints, .biggestBlocker])
+        XCTAssertEqual(request.maxQuestions, 1)
+    }
+
+    func testAdaptiveAnswerSupersedesSameKindHypothesisWithoutInventingConfirmation() throws {
+        var draft = CareerIntakeDraft(
+            outcomeType: .internship,
+            targetOutcome: "iOS internship",
+            currentStatus: .student,
+            timeline: "This semester",
+            urgency: .urgent,
+            experience: "One class app",
+            existingProof: "",
+            constraints: "Evenings only",
+            confidence: 3,
+            dailyCommitmentMinutes: 20,
+            biggestBlocker: "Interview confidence"
+        )
+        var understanding = draft.makeUnderstanding(reviewedAt: referenceDate)
+        try understanding.confirmUserEntriesForAdaptiveIntake(at: referenceDate)
+        let requestID = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+        let response = V0AdaptiveCareerIntakeResponse(
+            requestID: requestID,
+            run: V0AIWorkflowRun(
+                kind: .adaptiveCareerIntake,
+                providerRoute: .localMock,
+                requestedAt: referenceDate
+            ),
+            questions: [
+                V0AdaptiveCareerQuestion(
+                    id: "adaptive-existingProof",
+                    factKind: .existingProof,
+                    question: "What work can you already show or explain?",
+                    rationale: "This changes the first useful action.",
+                    responseType: .freeText,
+                    options: []
+                )
+            ],
+            hypotheses: [
+                V0AdaptiveCareerHypothesis(
+                    kind: .existingProof,
+                    value: "The class app may be available as proof."
+                )
+            ]
+        )
+
+        try understanding.addAdaptiveHypotheses(from: response, at: referenceDate)
+
+        let hypothesis = try XCTUnwrap(understanding.pendingHypotheses.first)
+        XCTAssertEqual(hypothesis.provenance.sourceIdentifier, requestID.uuidString)
+        XCTAssertEqual(hypothesis.confirmationState, .awaitingConfirmation)
+
+        let answer = "A screen recording and repository for my class app"
+        try understanding.answerAdaptiveQuestion(
+            response.questions[0],
+            answer: answer,
+            at: referenceDate.addingTimeInterval(30)
+        )
+        try draft.applyAdaptiveAnswer(answer, for: .existingProof)
+
+        XCTAssertTrue(understanding.pendingHypotheses.isEmpty)
+        XCTAssertFalse(understanding.unknowns.contains { $0.kind == .existingProof })
+        XCTAssertEqual(
+            understanding.facts.first(where: {
+                $0.kind == .existingProof && $0.provenance.source == .userEntry
+            })?.value,
+            answer
+        )
+        XCTAssertEqual(draft.existingProof, answer)
+    }
+
+    func testRebuildingReviewPreservesAdaptiveDecisionsAndConfirmedAIProvenance() throws {
+        var draft = CareerIntakeDraft(
+            outcomeType: .internship,
+            targetOutcome: "iOS internship",
+            currentStatus: .student,
+            timeline: "This semester",
+            urgency: .urgent,
+            experience: "One class app",
+            existingProof: "",
+            constraints: "",
+            confidence: 3,
+            dailyCommitmentMinutes: 20,
+            biggestBlocker: "Interview confidence"
+        )
+        var understanding = draft.makeUnderstanding(reviewedAt: referenceDate)
+        let confirmedHypothesis = try CareerFactRecord.aiHypothesis(
+            kind: .existingProof,
+            value: "A screen recording of my class app",
+            workflowRequestID: "adaptive-request",
+            createdAt: referenceDate
+        )
+        let rejectedHypothesis = try CareerFactRecord.aiHypothesis(
+            kind: .constraints,
+            value: "Weekends only",
+            workflowRequestID: "adaptive-request",
+            createdAt: referenceDate
+        )
+        understanding.facts.append(contentsOf: [confirmedHypothesis, rejectedHypothesis])
+        try understanding.confirmHypothesis(id: confirmedHypothesis.id, at: referenceDate)
+        try understanding.rejectFact(id: rejectedHypothesis.id, at: referenceDate)
+        try draft.applyAdaptiveAnswer(confirmedHypothesis.value, for: .existingProof)
+
+        let rebuilt = understanding.rebuildingReview(
+            using: draft,
+            reviewedAt: referenceDate.addingTimeInterval(60)
+        )
+        let request = V0AdaptiveCareerIntakeRequest(
+            understanding: rebuilt,
+            requestedAt: referenceDate.addingTimeInterval(60)
+        )
+
+        XCTAssertEqual(
+            rebuilt.facts.first(where: { $0.id == confirmedHypothesis.id })?.provenance.source,
+            .aiHypothesis
+        )
+        XCTAssertEqual(
+            rebuilt.facts.first(where: { $0.id == confirmedHypothesis.id })?.confirmationState,
+            .confirmed
+        )
+        XCTAssertEqual(
+            rebuilt.facts.first(where: { $0.id == rejectedHypothesis.id })?.confirmationState,
+            .rejected
+        )
+        XCTAssertTrue(request.confirmedFacts.map(\.id).contains(confirmedHypothesis.id))
+        XCTAssertEqual(request.rejectedHypothesisIDs, [rejectedHypothesis.id])
     }
 
     func testCareerFactLengthsMatchBackendRequestBoundaries() throws {
@@ -432,6 +632,48 @@ final class CareerUnderstandingTests: XCTestCase {
 
         flow.goBack()
         XCTAssertEqual(flow.step, .commitment)
+    }
+
+    @MainActor
+    func testStoreRecordsAdaptiveIntakeAuditWithoutPersistingDraftCareerText() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let attachmentStore = OpenLARPAttachmentStore(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: attachmentStore,
+            now: { self.referenceDate }
+        )
+        var understanding = CareerIntakeDraft(
+            outcomeType: .job,
+            targetOutcome: "PRIVATE-ADAPTIVE-TARGET",
+            currentStatus: .newGrad,
+            timeline: "90 days",
+            urgency: .steady,
+            experience: "One class app",
+            existingProof: "",
+            constraints: "Evenings only",
+            confidence: 3,
+            dailyCommitmentMinutes: 20,
+            biggestBlocker: "Interview confidence"
+        ).makeUnderstanding(reviewedAt: referenceDate)
+        try understanding.confirmUserEntriesForAdaptiveIntake(at: referenceDate)
+
+        let response = try await store.generateAdaptiveCareerIntake(
+            for: understanding,
+            expectedOwnerScope: store.onboardingOwnerScope
+        )
+
+        XCTAssertEqual(response.questions.map(\.factKind), [.existingProof])
+        XCTAssertFalse(store.isAdaptiveIntakeRunning)
+        XCTAssertEqual(store.state.aiWorkflowRuns.last?.kind, .adaptiveCareerIntake)
+        let reloaded = try persistence.load()
+        XCTAssertEqual(reloaded.aiWorkflowRuns.last?.kind, .adaptiveCareerIntake)
+        XCTAssertFalse(
+            String(decoding: try JSONEncoder.openLARPPersistence.encode(reloaded), as: UTF8.self)
+                .contains("PRIVATE-ADAPTIVE-TARGET")
+        )
     }
 
     func testAccountEntryPolicyKeepsPublicBuildDirectAndServiceBetaOptional() {
