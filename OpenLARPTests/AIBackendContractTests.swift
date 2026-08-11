@@ -205,6 +205,120 @@ final class AIBackendContractTests: XCTestCase {
     }
 
     @MainActor
+    func testFirebaseCallableAIWorkflowServiceAcceptsExplicitServerFallbackResponse() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "cookedDiagnostic",
+            liveModelCallsEnabled: true,
+            usedFallback: true,
+            fallbackReason: "budget",
+            policyRevision: "beta-2026-08-10",
+            result: [
+                "score": 48,
+                "label": "Some proof, not enough signal",
+                "mainGap": "Needs stronger evidence.",
+                "strongestSignal": "Has proof.",
+                "fastestFix": "Create an artifact.",
+                "readinessBaseline": 48
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+
+        let response = try await service.generateDiagnostic(
+            V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+        )
+
+        XCTAssertTrue(response.run.usedFallback)
+        XCTAssertEqual(response.run.providerRoute, .firebaseCallableGenkit)
+        XCTAssertEqual(response.run.failureMessage, AIWorkflowAuditRecord.fallbackFailureSummary)
+    }
+
+    @MainActor
+    func testFirebaseCallableAIWorkflowServiceRejectsUnexpectedProviderRoute() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "cookedDiagnostic",
+            providerRoute: "cloudRunGenkit",
+            result: [
+                "score": 48,
+                "label": "Some proof, not enough signal",
+                "mainGap": "Needs stronger evidence.",
+                "strongestSignal": "Has proof.",
+                "fastestFix": "Create an artifact.",
+                "readinessBaseline": 48
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await service.generateDiagnostic(
+                V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+            )
+        }
+    }
+
+    @MainActor
+    func testFirebaseCallableAIWorkflowServiceRejectsFallbackWithoutReason() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            kind: "cookedDiagnostic",
+            liveModelCallsEnabled: true,
+            usedFallback: true,
+            result: [
+                "score": 48,
+                "label": "Some proof, not enough signal",
+                "mainGap": "Needs stronger evidence.",
+                "strongestSignal": "Has proof.",
+                "fastestFix": "Create an artifact.",
+                "readinessBaseline": 48
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await service.generateDiagnostic(
+                V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+            )
+        }
+    }
+
+    @MainActor
+    func testFirebaseCallableAIWorkflowServiceRejectsUnsupportedResponseVersion() async throws {
+        let invoker = MockFirebaseCallableInvoker(response: callableResponse(
+            schemaVersion: 2,
+            kind: "cookedDiagnostic",
+            result: [
+                "score": 48,
+                "label": "Some proof, not enough signal",
+                "mainGap": "Needs stronger evidence.",
+                "strongestSignal": "Has proof.",
+                "fastestFix": "Create an artifact.",
+                "readinessBaseline": 48
+            ]
+        ))
+        let service = FirebaseCallableV0AIWorkflowService(
+            invoker: invoker,
+            requestID: { sampleRequestID },
+            preflight: { "user_123" }
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await service.generateDiagnostic(
+                V0DiagnosticRequest(goal: sampleGoal, requestedAt: sampleDate)
+            )
+        }
+    }
+
+    @MainActor
     func testFirebaseCallableAIWorkflowServiceRejectsUnsafeCallableResponseFlags() async throws {
         let invoker = MockFirebaseCallableInvoker(response: callableResponse(
             kind: "cookedDiagnostic",
@@ -657,9 +771,11 @@ private var sampleState: OpenLARPState {
 }
 
 private func callableResponse(
+    schemaVersion: Int = 1,
     requestID: String = "11111111-1111-4111-8111-111111111111",
     kind: String,
     userID: String = "user_123",
+    providerRoute: String = "firebaseCallableGenkit",
     liveModelCallsEnabled: Bool = false,
     liveModelUsed: Bool = false,
     usedFallback: Bool = false,
@@ -671,12 +787,12 @@ private func callableResponse(
 ) -> [String: Any] {
     var response: [String: Any] = [
         "ok": true,
-        "schemaVersion": 1,
+        "schemaVersion": schemaVersion,
         "requestID": requestID,
         "kind": kind,
         "userID": userID,
         "evaluatedAt": "2027-06-18T10:00:00.123Z",
-        "providerRoute": "firebaseCallableGenkit",
+        "providerRoute": providerRoute,
         "liveModelCallsEnabled": liveModelCallsEnabled,
         "liveModelUsed": liveModelUsed,
         "usedFallback": usedFallback,
@@ -693,4 +809,20 @@ private func callableResponse(
         response["policyRevision"] = policyRevision
     }
     return response
+}
+
+@MainActor
+private func XCTAssertThrowsErrorAsync(
+    _ operation: () async throws -> Void,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        try await operation()
+        XCTFail("Expected operation to throw.", file: file, line: line)
+    } catch FirebaseCallableAIWorkflowServiceError.contractMismatch {
+        return
+    } catch {
+        XCTFail("Expected a callable contract mismatch, received \(error).", file: file, line: line)
+    }
 }
