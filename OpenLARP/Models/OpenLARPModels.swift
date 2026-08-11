@@ -2066,6 +2066,7 @@ extension OpenLARPState {
         try container.encode(sprintHistory, forKey: .sprintHistory)
         try container.encode(progress, forKey: .progress)
         try container.encode(questReminders, forKey: .questReminders)
+        try container.encode(careerStateSync, forKey: .careerStateSync)
         try container.encode(agentBrief, forKey: .agentBrief)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(dailyCadence, forKey: .dailyCadence)
