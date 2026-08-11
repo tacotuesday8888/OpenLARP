@@ -157,7 +157,7 @@ struct TodayView: View {
 
             Card {
                 VStack(alignment: .leading, spacing: 12) {
-                    SprintStrip(completed: store.state.progress.completedQuestCount)
+                    SprintStrip(completed: store.state.currentSprintCompletedQuestCount, total: 14)
 
                     HStack(spacing: 8) {
                         SummaryTile(value: "\(store.state.progress.xp)", label: "XP", color: .openLARPBlue)
@@ -289,15 +289,18 @@ struct TodayView: View {
         } else if let skipped = SkippedTodayContent(state: store.state) {
             SkippedTodayCard(content: skipped)
         } else if let completion = TodayCompletionContent(state: store.state) {
-            DoneForTodayCard(
-                content: completion,
-                attachmentURL: { attachment in
-                    store.localURL(for: attachment)
-                },
-                openProof: { proof in
-                    selectedProof = proof
-                }
-            )
+            VStack(spacing: 12) {
+                DoneForTodayCard(
+                    content: completion,
+                    attachmentURL: { attachment in
+                        store.localURL(for: attachment)
+                    },
+                    openProof: { proof in
+                        selectedProof = proof
+                    }
+                )
+                sprintTransitionCard
+            }
         } else if let quest = store.state.currentQuest {
             Card {
                 VStack(alignment: .leading, spacing: 16) {
@@ -376,16 +379,61 @@ struct TodayView: View {
                 }
             }
         } else {
+            sprintTransitionCard
+        }
+    }
+
+    @ViewBuilder
+    private var sprintTransitionCard: some View {
+        switch store.state.activeSprint?.phase {
+        case .chapterOneReview:
+            SprintReviewCard(
+                eyebrow: "Day 7 checkpoint",
+                title: "Chapter One complete",
+                detail: "OpenLARP will summarize the stored counters and readiness, then build days 8–14 from evidence metadata only.",
+                report: store.state.activeSprint?.reports.last,
+                actionTitle: "Build Chapter Two",
+                isWorking: store.isSprintTransitionRunning
+            ) {
+                Task { await store.continueToChapterTwo() }
+            }
+        case .finalReview:
+            SprintReviewCard(
+                eyebrow: "Day 14 checkpoint",
+                title: "The sprint is ready to close",
+                detail: "Create a durable report from your completed quests, proof receipts, outcomes, and readiness change.",
+                report: store.state.activeSprint?.reports.last,
+                actionTitle: "Create Sprint Report",
+                isWorking: store.isSprintTransitionRunning
+            ) {
+                Task { await store.completeSprintReview() }
+            }
+        case .completed:
+            SprintReviewCard(
+                eyebrow: "14-day report",
+                title: "Sprint complete",
+                detail: "Your proof, XP, readiness history, and report stay saved when you continue or adjust the goal.",
+                report: store.state.activeSprint?.reports.last,
+                actionTitle: "Start Another Sprint",
+                isWorking: store.isSprintTransitionRunning,
+                secondaryActionTitle: "Adjust Goal",
+                secondaryAction: { store.resetGoal() }
+            ) {
+                Task { await store.startAnotherSprint() }
+            }
+        case .chapterOne, .chapterTwo:
             Card {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Sprint complete")
-                        .font(.title2.weight(.bold))
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Next quest unlocks on your daily cadence")
+                        .font(.headline)
                         .foregroundStyle(Color.openLARPInk)
-                    Text("You finished the local seven-day path. Change your goal or wait for the next sprint version.")
-                        .font(.body)
+                    Text("Return tomorrow. Your completed work and proof receipts are already saved.")
+                        .font(.subheadline)
                         .foregroundStyle(Color.openLARPSoftInk)
                 }
             }
+        case nil:
+            EmptyView()
         }
     }
 
@@ -741,6 +789,82 @@ private struct DoneForTodayCard: View {
                 .padding(12)
                 .background(Color.openLARPBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+    }
+}
+
+private struct SprintReviewCard: View {
+    let eyebrow: String
+    let title: String
+    let detail: String
+    let report: CareerSprintCheckpointReport?
+    let actionTitle: String
+    let isWorking: Bool
+    var secondaryActionTitle: String?
+    var secondaryAction: (() -> Void)?
+    let action: () -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionHeader(feature: .stats, eyebrow: eyebrow, title: title)
+
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.openLARPSoftInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let report {
+                    HStack(spacing: 8) {
+                        SummaryTile(value: "\(report.completedQuestCount)", label: "Quests", color: .openLARPGreen)
+                        SummaryTile(value: "\(report.proofCount)", label: "Proof", color: .openLARPBlue)
+                        SummaryTile(
+                            value: report.readinessDelta >= 0 ? "+\(report.readinessDelta)" : "\(report.readinessDelta)",
+                            label: "Ready",
+                            color: .openLARPCoral
+                        )
+                    }
+
+                    Text(report.summary)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.openLARPInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 12) {
+                        Label("\(report.outcomeCount) outcomes", systemImage: "flag.fill")
+                        if let strongestProofTitle = report.strongestProofTitle {
+                            Label(strongestProofTitle, systemImage: "checkmark.seal.fill")
+                                .lineLimit(2)
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
+
+                    Label(report.nextFocus, systemImage: "scope")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button(action: action) {
+                    if isWorking {
+                        HStack {
+                            ProgressView().tint(.white)
+                            Text("Working")
+                        }
+                    } else {
+                        Label(actionTitle, systemImage: "arrow.right.circle.fill")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isWorking)
+
+                if let secondaryActionTitle, let secondaryAction {
+                    Button(secondaryActionTitle, action: secondaryAction)
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(isWorking)
+                }
             }
         }
     }

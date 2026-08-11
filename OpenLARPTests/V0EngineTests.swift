@@ -40,21 +40,25 @@ final class V0EngineTests: XCTestCase {
             fastestFix: "Turn the project into a reusable proof artifact.",
             readinessBaseline: 67
         )
-        let quest = Quest(
-            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
-            day: 4,
-            title: "Create a proof artifact",
-            purpose: "Show one target-role skill with evidence.",
-            timeEstimateMinutes: 120,
-            proofRequired: "Add the artifact link or screenshot.",
-            xpReward: 500,
-            status: .completed
-        )
+        let plan = (1...7).map { day in
+            Quest(
+                id: day == 1
+                    ? UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+                    : UUID(),
+                day: 4,
+                title: "Create proof artifact \(day)",
+                purpose: "Show one target-role skill with evidence.",
+                timeEstimateMinutes: 120,
+                proofRequired: "Add the artifact link or screenshot.",
+                xpReward: 500,
+                status: .completed
+            )
+        }
 
         let state = OpenLARPEngine.confirmGoal(
             goal,
             diagnostic: diagnostic,
-            plan: [quest],
+            plan: plan,
             now: now
         )
 
@@ -750,8 +754,8 @@ final class V0EngineTests: XCTestCase {
 
         XCTAssertEqual(content.completedQuestTitle, finalQuest.title)
         XCTAssertNil(content.nextQuestTitle)
-        XCTAssertEqual(content.nextQuestStatusText, "Track complete")
-        XCTAssertEqual(content.unlockMessage, "You finished the local seven-day track.")
+        XCTAssertEqual(content.nextQuestStatusText, "Chapter complete")
+        XCTAssertEqual(content.unlockMessage, "Review your progress to continue.")
     }
 
     func testSelfReportAwardsPartialCreditWithoutPretendingProofIsStrong() throws {
@@ -4385,6 +4389,432 @@ final class V0EngineTests: XCTestCase {
         return UIGraphicsImageRenderer(size: size).pngData { context in
             UIColor.systemBlue.setFill()
             context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+}
+
+extension V0EngineTests {
+    func testApprovedMissionStartsFirstChapterOfDurableSprint() {
+        let startedAt = Date(timeIntervalSince1970: 1_900_000_000)
+
+        let state = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+
+        XCTAssertEqual(state.activeSprint?.phase, .chapterOne)
+        XCTAssertEqual(state.activeSprint?.startedAt, startedAt)
+        XCTAssertEqual(state.activeSprint?.targetRoleTitle, goal.targetRole)
+        XCTAssertEqual(state.activeSprint?.initialReadiness, state.progress.readiness)
+        XCTAssertTrue(state.sprintHistory.isEmpty)
+        XCTAssertEqual(state.currentSprintCompletedQuestCount, 0)
+        XCTAssertEqual(state.currentSprintQuestCount, 7)
+    }
+
+    func testInitialPlanValidationRequiresExactlySevenQuests() {
+        let completePlan = OpenLARPTestPlanFactory.sevenQuests(minutes: goal.dailyCommitmentMinutes)
+
+        XCTAssertNotNil(OpenLARPEngine.validatedInitialPlan(completePlan))
+        XCTAssertNil(OpenLARPEngine.validatedInitialPlan(Array(completePlan.prefix(6))))
+        XCTAssertNil(OpenLARPEngine.validatedInitialPlan(completePlan + [completePlan[0]]))
+    }
+
+    func testSeventhClaimPausesForGroundedChapterCheckpoint() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_900_100_000)
+        var state = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+
+        state = try completeAvailableQuests(in: state, count: 7, startingAt: startedAt)
+
+        XCTAssertEqual(state.activeSprint?.phase, .chapterOneReview)
+        XCTAssertEqual(state.currentSprintCompletedQuestCount, 7)
+        XCTAssertNil(state.currentQuest)
+
+        let report = try OpenLARPEngine.makeSprintCheckpointReport(
+            checkpointDay: 7,
+            summary: "Seven truthful proof-building actions completed. The next chapter should turn the strongest artifact into job-search evidence.",
+            nextFocus: "Turn the strongest artifact into repeatable application evidence.",
+            providerRoute: .localMock,
+            usedFallback: false,
+            in: state,
+            now: startedAt.addingTimeInterval(7 * 86_400)
+        )
+
+        XCTAssertEqual(report.completedQuestCount, 7)
+        XCTAssertEqual(report.proofCount, 7)
+        XCTAssertEqual(report.outcomeCount, 0)
+        XCTAssertEqual(report.startReadiness, state.activeSprint?.initialReadiness)
+        XCTAssertEqual(report.endReadiness, state.progress.readiness)
+        XCTAssertEqual(report.readinessDelta, state.progress.readiness.overall - report.startReadiness.overall)
+    }
+
+    func testChapterTwoRequiresSevenBoundedUniqueQuestsAndUnlocksOnNextDay() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_900_200_000)
+        var state = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+        state = try completeAvailableQuests(in: state, count: 7, startingAt: startedAt)
+        let reviewTime = startedAt.addingTimeInterval(6 * 86_400)
+        let report = try OpenLARPEngine.makeSprintCheckpointReport(
+            checkpointDay: 7,
+            summary: "Chapter one created seven reviewed proof records.",
+            nextFocus: "Use the strongest proof in focused outreach and applications.",
+            providerRoute: .localMock,
+            usedFallback: false,
+            in: state,
+            now: reviewTime
+        )
+        let chapterTwo = state.plan.map { quest in
+            Quest(
+                title: "Adapt: \(quest.title)",
+                purpose: quest.purpose,
+                timeEstimateMinutes: goal.dailyCommitmentMinutes,
+                gap: quest.gap,
+                proofRequired: quest.proofRequired,
+                xpReward: quest.xpReward,
+                steps: quest.steps
+            )
+        }
+
+        state = try OpenLARPEngine.continueToChapterTwo(
+            report: report,
+            chapterTwoPlan: chapterTwo,
+            in: state,
+            now: reviewTime,
+            calendar: testCalendar
+        )
+
+        XCTAssertEqual(state.activeSprint?.phase, .chapterTwo)
+        XCTAssertEqual(state.activeSprint?.reports, [report])
+        XCTAssertEqual(state.plan.count, 14)
+        XCTAssertEqual(state.plan.map(\.day), Array(1...14))
+        XCTAssertEqual(Set(state.plan.map(\.id)).count, 14)
+        XCTAssertTrue(state.plan.suffix(7).allSatisfy { $0.timeEstimateMinutes <= goal.dailyCommitmentMinutes })
+        XCTAssertNil(state.currentQuest)
+        XCTAssertEqual(
+            state.dailyCadence.nextUnlockDate,
+            testCalendar.date(
+                byAdding: .day,
+                value: 1,
+                to: testCalendar.startOfDay(for: reviewTime)
+            )
+        )
+
+        state = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: reviewTime.addingTimeInterval(86_400),
+            calendar: testCalendar
+        )
+        XCTAssertEqual(state.currentQuest?.day, 8)
+    }
+
+    func testFinalReportArchivesSprintAndNextSprintPreservesLifetimeProgress() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_900_300_000)
+        var state = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+        state = try completeAvailableQuests(in: state, count: 7, startingAt: startedAt)
+        let reviewTime = startedAt.addingTimeInterval(6 * 86_400)
+        let daySevenReport = try OpenLARPEngine.makeSprintCheckpointReport(
+            checkpointDay: 7,
+            summary: "Chapter one completed.",
+            nextFocus: "Apply the evidence.",
+            providerRoute: .localMock,
+            usedFallback: false,
+            in: state,
+            now: reviewTime
+        )
+        let chapterTwo = state.plan.map { quest in
+            Quest(
+                title: "Apply: \(quest.title)",
+                purpose: quest.purpose,
+                timeEstimateMinutes: min(quest.timeEstimateMinutes, goal.dailyCommitmentMinutes),
+                gap: quest.gap,
+                proofRequired: quest.proofRequired,
+                xpReward: quest.xpReward,
+                steps: quest.steps
+            )
+        }
+        state = try OpenLARPEngine.continueToChapterTwo(
+            report: daySevenReport,
+            chapterTwoPlan: chapterTwo,
+            in: state,
+            now: reviewTime,
+            calendar: testCalendar
+        )
+        state = OpenLARPEngine.refreshDailyAvailability(
+            in: state,
+            now: reviewTime.addingTimeInterval(86_400),
+            calendar: testCalendar
+        )
+        state = try completeAvailableQuests(
+            in: state,
+            count: 7,
+            startingAt: reviewTime.addingTimeInterval(86_400)
+        )
+        XCTAssertEqual(state.activeSprint?.phase, .finalReview)
+
+        let finalTime = reviewTime.addingTimeInterval(8 * 86_400)
+        let finalReport = try OpenLARPEngine.makeSprintCheckpointReport(
+            checkpointDay: 14,
+            summary: "Fourteen focused actions created and applied real evidence.",
+            nextFocus: "Keep the strongest channel and begin another focused sprint.",
+            providerRoute: .localMock,
+            usedFallback: false,
+            in: state,
+            now: finalTime
+        )
+        state = try OpenLARPEngine.completeSprint(
+            report: finalReport,
+            in: state,
+            now: finalTime
+        )
+
+        let preservedXP = state.progress.xp
+        let preservedProofIDs = state.progress.recentProof.map(\.id)
+        let completedArchive = try XCTUnwrap(state.sprintHistory.first)
+        XCTAssertEqual(completedArchive.endReason, .completed)
+        XCTAssertEqual(completedArchive.completedQuestCount, 14)
+        XCTAssertEqual(completedArchive.reports.map(\.checkpointDay), [7, 14])
+        XCTAssertEqual(state.activeSprint?.phase, .completed)
+
+        state = try OpenLARPEngine.startAnotherSprint(
+            plan: OpenLARPTestPlanFactory.sevenQuests(minutes: goal.dailyCommitmentMinutes),
+            in: state,
+            now: finalTime.addingTimeInterval(60)
+        )
+
+        XCTAssertEqual(state.activeSprint?.phase, .chapterOne)
+        XCTAssertNotEqual(state.activeSprint?.id, completedArchive.id)
+        XCTAssertEqual(state.sprintHistory, [completedArchive])
+        XCTAssertEqual(state.progress.xp, preservedXP)
+        XCTAssertEqual(state.progress.recentProof.map(\.id), preservedProofIDs)
+        XCTAssertEqual(state.currentSprintCompletedQuestCount, 0)
+        XCTAssertEqual(state.currentQuest?.day, 1)
+    }
+
+    func testSchemaTwelveMigrationDerivesChapterReviewWithoutLosingProgress() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_900_400_000)
+        var state = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+        state = try completeAvailableQuests(in: state, count: 7, startingAt: startedAt)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try encoder.encode(state)) as? [String: Any]
+        )
+        object["schemaVersion"] = 12
+        object.removeValue(forKey: "activeSprint")
+        object.removeValue(forKey: "sprintHistory")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let migrated = try decoder.decode(OpenLARPState.self, from: legacyData)
+
+        XCTAssertEqual(migrated.schemaVersion, 13)
+        XCTAssertEqual(migrated.activeSprint?.phase, .chapterOneReview)
+        XCTAssertEqual(migrated.currentSprintCompletedQuestCount, 7)
+        XCTAssertEqual(migrated.progress.proofCount, state.progress.proofCount)
+        XCTAssertTrue(migrated.sprintHistory.isEmpty)
+    }
+
+    func testChapterTwoContextNeverContainsPrivateProofBodyLinkOrAttachmentMetadata() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_900_500_000)
+        var state = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+        state = try completeAvailableQuests(in: state, count: 7, startingAt: startedAt)
+        state.progress.recentProof[0].text = "PRIVATE-PROOF-BODY-DO-NOT-SEND"
+        state.progress.recentProof[0].link = "https://private.example.com/secret"
+        state.progress.recentProof[0].attachments = [
+            ProofAttachment(
+                fileName: "private-proof.png",
+                originalFileName: "PRIVATE-ORIGINAL-NAME.png",
+                contentType: "image/png",
+                byteCount: 8_000,
+                createdAt: startedAt,
+                localRelativePath: "ProofAttachments/PRIVATE-DEVICE-PATH.png"
+            )
+        ]
+        let report = try OpenLARPEngine.makeSprintCheckpointReport(
+            checkpointDay: 7,
+            summary: "Seven stored proof receipts completed.",
+            nextFocus: "Use the strongest artifact in one focused action.",
+            providerRoute: .localMock,
+            usedFallback: false,
+            in: state,
+            now: startedAt.addingTimeInterval(7 * 86_400)
+        )
+
+        let context = try V0ChapterTwoPlanContext(state: state, report: report)
+        let json = String(decoding: try JSONEncoder().encode(context), as: UTF8.self)
+
+        XCTAssertFalse(json.contains("PRIVATE-PROOF-BODY-DO-NOT-SEND"))
+        XCTAssertFalse(json.contains("private.example.com"))
+        XCTAssertFalse(json.contains("PRIVATE-ORIGINAL-NAME"))
+        XCTAssertFalse(json.contains("PRIVATE-DEVICE-PATH"))
+        XCTAssertEqual(context.completedQuestEvidence.count, 7)
+    }
+
+    @MainActor
+    func testChangingGoalArchivesActiveSprintAndPreservesEarnedEvidence() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_900_600_000)
+        var activeState = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+        activeState = try completeAvailableQuests(in: activeState, count: 2, startingAt: startedAt)
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let resetAt = startedAt.addingTimeInterval(3 * 86_400)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            now: { resetAt }
+        )
+        store.state = activeState
+        let proofIDs = activeState.progress.recentProof.map(\.id)
+        let xp = activeState.progress.xp
+        let readinessHistory = activeState.progress.readinessHistory
+
+        store.resetGoal()
+
+        XCTAssertTrue(store.state.needsGoalSetup)
+        XCTAssertEqual(store.state.progress.xp, xp)
+        XCTAssertEqual(store.state.progress.completedQuestCount, 2)
+        XCTAssertEqual(store.state.progress.proofCount, 2)
+        XCTAssertEqual(store.state.progress.recentProof.map(\.id), proofIDs)
+        XCTAssertEqual(store.state.progress.readinessHistory, readinessHistory)
+        XCTAssertEqual(store.state.sprintHistory.first?.endReason, .goalChanged)
+        XCTAssertEqual(store.state.sprintHistory.first?.completedQuestCount, 2)
+        XCTAssertNil(store.state.activeSprint)
+    }
+
+    @MainActor
+    func testGoalResetWaitsForAnInFlightSprintTransition() {
+        let activeState = OpenLARPEngine.confirmGoal(goal)
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory)
+        )
+        store.state = activeState
+        store.isSprintTransitionRunning = true
+
+        store.resetGoal()
+
+        XCTAssertEqual(store.state, activeState)
+        XCTAssertNotNil(store.errorMessage)
+    }
+
+    @MainActor
+    func testStoreBuildsAndPersistsAdaptiveChapterTwoWithLocalWorkflow() async throws {
+        let startedAt = Date(timeIntervalSince1970: 1_900_700_000)
+        var chapterOneReview = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+        chapterOneReview = try completeAvailableQuests(
+            in: chapterOneReview,
+            count: 7,
+            startingAt: startedAt
+        )
+        let reviewTime = startedAt.addingTimeInterval(7 * 86_400)
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let persistence = OpenLARPPersistence(directory: directory)
+        let store = OpenLARPStore(
+            persistence: persistence,
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: LocalMockV0AIWorkflowService(),
+            now: { reviewTime },
+            calendar: testCalendar
+        )
+        store.state = chapterOneReview
+
+        let continued = await store.continueToChapterTwo()
+
+        XCTAssertTrue(continued)
+        XCTAssertEqual(store.state.activeSprint?.phase, .chapterTwo)
+        XCTAssertEqual(store.state.plan.map(\.day), Array(1...14))
+        XCTAssertEqual(store.state.activeSprint?.reports.map(\.checkpointDay), [7])
+        XCTAssertEqual(store.state.aiWorkflowRuns.suffix(2).map(\.kind), [.progressSummary, .questPlan])
+        XCTAssertTrue(store.state.betaEvents.contains { $0.kind == .chapterTwoStarted })
+        let persisted = try persistence.load()
+        XCTAssertEqual(persisted.activeSprint, store.state.activeSprint)
+        XCTAssertEqual(persisted.plan, store.state.plan)
+    }
+
+    @MainActor
+    func testMalformedChapterTwoResponseUsesCompleteDeterministicFallback() async throws {
+        let startedAt = Date(timeIntervalSince1970: 1_900_800_000)
+        var chapterOneReview = OpenLARPEngine.confirmGoal(goal, now: startedAt)
+        chapterOneReview = try completeAvailableQuests(
+            in: chapterOneReview,
+            count: 7,
+            startingAt: startedAt
+        )
+        let reviewTime = startedAt.addingTimeInterval(6 * 86_400)
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = OpenLARPStore(
+            persistence: OpenLARPPersistence(directory: directory),
+            attachmentStore: OpenLARPAttachmentStore(directory: directory),
+            aiWorkflowService: InvalidPlanV0AIWorkflowService(),
+            now: { reviewTime },
+            calendar: testCalendar
+        )
+        store.state = chapterOneReview
+
+        let continued = await store.continueToChapterTwo()
+
+        XCTAssertTrue(continued)
+        XCTAssertEqual(store.state.plan.map(\.day), Array(1...14))
+        XCTAssertTrue(store.state.plan.suffix(7).allSatisfy { $0.status == .locked })
+        XCTAssertEqual(store.state.aiWorkflowRuns.last?.kind, .questPlan)
+        XCTAssertEqual(store.state.aiWorkflowRuns.last?.usedFallback, true)
+    }
+
+    private func completeAvailableQuests(
+        in initialState: OpenLARPState,
+        count: Int,
+        startingAt: Date
+    ) throws -> OpenLARPState {
+        var state = initialState
+        for offset in 0..<count {
+            let claimTime = startingAt.addingTimeInterval(Double(offset) * 86_400)
+            if state.currentQuest == nil {
+                state = OpenLARPEngine.refreshDailyAvailability(
+                    in: state,
+                    now: claimTime,
+                    calendar: testCalendar
+                )
+            }
+            let quest = try XCTUnwrap(state.currentQuest)
+            let proof = ProofSubmission(
+                kind: .proof,
+                text: "Completed truthful work for \(quest.title) and documented the concrete result, target-role connection, and next improvement.",
+                link: "",
+                submittedAt: claimTime
+            )
+            let result = QualityCheckResult(
+                isAccepted: true,
+                qualityScore: 82,
+                label: "Strong proof",
+                reason: "Specific and grounded.",
+                improvement: "Reuse it in the next job-search action.",
+                xpEarned: quest.xpReward,
+                readinessDelta: 4
+            )
+            state = try OpenLARPEngine.claim(
+                result,
+                proof: proof,
+                in: state,
+                now: claimTime,
+                calendar: testCalendar
+            )
+        }
+        return state
+    }
+}
+
+private enum OpenLARPTestPlanFactory {
+    static func sevenQuests(minutes: Int) -> [Quest] {
+        (1...7).map { day in
+            Quest(
+                title: "Sprint quest \(day)",
+                purpose: "Create one truthful piece of career evidence.",
+                timeEstimateMinutes: minutes,
+                gap: .proofStrength,
+                proofRequired: "Document the result and its target-role connection.",
+                xpReward: 100,
+                steps: ["Do the focused work.", "Save truthful evidence."]
+            )
         }
     }
 }

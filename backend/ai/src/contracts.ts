@@ -222,6 +222,20 @@ export const questPlanPayloadSchema = z.object({
     readinessBaseline: z.number().int().min(0).max(100)
   }),
   mission: z.lazy(() => missionBriefResponseSchema).optional(),
+  chapterTwoContext: z.object({
+    sprintID: z.string().uuid(),
+    checkpointSummary: z.string().min(1).max(800),
+    nextFocus: z.string().min(1).max(500),
+    readiness: readinessMetricsSchema,
+    completedQuestCount: z.literal(7),
+    proofCount: z.number().int().min(0).max(7),
+    outcomeCount: z.number().int().nonnegative().max(100),
+    completedQuestEvidence: z.array(z.object({
+      questTitle: z.string().min(1).max(140),
+      gap: z.string().min(1).max(80),
+      qualityScore: z.number().int().min(0).max(100)
+    })).length(7)
+  }).optional(),
   requestedAt: z.string().datetime().optional()
 });
 

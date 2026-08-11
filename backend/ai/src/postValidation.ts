@@ -6,6 +6,7 @@ import {
   missionBriefResponseSchema,
   progressSummaryResponseSchema,
   proofQualityResponseSchema,
+  questPlanPayloadSchema,
   questPlanResponseSchema,
   type WorkflowKind
 } from "./contracts.js";
@@ -83,6 +84,25 @@ export function validateGeneratedWorkflowResult(
       mission.dailyCommitmentMinutes !== missionPayload.data.goal.dailyCommitmentMinutes ||
       JSON.stringify(mission.confirmedCurrentState) !== JSON.stringify(missionPayload.data.confirmedFacts) ||
       JSON.stringify(mission.ethicalBoundaries) !== JSON.stringify(missionPayload.data.requiredEthicalBoundaries)
+    ) {
+      return { ok: false, reason: "invalidOutput" };
+    }
+  }
+
+  if (kind === "questPlan") {
+    const questPayload = questPlanPayloadSchema.safeParse(payload);
+    const questPlan = questPlanResponseSchema.parse(parsed.data);
+    if (!questPayload.success) {
+      return { ok: false, reason: "invalidOutput" };
+    }
+    const startingDay = questPayload.data.chapterTwoContext ? 8 : 1;
+    const expectedDays = Array.from({ length: 7 }, (_, index) => startingDay + index);
+    const dailyCommitment = questPayload.data.mission?.dailyCommitmentMinutes ??
+      questPayload.data.goal.dailyCommitmentMinutes;
+    if (
+      questPlan.quests.length !== 7 ||
+      questPlan.quests.some((quest, index) => quest.day !== expectedDays[index]) ||
+      questPlan.quests.some((quest) => quest.timeEstimateMinutes > dailyCommitment)
     ) {
       return { ok: false, reason: "invalidOutput" };
     }

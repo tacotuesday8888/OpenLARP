@@ -548,6 +548,7 @@ struct V0QuestPlanRequest: Codable, Equatable {
     var goal: CareerGoal
     var diagnostic: CookedDiagnostic
     var mission: CareerMissionBrief?
+    var chapterTwoContext: V0ChapterTwoPlanContext?
     var requestedAt: Date
     var safetyRules: V0AISafetyRules
 
@@ -555,6 +556,7 @@ struct V0QuestPlanRequest: Codable, Equatable {
         goal: CareerGoal,
         diagnostic: CookedDiagnostic,
         mission: CareerMissionBrief? = nil,
+        chapterTwoContext: V0ChapterTwoPlanContext? = nil,
         requestedAt: Date,
         schemaVersion: Int = 1,
         safetyRules: V0AISafetyRules = .v0Default
@@ -563,10 +565,57 @@ struct V0QuestPlanRequest: Codable, Equatable {
         self.goal = goal
         self.diagnostic = diagnostic
         self.mission = mission
+        self.chapterTwoContext = chapterTwoContext
         self.requestedAt = requestedAt
         self.safetyRules = safetyRules
     }
 }
+
+struct V0ChapterTwoQuestEvidence: Codable, Equatable {
+    var questTitle: String
+    var gap: CareerGap
+    var qualityScore: Int
+}
+
+struct V0ChapterTwoPlanContext: Codable, Equatable {
+    var sprintID: UUID
+    var checkpointSummary: String
+    var nextFocus: String
+    var readiness: ReadinessMetrics
+    var completedQuestCount: Int
+    var proofCount: Int
+    var outcomeCount: Int
+    var completedQuestEvidence: [V0ChapterTwoQuestEvidence]
+
+    init(state: OpenLARPState, report: CareerSprintCheckpointReport) throws {
+        guard let sprint = state.activeSprint,
+              sprint.id == report.sprintID,
+              sprint.phase == .chapterOneReview,
+              report.checkpointDay == 7 else {
+            throw OpenLARPError.invalidSprintLifecycle
+        }
+        let proofsByQuestID = Dictionary(
+            grouping: state.progress.recentProof,
+            by: \.questID
+        )
+        sprintID = sprint.id
+        checkpointSummary = report.summary
+        nextFocus = report.nextFocus
+        readiness = report.endReadiness
+        completedQuestCount = report.completedQuestCount
+        proofCount = report.proofCount
+        outcomeCount = report.outcomeCount
+        completedQuestEvidence = state.plan.prefix(7).map { quest in
+            V0ChapterTwoQuestEvidence(
+                questTitle: quest.title,
+                gap: quest.gap,
+                qualityScore: proofsByQuestID[quest.id]?.compactMap { $0.quality?.qualityScore }.max() ?? 0
+            )
+        }
+    }
+}
+
+extension V0ChapterTwoPlanContext: @unchecked Sendable {}
 
 struct V0QuestPlanResponse: Codable, Equatable {
     var run: V0AIWorkflowRun
@@ -823,7 +872,9 @@ struct LocalMockV0AIWorkflowService: V0AIWorkflowServicing {
     func generateQuestPlan(_ request: V0QuestPlanRequest) async throws -> V0QuestPlanResponse {
         V0QuestPlanResponse(
             run: run(kind: .questPlan, requestedAt: request.requestedAt),
-            quests: V0LocalAIWorkflowFallback.makeSevenDayPlan(for: request.goal)
+            quests: request.chapterTwoContext == nil
+                ? V0LocalAIWorkflowFallback.makeSevenDayPlan(for: request.goal)
+                : V0LocalAIWorkflowFallback.makeChapterTwoPlan(for: request.goal)
         )
     }
 
@@ -1123,6 +1174,77 @@ private enum V0LocalAIWorkflowFallback {
         }
 
         return "For \(targetRole), readiness is \(progress.readiness.overall)%. You have completed \(questText) and saved \(proofText)."
+    }
+
+    static func makeChapterTwoPlan(for goal: CareerGoal) -> [Quest] {
+        let duration: (Int) -> Int = { suggestedMinutes in
+            max(5, min(suggestedMinutes, goal.dailyCommitmentMinutes))
+        }
+        let quests: [(String, String, CareerGap, String, [String])] = [
+            (
+                "Choose the strongest proof from Chapter One",
+                "Chapter Two should invest in evidence that already survived a real review.",
+                .proofStrength,
+                "Name the proof, the requirement it supports, and one honest limitation.",
+                ["Review the seven proof receipts.", "Choose the strongest one.", "Write what it proves and what it does not prove."]
+            ),
+            (
+                "Turn the proof into a concise portfolio story",
+                "A clear, defensible story makes real work useful in applications and interviews.",
+                .confidence,
+                "Save the problem, action, tradeoff, result, and next-improvement story.",
+                ["State the real problem.", "Describe only your own actions.", "Add the result and one limitation."]
+            ),
+            (
+                "Match the proof to one current role requirement",
+                "Focused evidence is more credible than a generic claim of fit.",
+                .proofStrength,
+                "Save the requirement and the exact proof connection.",
+                ["Choose one role description.", "Select one requirement.", "Explain the evidence match without exaggeration."]
+            ),
+            (
+                "Improve one weak edge in the proof",
+                "A small targeted revision can raise credibility without expanding the project.",
+                .proofStrength,
+                "Document the before, the focused revision, and the after.",
+                ["Choose one limitation.", "Make one bounded improvement.", "Record what changed."]
+            ),
+            (
+                "Use the proof in one honest outreach draft",
+                "Specific work gives a networking message a real reason to exist.",
+                .networking,
+                "Save or send a concise message that references the real artifact.",
+                ["Choose one relevant person.", "Reference the proof briefly.", "Ask one low-pressure question."]
+            ),
+            (
+                "Use the proof in one focused application action",
+                "The sprint should connect evidence to a real opportunity, not stop at preparation.",
+                .proofStrength,
+                "Save the tailored bullet, application receipt, or final application-ready draft.",
+                ["Choose one relevant opportunity.", "Tailor one truthful section.", "Submit or save the final ready-to-send version."]
+            ),
+            (
+                "Run the 14-day evidence review",
+                "A final review should show what changed and choose the next honest focus.",
+                .consistency,
+                "Write the strongest result, readiness change, outcome signal, and next focus.",
+                ["Review all fourteen quests.", "Name the strongest evidence and outcome.", "Choose the next sprint focus."]
+            )
+        ]
+        return quests.enumerated().map { offset, template in
+            Quest(
+                day: offset + 8,
+                title: template.0,
+                purpose: template.1,
+                timeEstimateMinutes: duration(offset == 6 ? 15 : 25),
+                difficulty: offset == 6 ? "Review" : "Adaptive",
+                gap: template.2,
+                proofRequired: template.3,
+                xpReward: offset == 6 ? 160 : 130,
+                steps: template.4,
+                status: .locked
+            )
+        }
     }
 
     private static func strongestSignal(for goal: CareerGoal) -> String {

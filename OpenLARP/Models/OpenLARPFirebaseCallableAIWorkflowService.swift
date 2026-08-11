@@ -582,12 +582,14 @@ private struct FirebaseCallableQuestPlanPayload: Codable, Equatable, Sendable {
     var goal: FirebaseCallableCareerGoalDTO
     var diagnostic: CookedDiagnostic
     var mission: FirebaseCallableQuestMissionDTO?
+    var chapterTwoContext: V0ChapterTwoPlanContext?
     var requestedAt: Date
 
     init(request: V0QuestPlanRequest) {
         goal = FirebaseCallableCareerGoalDTO(goal: request.goal)
         diagnostic = request.diagnostic
         mission = request.mission.map(FirebaseCallableQuestMissionDTO.init)
+        chapterTwoContext = request.chapterTwoContext
         requestedAt = request.requestedAt
     }
 }

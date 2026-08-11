@@ -57,15 +57,20 @@ export function buildLiveWorkflowPrompt(envelope: RequestEnvelope): LiveWorkflow
         ],
         missionBriefPayloadSchema.parse(envelope.payload)
       );
-    case "questPlan":
+    case "questPlan": {
+      const payload = questPlanPayloadSchema.parse(envelope.payload);
       return prompt(
-        "openlarp.quest-plan.v1",
+        payload.chapterTwoContext ? "openlarp.quest-plan.chapter-two.v1" : "openlarp.quest-plan.v1",
         [
           "Create small user-controlled real-world career actions that fit the stated time and constraints.",
-          "Every quest needs a definition of done and proof requirement. Never pre-complete a quest."
+          "Every quest needs a definition of done and proof requirement. Never pre-complete a quest.",
+          payload.chapterTwoContext
+            ? "Return exactly seven quests numbered 8 through 14. Adapt only from the supplied checkpoint counters, readiness, generated quest titles, gaps, and quality scores; no private proof body, link, or attachment content was supplied."
+            : "Return exactly seven quests numbered 1 through 7 for the first chapter."
         ],
-        questPlanPayloadSchema.parse(envelope.payload)
+        payload
       );
+    }
     case "proofQualityCheck":
       return prompt(
         "openlarp.proof-quality.v1",

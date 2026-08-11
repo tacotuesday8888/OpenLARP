@@ -369,6 +369,46 @@ describe("OpenLARP AI backend contracts", () => {
     expect(result.quests.every((quest) => quest.timeEstimateMinutes <= 15)).toBe(true);
   });
 
+  it("builds a bounded day 8 through 14 chapter from metadata-only checkpoint evidence", () => {
+    const rawPayload = {
+      goal: {
+        currentStatus: "student", targetRole: "iOS engineer", timeline: "12 weeks",
+        background: "One class app", existingProof: "A local demo", confidence: 3,
+        biggestBlocker: "Thin proof", constraints: "Weeknights only", dailyCommitmentMinutes: 20
+      },
+      diagnostic: {
+        score: 62, label: "Recoverable", mainGap: "Needs proof", strongestSignal: "One class app",
+        fastestFix: "Create one walkthrough", readinessBaseline: 48
+      },
+      chapterTwoContext: {
+        sprintID: "11111111-1111-4111-8111-111111111111",
+        checkpointSummary: "Seven proof-building actions completed.",
+        nextFocus: "Use the strongest artifact in focused applications.",
+        readiness: {
+          overall: 57, proofStrength: 61, confidence: 54, consistency: 59, skillProof: 58, networkStrength: 42
+        },
+        completedQuestCount: 7,
+        proofCount: 7,
+        outcomeCount: 1,
+        completedQuestEvidence: Array.from({ length: 7 }, (_, index) => ({
+          questTitle: `Generated quest ${index + 1}`,
+          gap: "proofStrength",
+          qualityScore: 70 + index
+        }))
+      }
+    };
+
+    const payload = questPlanPayloadSchema.parse(rawPayload);
+    const result = makeQuestPlan(payload);
+
+    expect(result.quests).toHaveLength(7);
+    expect(result.quests.map((quest) => quest.day)).toEqual([8, 9, 10, 11, 12, 13, 14]);
+    expect(result.quests.every((quest) => quest.timeEstimateMinutes <= 20)).toBe(true);
+    expect(JSON.stringify(payload.chapterTwoContext)).not.toContain("proofText");
+    expect(JSON.stringify(payload.chapterTwoContext)).not.toContain("attachment");
+    expect(JSON.stringify(payload.chapterTwoContext)).not.toContain("link");
+  });
+
   it("bounds adaptive intake around confirmed facts, hypotheses, and unknowns", () => {
     const payload = adaptiveCareerIntakePayloadSchema.parse({
       confirmedFacts: [{

@@ -1169,8 +1169,20 @@ struct TodayCompletionContent: Equatable {
             nextQuestTitle = nil
             nextQuestObjectiveText = nil
             nextQuestMetaText = nil
-            nextQuestStatusText = "Track complete"
-            unlockMessage = "You finished the local seven-day track."
+            switch state.activeSprint?.phase {
+            case .chapterOneReview:
+                nextQuestStatusText = "Chapter One complete"
+                unlockMessage = "Review the Day 7 checkpoint to build Chapter Two."
+            case .finalReview:
+                nextQuestStatusText = "All 14 quests complete"
+                unlockMessage = "Create the final sprint report when you are ready."
+            case .completed:
+                nextQuestStatusText = "Sprint complete"
+                unlockMessage = "Your report and evidence history are saved."
+            case .chapterOne, .chapterTwo, nil:
+                nextQuestStatusText = "Chapter complete"
+                unlockMessage = "Review your progress to continue."
+            }
         }
     }
 }
@@ -1488,8 +1500,79 @@ struct SkippedTodayState: Codable, Equatable {
     )
 }
 
+enum CareerSprintPhase: String, Codable, Equatable {
+    case chapterOne
+    case chapterOneReview
+    case chapterTwo
+    case finalReview
+    case completed
+}
+
+enum CareerSprintEndReason: String, Codable, Equatable {
+    case completed
+    case goalChanged
+}
+
+struct CareerSprintCheckpointReport: Codable, Equatable, Identifiable {
+    var id: UUID
+    var sprintID: UUID
+    var checkpointDay: Int
+    var completedQuestCount: Int
+    var proofCount: Int
+    var outcomeCount: Int
+    var startReadiness: ReadinessMetrics
+    var endReadiness: ReadinessMetrics
+    var readinessDelta: Int
+    var summary: String
+    var nextFocus: String
+    var strongestProofTitle: String?
+    var providerRoute: V0AIProviderRoute
+    var usedFallback: Bool
+    var createdAt: Date
+}
+
+struct CareerSprintState: Codable, Equatable, Identifiable {
+    var id: UUID
+    var targetRoleTitle: String
+    var startedAt: Date
+    var initialReadiness: ReadinessMetrics
+    var phase: CareerSprintPhase
+    var reports: [CareerSprintCheckpointReport]
+
+    init(
+        id: UUID = UUID(),
+        targetRoleTitle: String,
+        startedAt: Date,
+        initialReadiness: ReadinessMetrics,
+        phase: CareerSprintPhase = .chapterOne,
+        reports: [CareerSprintCheckpointReport] = []
+    ) {
+        self.id = id
+        self.targetRoleTitle = targetRoleTitle
+        self.startedAt = startedAt
+        self.initialReadiness = initialReadiness
+        self.phase = phase
+        self.reports = reports
+    }
+}
+
+struct CareerSprintArchive: Codable, Equatable, Identifiable {
+    var id: UUID
+    var targetRoleTitle: String
+    var startedAt: Date
+    var endedAt: Date
+    var endReason: CareerSprintEndReason
+    var completedQuestCount: Int
+    var proofCount: Int
+    var outcomeCount: Int
+    var startReadiness: ReadinessMetrics
+    var endReadiness: ReadinessMetrics
+    var proofIDs: [UUID]
+    var reports: [CareerSprintCheckpointReport]
+}
+
 struct OpenLARPState: Codable, Equatable {
-    static let currentSchemaVersion = 12
+    static let currentSchemaVersion = 13
 
     var schemaVersion: Int
     var userProfile: CareerUserProfile?
@@ -1500,6 +1583,8 @@ struct OpenLARPState: Codable, Equatable {
     var diagnostic: CookedDiagnostic?
     var mission: CareerMissionBrief?
     var plan: [Quest]
+    var activeSprint: CareerSprintState?
+    var sprintHistory: [CareerSprintArchive]
     var progress: ProgressState
     var agentBrief: AgentBrief
     var updatedAt: Date
@@ -1527,6 +1612,8 @@ struct OpenLARPState: Codable, Equatable {
         diagnostic: CookedDiagnostic?,
         mission: CareerMissionBrief? = nil,
         plan: [Quest],
+        activeSprint: CareerSprintState? = nil,
+        sprintHistory: [CareerSprintArchive] = [],
         progress: ProgressState,
         agentBrief: AgentBrief = .empty,
         updatedAt: Date,
@@ -1559,6 +1646,14 @@ struct OpenLARPState: Codable, Equatable {
             updatedAt: updatedAt
         )
         self.plan = plan
+        self.activeSprint = activeSprint ?? Self.migratedActiveSprint(
+            goal: goal,
+            mission: self.mission,
+            plan: plan,
+            progress: progress,
+            updatedAt: updatedAt
+        )
+        self.sprintHistory = sprintHistory
         self.progress = progress
         self.agentBrief = agentBrief
         self.updatedAt = updatedAt
@@ -1614,6 +1709,19 @@ struct OpenLARPState: Codable, Equatable {
         }
         return plan.first { $0.status == .inProgress } ?? plan.first { $0.status == .available }
     }
+
+    var currentSprintCompletedQuestCount: Int {
+        plan.lazy.filter { $0.status == .completed }.count
+    }
+
+    var currentSprintQuestCount: Int {
+        plan.count
+    }
+
+    var currentSprintProofCount: Int {
+        let questIDs = Set(plan.map(\.id))
+        return progress.recentProof.lazy.filter { questIDs.contains($0.questID) }.count
+    }
 }
 
 extension OpenLARPState {
@@ -1627,6 +1735,8 @@ extension OpenLARPState {
         case diagnostic
         case mission
         case plan
+        case activeSprint
+        case sprintHistory
         case progress
         case agentBrief
         case updatedAt
@@ -1691,6 +1801,15 @@ extension OpenLARPState {
             }
         }
         progress = try container.decode(ProgressState.self, forKey: .progress)
+        activeSprint = try container.decodeIfPresent(CareerSprintState.self, forKey: .activeSprint) ??
+            Self.migratedActiveSprint(
+                goal: goal,
+                mission: mission,
+                plan: plan,
+                progress: progress,
+                updatedAt: updatedAt
+            )
+        sprintHistory = try container.decodeIfPresent([CareerSprintArchive].self, forKey: .sprintHistory) ?? []
         agentBrief = try container.decodeIfPresent(AgentBrief.self, forKey: .agentBrief) ?? .empty
         dailyCadence = try container.decodeIfPresent(DailyCadenceState.self, forKey: .dailyCadence) ?? .empty
         missedDayRecovery = try container.decodeIfPresent(MissedDayRecoveryState.self, forKey: .missedDayRecovery) ?? .empty
@@ -1722,6 +1841,8 @@ extension OpenLARPState {
         try container.encodeIfPresent(diagnostic, forKey: .diagnostic)
         try container.encodeIfPresent(mission, forKey: .mission)
         try container.encode(plan, forKey: .plan)
+        try container.encodeIfPresent(activeSprint, forKey: .activeSprint)
+        try container.encode(sprintHistory, forKey: .sprintHistory)
         try container.encode(progress, forKey: .progress)
         try container.encode(agentBrief, forKey: .agentBrief)
         try container.encode(updatedAt, forKey: .updatedAt)
@@ -1753,6 +1874,54 @@ extension OpenLARPState {
             understanding: understanding,
             diagnostic: diagnostic,
             approvedAt: updatedAt
+        )
+    }
+
+    private static func migratedActiveSprint(
+        goal: CareerGoal?,
+        mission: CareerMissionBrief?,
+        plan: [Quest],
+        progress: ProgressState,
+        updatedAt: Date
+    ) -> CareerSprintState? {
+        guard let goal,
+              mission?.reviewState == .approved,
+              !plan.isEmpty else { return nil }
+
+        let completedCount = plan.lazy.filter { $0.status == .completed }.count
+        let phase: CareerSprintPhase
+        if plan.count >= 14, completedCount >= 14 {
+            phase = .finalReview
+        } else if plan.count >= 14 {
+            phase = .chapterTwo
+        } else if completedCount >= 7 {
+            phase = .chapterOneReview
+        } else {
+            phase = .chapterOne
+        }
+        let initialReadiness: ReadinessMetrics
+        if let snapshot = progress.readinessHistory.first(where: { $0.source == .initialBaseline }) {
+            initialReadiness = ReadinessMetrics(
+                overall: snapshot.overall,
+                targetClarity: progress.readiness.targetClarity,
+                proofStrength: snapshot.proofStrength,
+                confidence: snapshot.confidence,
+                consistency: snapshot.consistency,
+                skillProof: snapshot.skillProof,
+                experienceProof: progress.readiness.experienceProof,
+                profileCredibility: progress.readiness.profileCredibility,
+                networkStrength: snapshot.networkStrength,
+                interviewReadiness: progress.readiness.interviewReadiness,
+                applicationExecution: progress.readiness.applicationExecution
+            )
+        } else {
+            initialReadiness = progress.readiness
+        }
+        return CareerSprintState(
+            targetRoleTitle: goal.targetRole,
+            startedAt: mission?.approvedAt ?? updatedAt,
+            initialReadiness: initialReadiness,
+            phase: phase
         )
     }
 }
@@ -1847,6 +2016,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
     case emptyProof
     case invalidQuestPlan
     case invalidMissionBrief
+    case invalidSprintLifecycle
     case careerUnderstandingNeedsReview
 
     var errorDescription: String? {
@@ -1856,6 +2026,7 @@ enum OpenLARPError: Error, LocalizedError, Equatable {
         case .emptyProof: "Add a written note about what you did before checking your submission."
         case .invalidQuestPlan: "The generated plan was not usable, so OpenLARP switched to a local plan."
         case .invalidMissionBrief: "Review a valid mission brief before OpenLARP creates the sprint."
+        case .invalidSprintLifecycle: "This sprint step is not ready yet. Refresh and try again."
         case .careerUnderstandingNeedsReview: "Review and approve OpenLARP's understanding before creating your plan."
         }
     }

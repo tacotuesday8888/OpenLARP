@@ -75,6 +75,11 @@ enum OpenLARPEngine {
         approved.userProfile?.minutesPerDay = mission.dailyCommitmentMinutes
         approved.userProfile?.updatedAt = now
         approved.plan = validatedPlan
+        approved.activeSprint = CareerSprintState(
+            targetRoleTitle: mission.targetOutcome,
+            startedAt: now,
+            initialReadiness: approved.progress.readiness
+        )
         approved.updatedAt = now
         return approved
     }
@@ -337,6 +342,7 @@ enum OpenLARPEngine {
             calendar: calendar,
             in: &next
         )
+        advanceSprintPhaseAfterClaim(in: &next)
         next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
         next.updatedAt = now
         return next
@@ -491,7 +497,7 @@ enum OpenLARPEngine {
     }
 
     static func validatedInitialPlan(_ plan: [Quest]) -> [Quest]? {
-        guard !plan.isEmpty else { return nil }
+        guard plan.count == 7 else { return nil }
 
         var seenIDs = Set<UUID>()
         var sanitized: [Quest] = []
@@ -511,6 +517,275 @@ enum OpenLARPEngine {
         }
 
         return sanitized
+    }
+
+    static func makeSprintCheckpointReport(
+        checkpointDay: Int,
+        summary: String,
+        nextFocus: String,
+        providerRoute: V0AIProviderRoute,
+        usedFallback: Bool,
+        in state: OpenLARPState,
+        now: Date = Date()
+    ) throws -> CareerSprintCheckpointReport {
+        guard let sprint = state.activeSprint,
+              (checkpointDay == 7 && sprint.phase == .chapterOneReview) ||
+                (checkpointDay == 14 && sprint.phase == .finalReview),
+              state.currentSprintCompletedQuestCount == checkpointDay else {
+            throw OpenLARPError.invalidSprintLifecycle
+        }
+        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNextFocus = nextFocus.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSummary.isEmpty,
+              trimmedSummary.count <= 800,
+              !trimmedNextFocus.isEmpty,
+              trimmedNextFocus.count <= 500 else {
+            throw OpenLARPError.invalidSprintLifecycle
+        }
+
+        let questIDs = Set(state.plan.prefix(checkpointDay).map(\.id))
+        let sprintProofs = state.progress.recentProof.filter { questIDs.contains($0.questID) }
+        let proofIDs = Set(sprintProofs.map(\.id))
+        let sprintOutcomes = state.outcomeLog.filter { outcome in
+            guard !outcome.isDeleted else { return false }
+            if let questID = outcome.relatedQuestID, questIDs.contains(questID) { return true }
+            if let proofID = outcome.relatedProofID, proofIDs.contains(proofID) { return true }
+            return outcome.targetRoleTitle == sprint.targetRoleTitle && outcome.occurredAt >= sprint.startedAt
+        }
+
+        return CareerSprintCheckpointReport(
+            id: UUID(),
+            sprintID: sprint.id,
+            checkpointDay: checkpointDay,
+            completedQuestCount: state.currentSprintCompletedQuestCount,
+            proofCount: sprintProofs.count,
+            outcomeCount: sprintOutcomes.count,
+            startReadiness: sprint.initialReadiness,
+            endReadiness: state.progress.readiness,
+            readinessDelta: state.progress.readiness.overall - sprint.initialReadiness.overall,
+            summary: trimmedSummary,
+            nextFocus: trimmedNextFocus,
+            strongestProofTitle: sprintProofs.max(by: {
+                ($0.quality?.qualityScore ?? 0) < ($1.quality?.qualityScore ?? 0)
+            })?.questTitle,
+            providerRoute: providerRoute,
+            usedFallback: usedFallback,
+            createdAt: now
+        )
+    }
+
+    static func continueToChapterTwo(
+        report: CareerSprintCheckpointReport,
+        chapterTwoPlan: [Quest],
+        in state: OpenLARPState,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) throws -> OpenLARPState {
+        guard var sprint = state.activeSprint,
+              sprint.phase == .chapterOneReview,
+              report.sprintID == sprint.id,
+              report.checkpointDay == 7,
+              report.completedQuestCount == state.currentSprintCompletedQuestCount,
+              report.proofCount == state.currentSprintProofCount,
+              report.startReadiness == sprint.initialReadiness,
+              report.endReadiness == state.progress.readiness,
+              let dailyCommitment = state.goal?.dailyCommitmentMinutes,
+              let validatedPlan = validatedChapterTwoPlan(
+                chapterTwoPlan,
+                existingIDs: Set(state.plan.map(\.id)),
+                dailyCommitmentMinutes: dailyCommitment
+              ) else {
+            throw OpenLARPError.invalidSprintLifecycle
+        }
+
+        var next = state
+        sprint.phase = .chapterTwo
+        sprint.reports.append(report)
+        next.activeSprint = sprint
+        next.plan.append(contentsOf: validatedPlan)
+        let chapterOneCompletedAt = state.dailyCadence.completedAt ??
+            state.progress.recentProof
+                .filter { $0.questID == state.plan.prefix(7).last?.id }
+                .map(\.submittedAt)
+                .max() ?? now
+        let chapterOneProof = state.progress.recentProof.first {
+            $0.questID == state.plan.prefix(7).last?.id
+        }
+        next.dailyCadence = DailyCadenceState(
+            lastCompletedQuestID: next.plan.prefix(7).last?.id,
+            completedQuestTitle: next.plan.prefix(7).last?.title,
+            completedAt: chapterOneCompletedAt,
+            resultLabel: state.dailyCadence.resultLabel ?? chapterOneProof?.quality?.label ?? "Chapter One complete",
+            xpEarned: state.dailyCadence.xpEarned ?? chapterOneProof?.quality?.xpEarned,
+            streakCountAfterCompletion: next.progress.streakCount,
+            nextQuestID: validatedPlan.first?.id,
+            nextUnlockDate: nextLocalDay(after: chapterOneCompletedAt, calendar: calendar)
+        )
+        next.missedDayRecovery = .empty
+        next.skippedToday = .empty
+        next = refreshDailyAvailability(in: next, now: now, calendar: calendar)
+        next.updatedAt = now
+        next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
+        return next
+    }
+
+    static func completeSprint(
+        report: CareerSprintCheckpointReport,
+        in state: OpenLARPState,
+        now: Date = Date()
+    ) throws -> OpenLARPState {
+        guard var sprint = state.activeSprint,
+              sprint.phase == .finalReview,
+              report.sprintID == sprint.id,
+              report.checkpointDay == 14,
+              report.completedQuestCount == state.currentSprintCompletedQuestCount,
+              report.proofCount == state.currentSprintProofCount,
+              report.startReadiness == sprint.initialReadiness,
+              report.endReadiness == state.progress.readiness else {
+            throw OpenLARPError.invalidSprintLifecycle
+        }
+
+        var next = state
+        sprint.phase = .completed
+        sprint.reports.append(report)
+        next.activeSprint = sprint
+        next.sprintHistory.removeAll { $0.id == sprint.id }
+        next.sprintHistory.insert(
+            makeSprintArchive(for: sprint, in: next, endReason: .completed, endedAt: now),
+            at: 0
+        )
+        next.dailyCadence = .empty
+        next.skippedToday = .empty
+        next.missedDayRecovery = .empty
+        next.updatedAt = now
+        return next
+    }
+
+    static func startAnotherSprint(
+        plan: [Quest],
+        in state: OpenLARPState,
+        now: Date = Date()
+    ) throws -> OpenLARPState {
+        guard state.activeSprint?.phase == .completed,
+              let goal = state.goal,
+              let validatedPlan = validatedInitialPlan(plan) else {
+            throw OpenLARPError.invalidSprintLifecycle
+        }
+
+        var next = state
+        next.plan = validatedPlan.map { quest in
+            var bounded = quest
+            bounded.timeEstimateMinutes = min(quest.timeEstimateMinutes, goal.dailyCommitmentMinutes)
+            return bounded
+        }
+        next.activeSprint = CareerSprintState(
+            targetRoleTitle: goal.targetRole,
+            startedAt: now,
+            initialReadiness: state.progress.readiness
+        )
+        next.dailyCadence = .empty
+        next.skippedToday = .empty
+        next.missedDayRecovery = .empty
+        next.proofDraft = nil
+        next.proofDraftQuestID = nil
+        next.proofDraftQualityResult = nil
+        next.updatedAt = now
+        next.agentBrief = AgentBriefFactory.makeBrief(for: next, generatedAt: now)
+        return next
+    }
+
+    static func sprintHistoryIncludingGoalChange(
+        in state: OpenLARPState,
+        now: Date = Date()
+    ) -> [CareerSprintArchive] {
+        guard let sprint = state.activeSprint,
+              sprint.phase != .completed,
+              !state.plan.isEmpty else { return state.sprintHistory }
+        var history = state.sprintHistory.filter { $0.id != sprint.id }
+        history.insert(makeSprintArchive(for: sprint, in: state, endReason: .goalChanged, endedAt: now), at: 0)
+        return history
+    }
+
+    static func recommendedSprintFocus(in state: OpenLARPState) -> String {
+        let readiness = state.progress.readiness
+        let candidates: [(score: Int, focus: String)] = [
+            (readiness.proofStrength, "Strengthen the clearest real proof for the target role."),
+            (readiness.skillProof, "Turn one real skill into a clearer, defensible artifact."),
+            (readiness.networkStrength, "Use the strongest proof in one low-pressure networking action."),
+            (readiness.interviewReadiness, "Practice explaining the strongest proof with honest detail."),
+            (readiness.applicationExecution, "Connect the strongest proof to one focused application action.")
+        ]
+        return candidates.min { $0.score < $1.score }?.focus ??
+            "Use the strongest proof in one focused job-search action."
+    }
+
+    private static func validatedChapterTwoPlan(
+        _ plan: [Quest],
+        existingIDs: Set<UUID>,
+        dailyCommitmentMinutes: Int
+    ) -> [Quest]? {
+        guard plan.count == 7 else { return nil }
+        var seenIDs = existingIDs
+        var validated: [Quest] = []
+        for (offset, quest) in plan.enumerated() {
+            guard seenIDs.insert(quest.id).inserted,
+                  !quest.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !quest.purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !quest.proofRequired.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !quest.steps.isEmpty,
+                  quest.steps.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                return nil
+            }
+            var next = quest
+            next.day = offset + 8
+            next.timeEstimateMinutes = max(5, min(next.timeEstimateMinutes, dailyCommitmentMinutes))
+            next.xpReward = max(25, min(next.xpReward, 180))
+            next.status = .locked
+            validated.append(next)
+        }
+        return validated
+    }
+
+    private static func advanceSprintPhaseAfterClaim(in state: inout OpenLARPState) {
+        guard var sprint = state.activeSprint else { return }
+        let completedCount = state.currentSprintCompletedQuestCount
+        if state.plan.count >= 14, completedCount >= 14 {
+            sprint.phase = .finalReview
+        } else if state.plan.count == 7, completedCount >= 7 {
+            sprint.phase = .chapterOneReview
+        }
+        state.activeSprint = sprint
+    }
+
+    private static func makeSprintArchive(
+        for sprint: CareerSprintState,
+        in state: OpenLARPState,
+        endReason: CareerSprintEndReason,
+        endedAt: Date
+    ) -> CareerSprintArchive {
+        let questIDs = Set(state.plan.map(\.id))
+        let proofs = state.progress.recentProof.filter { questIDs.contains($0.questID) }
+        let proofIDs = Set(proofs.map(\.id))
+        let outcomes = state.outcomeLog.filter { outcome in
+            guard !outcome.isDeleted else { return false }
+            if let questID = outcome.relatedQuestID, questIDs.contains(questID) { return true }
+            if let proofID = outcome.relatedProofID, proofIDs.contains(proofID) { return true }
+            return outcome.targetRoleTitle == sprint.targetRoleTitle && outcome.occurredAt >= sprint.startedAt
+        }
+        return CareerSprintArchive(
+            id: sprint.id,
+            targetRoleTitle: sprint.targetRoleTitle,
+            startedAt: sprint.startedAt,
+            endedAt: endedAt,
+            endReason: endReason,
+            completedQuestCount: state.currentSprintCompletedQuestCount,
+            proofCount: proofs.count,
+            outcomeCount: outcomes.count,
+            startReadiness: sprint.initialReadiness,
+            endReadiness: state.progress.readiness,
+            proofIDs: proofs.map(\.id),
+            reports: sprint.reports
+        )
     }
 
     static func swappedCurrentQuest(in state: OpenLARPState, now: Date = Date()) throws -> OpenLARPState {
