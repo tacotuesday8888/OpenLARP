@@ -560,7 +560,7 @@ struct GuidedCareerOnboardingView: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .imageScale(.medium)
                 Text(title)
-                    .font(.system(.subheadline, design: .default, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .multilineTextAlignment(.leading)
             }
             .frame(maxWidth: .infinity)
