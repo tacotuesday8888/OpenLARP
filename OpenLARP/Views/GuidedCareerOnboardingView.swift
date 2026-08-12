@@ -14,6 +14,7 @@ struct GuidedCareerOnboardingView: View {
     let store: OpenLARPStore
     let onGoalConfirmed: (CookedDiagnosticResultContent) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var draft = CareerIntakeDraft.empty
     @State private var flow = CareerOnboardingFlow()
     @State private var reviewUnderstanding: CareerUnderstanding?
@@ -128,7 +129,7 @@ struct GuidedCareerOnboardingView: View {
                 .disabled(isOnboardingWorkRunning)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: flow.step)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: flow.step)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
