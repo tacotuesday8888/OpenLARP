@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_GEMINI_MODEL_ID,
@@ -6,6 +7,18 @@ import {
 } from "../src/config.js";
 
 describe("configFromEnvironment", () => {
+  it("keeps backend operator guidance aligned with the supported Vertex default", () => {
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+
+    expect(readme).toContain("`gemini-3.5-flash`");
+    expect(readme).toContain("`vertex-ai`");
+    expect(readme).toContain("`global`");
+    expect(readme).toContain("Application Default Credentials");
+    expect(readme).not.toContain("gemini-3.1-flash-lite");
+    expect(readme).not.toContain("GEMINI_API_KEY");
+    expect(readme).not.toContain("OPENLARP_AI_PROVIDER=firebase-ai-logic");
+  });
+
   it("uses the controlled Vertex AI defaults with live generation disabled", () => {
     const config = configFromEnvironment({});
 
