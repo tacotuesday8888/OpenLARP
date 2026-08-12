@@ -198,7 +198,7 @@ struct OpenLARPHeroCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(eyebrow.uppercased())
                         .font(.system(.caption, design: .rounded, weight: .black))
-                        .foregroundStyle(.white.opacity(0.78))
+                        .foregroundStyle(.white)
                         .lineLimit(1)
 
                     Text(title)
@@ -224,7 +224,7 @@ struct OpenLARPHeroCard: View {
 
             Text(subtitle)
                 .font(.system(.subheadline, design: .rounded, weight: .bold))
-                .foregroundStyle(.white.opacity(0.86))
+                .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
