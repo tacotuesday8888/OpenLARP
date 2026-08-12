@@ -10,6 +10,7 @@ struct OpenLARPAppStoreFactory {
     private let localPersistence: OpenLARPPersistence
     private let localAttachmentStore: OpenLARPAttachmentStore
     private let localDataStore: OpenLARPLocalDataStore?
+    private let now: () -> Date
     #if OPENLARP_INTERNAL_SERVICES
     private let firebaseBootstrap: FirebaseBootstrap
     private let internalStoreBuilder: InternalStoreBuilder
@@ -20,6 +21,7 @@ struct OpenLARPAppStoreFactory {
         localPersistence: OpenLARPPersistence = .live,
         localAttachmentStore: OpenLARPAttachmentStore = .live,
         localDataStore: OpenLARPLocalDataStore? = nil,
+        now: @escaping () -> Date = { Date() },
         firebaseBootstrap: @escaping FirebaseBootstrap = {
             _ = OpenLARPFirebaseBootstrap.configureIfAvailable()
         },
@@ -28,6 +30,7 @@ struct OpenLARPAppStoreFactory {
         self.localPersistence = localPersistence
         self.localAttachmentStore = localAttachmentStore
         self.localDataStore = localDataStore
+        self.now = now
         self.firebaseBootstrap = firebaseBootstrap
         self.internalStoreBuilder = internalStoreBuilder
     }
@@ -35,11 +38,13 @@ struct OpenLARPAppStoreFactory {
     init(
         localPersistence: OpenLARPPersistence = .live,
         localAttachmentStore: OpenLARPAttachmentStore = .live,
-        localDataStore: OpenLARPLocalDataStore? = nil
+        localDataStore: OpenLARPLocalDataStore? = nil,
+        now: @escaping () -> Date = { Date() }
     ) {
         self.localPersistence = localPersistence
         self.localAttachmentStore = localAttachmentStore
         self.localDataStore = localDataStore
+        self.now = now
     }
     #endif
 
@@ -75,7 +80,8 @@ struct OpenLARPAppStoreFactory {
             accountDeletionService: LocalMockAccountDeletionService(),
             backendSessionProvider: LocalMockBackendSessionProvider(),
             subscriptionService: MockOpenLARPSubscriptionService(),
-            releaseConfiguration: configuration
+            releaseConfiguration: configuration,
+            now: now
         )
     }
 

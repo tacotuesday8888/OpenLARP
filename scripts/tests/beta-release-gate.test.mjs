@@ -272,7 +272,7 @@ jobs:
         run: |
           set -euo pipefail
           UI_RESULT_BUNDLE="\${RUNNER_TEMP}/OpenLARPUIJourney-\${GITHUB_RUN_ID}-\${GITHUB_RUN_ATTEMPT}.xcresult"
-          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARPUIJourney -configuration Debug -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPUIJourneyTests -resultBundlePath "$UI_RESULT_BUNDLE" -only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFirstTruthfulProofLoop test
+          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARPUIJourney -configuration Debug -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPUIJourneyTests -resultBundlePath "$UI_RESULT_BUNDLE" -only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFourteenDaySprintAndStartsAgain test
           export UI_SUMMARY_JSON="$(xcrun xcresulttool get test-results summary --path "$UI_RESULT_BUNDLE" --compact)"
           python3 - <<'PY'
           import json
@@ -668,7 +668,7 @@ describe("beta release gate", () => {
     ["continue-on-error UI journey", "      - name: Run fresh-user UI journey\n", "      - name: Run fresh-user UI journey\n        continue-on-error: true\n"],
     ["UI journey scheme", "-scheme OpenLARPUIJourney", "-scheme OpenLARP"],
     ["UI journey selected simulator", "-scheme OpenLARPUIJourney -configuration Debug -destination \"id=${{ steps.simulator.outputs.device_id }}\"", "-scheme OpenLARPUIJourney -configuration Debug"],
-    ["UI journey named test", "-only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFirstTruthfulProofLoop", ""],
+    ["UI journey named test", "-only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFourteenDaySprintAndStartsAgain", ""],
     ["UI journey result bundle", "-resultBundlePath \"$UI_RESULT_BUNDLE\"", ""],
     ["UI journey exact passed count", '"passedTests": 1', '"passedTests": 0'],
     ["conditional Release contract", "      - name: Run optimized App Store Release contract\n", "      - name: Run optimized App Store Release contract\n        if: success()\n"],

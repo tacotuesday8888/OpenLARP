@@ -201,7 +201,7 @@ struct MissionBriefReviewView: View {
                 firstMilestone: firstMilestone,
                 dailyCommitmentMinutes: dailyCommitmentMinutes,
                 sprintSummary: sprintSummary,
-                editedAt: Date()
+                editedAt: store.currentDate
             )
         } catch {
             validationMessage = "Keep one to four specific gaps, a concrete first milestone, and a short two-chapter sprint description."

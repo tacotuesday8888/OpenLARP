@@ -2620,6 +2620,10 @@ final class OpenLARPStore {
         return "\(activeLocalOwnerKey):\(localOwnerRevision):\(session.ownerUserID)"
     }
 
+    var currentDate: Date {
+        now()
+    }
+
     @discardableResult
     func retryProtectedLocalDataAccess() -> Bool {
         guard isLocalDataAccessBlocked, let localDataStore else { return !isLocalDataAccessBlocked }

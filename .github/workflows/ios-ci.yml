@@ -168,7 +168,7 @@ jobs:
           PY
 
       - name: Run fresh-user UI journey
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           set -euo pipefail
 
@@ -180,7 +180,7 @@ jobs:
             -destination "id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath /tmp/OpenLARPUIJourneyTests \
             -resultBundlePath "$UI_RESULT_BUNDLE" \
-            -only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFirstTruthfulProofLoop \
+            -only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFourteenDaySprintAndStartsAgain \
             test
 
           export UI_SUMMARY_JSON="$(

@@ -532,7 +532,7 @@ function validateWorkflowDefinition(workflow) {
     "steps.simulator.outputs.device_id",
     "OpenLARPUIJourney-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult",
     '-resultBundlePath "$UI_RESULT_BUNDLE"',
-    "-only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFirstTruthfulProofLoop",
+    "-only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFourteenDaySprintAndStartsAgain",
     'xcrun xcresulttool get test-results summary --path "$UI_RESULT_BUNDLE"',
     '"totalTestCount": 1',
     '"passedTests": 1',
