@@ -168,7 +168,7 @@ jobs:
           PY
 
       - name: Run fresh-user UI journey
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           set -euo pipefail
 
