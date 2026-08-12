@@ -152,6 +152,13 @@ describe("firebase-signed-in-smoke guardrails", () => {
     expect(liveReadinessScript).toContain("Account deletion callable rejects unauthenticated requests");
   });
 
+  it("requires the Rich V0 career-state sync callable before reporting cloud readiness", () => {
+    expect(liveReadinessScript).toContain('["syncOpenLARPCareerState", "nodejs22"]');
+    expect(liveReadinessScript).toContain(
+      "Career-state sync callable rejects unauthenticated requests"
+    );
+  });
+
   it("checks live readiness for Firebase App Check registration and enforcement", () => {
     expect(liveReadinessScript).toContain("firebaseappcheck.googleapis.com/v1/projects");
     expect(liveReadinessScript).toContain("X-Goog-User-Project");

@@ -67,6 +67,7 @@ const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const functions = payload.result ?? [];
 const required = new Map([
   ["runOpenLARPWorkflow", "nodejs22"],
+  ["syncOpenLARPCareerState", "nodejs22"],
   ["reconcileProofUploads", "nodejs22"],
   ["promoteProofUploadReceipt", "nodejs22"],
   ["cleanupRevokedPrivateEvidenceUploads", "nodejs22"],
@@ -115,6 +116,26 @@ if (payload.error?.status !== "UNAUTHENTICATED") {
 }
 NODE
 pass "Callable endpoint rejects unauthenticated workflow requests"
+
+career_state_response="$tmp_dir/career-state-response.txt"
+career_state_http_status="$(
+  curl "${curl_read_flags[@]}" -o "$career_state_response" -w '%{http_code}' \
+    -X POST "https://${FUNCTION_REGION}-${PROJECT_ID}.cloudfunctions.net/syncOpenLARPCareerState" \
+    -H 'Content-Type: application/json' \
+    -d '{"data":{"schemaVersion":1}}'
+)"
+if [[ "$career_state_http_status" != "401" ]]; then
+  fail "Unauthenticated career-state sync callable returned HTTP $career_state_http_status instead of 401"
+fi
+node --input-type=module - "$career_state_response" <<'NODE'
+import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (payload.error?.status !== "UNAUTHENTICATED") {
+  throw new Error(`Unexpected career-state sync callable error: ${JSON.stringify(payload)}`);
+}
+NODE
+pass "Career-state sync callable rejects unauthenticated requests"
 
 promotion_response="$tmp_dir/promotion-response.txt"
 promotion_http_status="$(
