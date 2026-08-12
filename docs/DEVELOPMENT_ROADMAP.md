@@ -33,8 +33,8 @@ OpenLARP currently has:
 - Versioned Rich V0 career-state snapshots with authenticated cross-device restore, compare-and-set revisions, explicit conflict choices, local-first failure behavior, and private-evidence consent gates; deployment and signed-in smoke remain pending
 - Backend AI contracts, grounded structured Gemini workflows, post-generation truthfulness checks, a private Cloud Run runtime, authenticated callable dispatch, expiring runtime policy, per-user quota, provider budget ledger, deterministic fallbacks, adversarial evals, and CI/operations gates; deployment and live-development smoke remain pending
 - RevenueCat/subscription contracts and local entitlement state, without live App Store products
-- GitHub Actions CI plus local backend, rules, simulator, and unsigned iOS build validation gates
-- A focused fresh-user UI journey in CI that exercises the public local-only flow from onboarding through mission approval, proof review, XP claim, and tomorrow's state
+- GitHub Actions CI plus local backend, rules, simulator, unsigned local-only Release, and unsigned service-enabled Release build validation gates
+- A focused fresh-user UI journey in CI that exercises the public local-only flow from onboarding through mission approval, all 14 persisted daily proof loops, the Day 7 report and adaptive second chapter, the Day 14 report, and starting another sprint
 - Asynchronous, downsampled proof-image loading for thumbnails and detail previews, with attachment decoding kept out of SwiftUI view rendering
 
 OpenLARP does not yet have:

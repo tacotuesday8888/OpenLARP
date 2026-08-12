@@ -249,6 +249,9 @@ jobs:
       - name: Build unsigned iOS app
         run: |
           xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARP -configuration Release -destination generic/platform=iOS CODE_SIGNING_ALLOWED=NO build
+      - name: Build unsigned service-enabled beta
+        run: |
+          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARPInternal -configuration Release -destination generic/platform=iOS -derivedDataPath /tmp/OpenLARPInternalDerivedDataBuild CODE_SIGNING_ALLOWED=NO build
       - name: Run Debug simulator tests
         run: |
           set -euo pipefail
@@ -428,7 +431,7 @@ const publicTargetBoundaryBlocker = "The App Store target must be isolated from 
 const publicPrivacyBlocker = "The App Store privacy manifest must declare no tracking and no collected data.";
 const publicSchemeBlocker = "The shared OpenLARP scheme must build only the App Store target.";
 const appIconWarning = "A referenced 1024x1024 App Store icon file is still required before submission.";
-const workflowBlocker = "CI workflow must fail closed and execute Debug, fresh-user UI journey, and verified Release contract tests.";
+const workflowBlocker = "CI workflow must fail closed and execute unsigned local and service builds, Debug tests, the fresh-user UI journey, and verified Release contract tests.";
 
 describe("beta release gate", () => {
   it("passes repository-controlled checks while warning about external setup", () => {
@@ -687,6 +690,9 @@ describe("beta release gate", () => {
     ["Release testability query", "-target OpenLARP -configuration Release -showBuildSettings", "-target OpenLARP -configuration Debug -showBuildSettings"],
     ["Release testability assertion", "[ \"$ENABLE_TESTABILITY\" != \"NO\" ]", "[ \"$ENABLE_TESTABILITY\" != \"YES\" ]"],
     ["generic Release build", "-scheme OpenLARP -configuration Release -destination generic/platform=iOS", "-scheme OpenLARP -destination generic/platform=iOS"],
+    ["service-enabled scheme", "-scheme OpenLARPInternal -configuration Release -destination generic/platform=iOS", "-scheme OpenLARP -configuration Release -destination generic/platform=iOS"],
+    ["service-enabled Release configuration", "-scheme OpenLARPInternal -configuration Release", "-scheme OpenLARPInternal -configuration Debug"],
+    ["service-enabled generic destination", "-scheme OpenLARPInternal -configuration Release -destination generic/platform=iOS", "-scheme OpenLARPInternal -configuration Release"],
     ["AI truthfulness evals", "        run: npm run test:evals", "        run: echo skipped-evals"],
     ["production dependency audit", "        run: npm run audit:production", "        run: echo skipped-audit"],
     ["private AI Docker build", "        run: docker build --file backend/ai-service/Dockerfile --tag openlarp-ai-ci .", "        run: echo skipped-container"],
@@ -746,6 +752,11 @@ describe("beta release gate", () => {
       "      - name: Run Debug simulator tests\n        run: |\n          exit 0\n          set -euo pipefail"
     ],
     [
+      "unsigned service-enabled Release build",
+      "      - name: Build unsigned service-enabled beta\n        run: |\n          xcodebuild",
+      "      - name: Build unsigned service-enabled beta\n        run: |\n          exit 0\n          xcodebuild"
+    ],
+    [
       "Release contract",
       "      - name: Run optimized App Store Release contract\n        run: |\n          set -euo pipefail",
       "      - name: Run optimized App Store Release contract\n        run: |\n          exit 0\n          set -euo pipefail"
@@ -784,6 +795,7 @@ describe("beta release gate", () => {
 
   it.each([
     ["unsigned build", "Build unsigned iOS app"],
+    ["unsigned service build", "Build unsigned service-enabled beta"],
     ["Debug tests", "Run Debug simulator tests"],
     ["UI journey", "Run fresh-user UI journey"],
     ["Release contract", "Run optimized App Store Release contract"]
@@ -817,5 +829,14 @@ describe("beta release gate", () => {
       movingWorkflowStepAfter("Run fresh-user UI journey", "Run optimized App Store Release contract"),
       workflowBlocker
     );
+  });
+
+  it("blocks CI without an unsigned service-enabled Release build", () => {
+    const workflow = parse(workflowFixture);
+    workflow.jobs["build-and-test"].steps = workflow.jobs["build-and-test"].steps
+      .filter((step) => step.name !== "Build unsigned service-enabled beta");
+    const files = new Map(completeFiles);
+    files.set(".github/workflows/ios-ci.yml", stringify(workflow));
+    expectBlocker(files, workflowBlocker);
   });
 });

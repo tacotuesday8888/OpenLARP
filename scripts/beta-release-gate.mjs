@@ -46,7 +46,7 @@ const PUBLIC_PRIVACY_BLOCKER =
 const PUBLIC_SCHEME_BLOCKER =
   "The shared OpenLARP scheme must build only the App Store target.";
 const WORKFLOW_BLOCKER =
-  "CI workflow must fail closed and execute Debug, fresh-user UI journey, and verified Release contract tests.";
+  "CI workflow must fail closed and execute unsigned local and service builds, Debug tests, the fresh-user UI journey, and verified Release contract tests.";
 
 function textIncludesAll(text, values) {
   return values.every((value) => text.includes(value));
@@ -406,6 +406,10 @@ function validateWorkflowDefinition(workflow) {
   const projectGeneration = uniqueRequiredStep(steps, "Generate Xcode project");
   const simulator = uniqueRequiredStep(steps, "Select available iPhone simulator");
   const unsignedBuild = uniqueRequiredStep(steps, "Build unsigned iOS app");
+  const unsignedServiceBuild = uniqueRequiredStep(
+    steps,
+    "Build unsigned service-enabled beta"
+  );
   const debugTests = uniqueRequiredStep(steps, "Run Debug simulator tests");
   const uiJourney = uniqueRequiredStep(steps, "Run fresh-user UI journey");
   const releaseContract = uniqueRequiredStep(
@@ -424,7 +428,7 @@ function validateWorkflowDefinition(workflow) {
 
   if (!publicSafety || !betaGate || !backendTests || !truthfulnessEvals ||
       !productionAudit || !backendBuild || !rulesTests ||
-      !projectGeneration || !simulator || !unsignedBuild || !debugTests ||
+      !projectGeneration || !simulator || !unsignedBuild || !unsignedServiceBuild || !debugTests ||
       !uiJourney || !releaseContract || !containerBuild || !containerSmoke || Object.hasOwn(containerJob, "if") ||
       Object.hasOwn(containerJob, "continue-on-error")) {
     return false;
@@ -433,11 +437,13 @@ function validateWorkflowDefinition(workflow) {
   const projectGenerationIndex = steps.indexOf(projectGeneration);
   const simulatorIndex = steps.indexOf(simulator);
   const unsignedBuildIndex = steps.indexOf(unsignedBuild);
+  const unsignedServiceBuildIndex = steps.indexOf(unsignedServiceBuild);
   const debugTestsIndex = steps.indexOf(debugTests);
   const uiJourneyIndex = steps.indexOf(uiJourney);
   const releaseContractIndex = steps.indexOf(releaseContract);
   const requiredStepOrderValid =
     projectGenerationIndex < unsignedBuildIndex &&
+    projectGenerationIndex < unsignedServiceBuildIndex &&
     projectGenerationIndex < debugTestsIndex &&
     projectGenerationIndex < uiJourneyIndex &&
     projectGenerationIndex < releaseContractIndex &&
@@ -469,6 +475,20 @@ function validateWorkflowDefinition(workflow) {
     "-scheme OpenLARP",
     "-configuration Release",
     "-destination generic/platform=iOS",
+    "CODE_SIGNING_ALLOWED=NO",
+    "build"
+    ]);
+
+  const unsignedServiceBuildScript = unsignedServiceBuild.run;
+  const unsignedServiceBuildRun = normalizedShell(unsignedServiceBuildScript);
+  const unsignedServiceReleaseBuild =
+    hasCanonicalShellContract(unsignedServiceBuildScript, /^xcodebuild(?:\s|$)/) &&
+    textIncludesAll(unsignedServiceBuildRun, [
+    "-project OpenLARP.xcodeproj",
+    "-scheme OpenLARPInternal",
+    "-configuration Release",
+    "-destination generic/platform=iOS",
+    "-derivedDataPath /tmp/OpenLARPInternalDerivedDataBuild",
     "CODE_SIGNING_ALLOWED=NO",
     "build"
     ]);
@@ -562,6 +582,7 @@ function validateWorkflowDefinition(workflow) {
   );
 
   return requiredCommandsValid && simulatorFailsClosed && unsignedReleaseBuild &&
+    unsignedServiceReleaseBuild &&
     debugSuite && uiJourneyVerified && releaseContractVerified &&
     requiredStepOrderValid && !hasSkipStep;
 }
@@ -696,7 +717,7 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   if (workflowText) {
     const workflow = parseYaml(workflowText);
     if (workflow && validateWorkflowDefinition(workflow)) {
-      addResult(results, "pass", "CI fails closed and verifies Debug, the fresh-user UI journey, and the optimized App Store Release contract.");
+      addResult(results, "pass", "CI fails closed and verifies unsigned local and service builds, Debug tests, the fresh-user UI journey, and the optimized App Store Release contract.");
     } else {
       addResult(results, "blocker", WORKFLOW_BLOCKER);
     }
