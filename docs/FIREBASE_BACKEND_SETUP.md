@@ -142,7 +142,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Firestore rules are deployed to `openlarp-dev-langqi`.
 - Firebase Storage is initialized for `openlarp-dev-langqi` with the default bucket `openlarp-dev-langqi.firebasestorage.app` in `US-CENTRAL1`.
 - Storage rules are deployed to `openlarp-dev-langqi`.
-- The Firebase CLI environment has been authenticated locally, billing is enabled on `openlarp-dev-langqi`, and the iOS app `com.openlarp.app` exists in the Firebase project.
+- The Firebase CLI environment is authenticated locally and the iOS app `com.openlarp.app` exists in `openlarp-dev-langqi`. Project billing is currently disabled, so new Gen 2/Cloud Run deployment and live Gemini verification remain blocked until the owner explicitly enables billing.
 - Security rules validate through Firebase MCP.
 - Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, private evidence sync consent gates, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22. `runOpenLARPWorkflow` is the callable AI workflow boundary, `syncOpenLARPCareerState` is the transactional Rich V0 snapshot boundary, `setPrivateEvidenceCloudSyncConsent` is the server-owned private evidence consent boundary, `promoteProofUploadReceipt` is the server-trusted proof receipt boundary, `reconcileProofUploads` is the conservative orphan repair/report boundary, `acknowledgeBackendEvents` is the server-owned backend event acknowledgement boundary, and `deleteOpenLARPAccount` is the server-owned account deletion boundary.
@@ -159,7 +159,7 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - iOS App Check provider scaffolding is linked and configured, but Firebase product enforcement is still off until console registration, debug token handling, metrics, and signed-in simulator/device checks are complete.
 - The existing `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and `deleteOpenLARPAccount` deployment is active in `us-central1` with Node.js 22 and deterministic AI behavior. `syncOpenLARPCareerState` and the updated private-service dispatch implementation remain local-only until their reviewed branches are deployed.
 - The deployed `runOpenLARPWorkflow` callable is reachable and rejects unsigned requests with `UNAUTHENTICATED`, which confirms the auth boundary is active.
-- `npm run firebase:signed-in-smoke` creates a temporary Firebase Auth smoke user through a local Admin custom token, first verifies that Firestore and Storage App Check enforcement are still off for this no-App-Check-token CLI path, calls the live workflow/proof/event callables as that signed-in user, validates Storage and Firestore side effects, and deletes its temporary Auth, Storage, Firestore, and quota data.
+- `npm run firebase:signed-in-smoke` creates a temporary Firebase Auth smoke user through a local Admin custom token, first verifies that Firestore and Storage App Check enforcement are still off for this no-App-Check-token CLI path, proves career-state upload/restore/conflict resolution plus the live workflow/proof/event callables as that signed-in user, validates Storage and Firestore side effects, and deletes its temporary Auth, Storage, Firestore, and quota data.
 - Artifact Registry cleanup policies are installed for the Functions `gcf-artifacts` repository in `us-central1`: delete artifacts older than 7 days while keeping the most recent 5 versions.
 - Google Sign-In is enabled in Firebase Auth for `openlarp-dev-langqi`.
 - A fresh Firebase iOS SDK config can be retrieved by CLI and now includes `CLIENT_ID` and `REVERSED_CLIENT_ID`. The ignored local `OpenLARP/GoogleService-Info.plist` has been refreshed on this workstation.
@@ -248,6 +248,7 @@ The check uses a temporary Firebase Auth user and does not print ID tokens, API 
 
 - local Admin credentials can mint a Firebase custom token for a temporary smoke UID
 - the temporary ID token is accepted by `runOpenLARPWorkflow`
+- `syncOpenLARPCareerState` uploads revision one, restores it onto an empty-device payload, refuses to silently overwrite a conflicting first-use payload, and honors explicit keep-local/use-cloud resolution
 - the live proof Storage bucket accepts a temporary proof object written through a signed-in Firebase client session
 - `setPrivateEvidenceCloudSyncConsent` records accepted consent before private proof bytes or metadata sync
 - `promoteProofUploadReceipt` verifies that object and writes the server receipt
