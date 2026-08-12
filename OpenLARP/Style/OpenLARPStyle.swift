@@ -229,7 +229,13 @@ struct OpenLARPHeroCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: feature.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(
+            LinearGradient(
+                colors: [feature.shadow, Color.openLARPInk],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: feature.shadow.opacity(0.34), radius: 0, x: 0, y: 8)
     }
