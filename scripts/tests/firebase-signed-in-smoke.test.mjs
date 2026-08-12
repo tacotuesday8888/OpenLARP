@@ -111,6 +111,17 @@ describe("firebase-signed-in-smoke guardrails", () => {
     expect(script).not.toContain("exchangeCustomToken");
   });
 
+  it("exercises Rich V0 career-state upload, restore, conflict, and explicit resolution", () => {
+    expect(script).toContain("await smokeCareerStateSync(idToken)");
+    expect(script).toContain('callCallable("syncOpenLARPCareerState"');
+    expect(script).toContain('status === "uploaded"');
+    expect(script).toContain('status === "restored"');
+    expect(script).toContain('status === "conflict"');
+    expect(script).toContain('action: "keepLocal"');
+    expect(script).toContain('action: "useCloud"');
+    expect(script).toContain("careerState/current");
+  });
+
   it("keeps signed-in smoke payloads current with private evidence consent contracts", () => {
     expect(script).toContain("allowsPrivateEvidenceCloudSync: false");
     expect(script).toContain('consentTextVersion: "private-evidence-cloud-sync-v1"');
