@@ -433,7 +433,8 @@ struct TodayView: View {
                 detail: "OpenLARP will summarize the stored counters and readiness, then build days 8–14 from evidence metadata only.",
                 report: store.state.activeSprint?.reports.last,
                 actionTitle: "Build Chapter Two",
-                isWorking: store.isSprintTransitionRunning
+                isWorking: store.isSprintTransitionRunning,
+                actionIdentifier: "sprint.chapterOneReview.action"
             ) {
                 Task { await store.continueToChapterTwo() }
             }
@@ -445,7 +446,8 @@ struct TodayView: View {
                 detail: "Create a durable report from your completed quests, proof receipts, outcomes, and readiness change.",
                 report: store.state.activeSprint?.reports.last,
                 actionTitle: "Create Sprint Report",
-                isWorking: store.isSprintTransitionRunning
+                isWorking: store.isSprintTransitionRunning,
+                actionIdentifier: "sprint.finalReview.action"
             ) {
                 Task { await store.completeSprintReview() }
             }
@@ -458,12 +460,25 @@ struct TodayView: View {
                 report: store.state.activeSprint?.reports.last,
                 actionTitle: "Start Another Sprint",
                 isWorking: store.isSprintTransitionRunning,
+                actionIdentifier: "sprint.completed.action",
                 secondaryActionTitle: "Adjust Goal",
                 secondaryAction: { store.resetGoal() }
             ) {
                 Task { await store.startAnotherSprint() }
             }
-        case .chapterOne, .chapterTwo:
+        case .chapterTwo:
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Next quest unlocks on your daily cadence")
+                        .font(.headline)
+                        .foregroundStyle(Color.openLARPInk)
+                    Text("Return tomorrow. Your completed work and proof receipts are already saved.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                }
+            }
+            .accessibilityIdentifier("sprint.chapterTwo.waiting")
+        case .chapterOne:
             Card {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Next quest unlocks on your daily cadence")
@@ -847,6 +862,7 @@ private struct SprintReviewCard: View {
     let report: CareerSprintCheckpointReport?
     let actionTitle: String
     let isWorking: Bool
+    let actionIdentifier: String
     var secondaryActionTitle: String?
     var secondaryAction: (() -> Void)?
     let action: () -> Void
@@ -911,6 +927,7 @@ private struct SprintReviewCard: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(isWorking)
+                .accessibilityIdentifier(actionIdentifier)
 
                 if let secondaryActionTitle, let secondaryAction {
                     Button(secondaryActionTitle, action: secondaryAction)
