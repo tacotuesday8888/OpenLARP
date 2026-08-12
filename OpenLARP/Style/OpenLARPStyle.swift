@@ -197,12 +197,12 @@ struct OpenLARPHeroCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(eyebrow.uppercased())
-                        .font(.system(size: 12, weight: .black, design: .rounded))
+                        .font(.system(.caption, design: .rounded, weight: .black))
                         .foregroundStyle(.white.opacity(0.78))
                         .lineLimit(1)
 
                     Text(title)
-                        .font(.system(size: 27, weight: .black, design: .rounded))
+                        .font(.system(.title2, design: .rounded, weight: .black))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                         .minimumScaleFactor(0.78)
@@ -211,7 +211,7 @@ struct OpenLARPHeroCard: View {
                 Spacer(minLength: 8)
 
                 Text(stat)
-                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .font(.system(.caption, design: .rounded, weight: .black))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
@@ -223,7 +223,7 @@ struct OpenLARPHeroCard: View {
             }
 
             Text(subtitle)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .font(.system(.subheadline, design: .rounded, weight: .bold))
                 .foregroundStyle(.white.opacity(0.86))
                 .fixedSize(horizontal: false, vertical: true)
         }
