@@ -61,7 +61,7 @@ struct Pill: View {
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .black, design: .rounded))
+            .font(.system(.subheadline, design: .rounded, weight: .black))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
@@ -75,7 +75,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .black, design: .rounded))
+            .font(.system(.subheadline, design: .rounded, weight: .black))
             .foregroundStyle(Color.openLARPBlueDark)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
@@ -252,12 +252,12 @@ struct SectionHeader: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(eyebrow.uppercased())
-                    .font(.system(size: 10, weight: .black, design: .rounded))
+                    .font(.system(.caption2, design: .rounded, weight: .black))
                     .foregroundStyle(feature.accent)
                     .lineLimit(1)
 
                 Text(title)
-                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .font(.system(.headline, design: .rounded, weight: .black))
                     .foregroundStyle(Color.openLARPInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -273,13 +273,13 @@ struct SummaryTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.system(size: 17, weight: .black, design: .rounded))
+                .font(.system(.headline, design: .rounded, weight: .black))
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
 
             Text(label)
-                .font(.system(size: 10, weight: .black, design: .rounded))
+                .font(.system(.caption2, design: .rounded, weight: .black))
                 .foregroundStyle(Color.openLARPInk)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
@@ -358,7 +358,7 @@ struct ReadinessRings: View {
                 .rotationEffect(.degrees(-90))
 
             Text("\(value)")
-                .font(.system(size: 34, weight: .black, design: .rounded))
+                .font(.system(.largeTitle, design: .rounded, weight: .black))
                 .foregroundStyle(Color.openLARPBlueDark)
         }
         .frame(width: 142, height: 142)

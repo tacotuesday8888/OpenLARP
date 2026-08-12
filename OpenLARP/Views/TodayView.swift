@@ -257,7 +257,7 @@ struct TodayView: View {
                             SectionHeader(feature: .cooked, eyebrow: content.eyebrow, title: "The roast report")
 
                             Text(content.title)
-                                .font(.system(size: 34, weight: .black, design: .rounded))
+                                .font(.system(.largeTitle, design: .rounded, weight: .black))
                                 .foregroundStyle(Color.openLARPCoral)
                         }
 
@@ -967,7 +967,7 @@ private struct DiagnosticResultBridgeView: View {
                                     SectionHeader(feature: .cooked, eyebrow: content.eyebrow, title: "The roast report")
 
                                     Text(content.title)
-                                        .font(.system(size: 40, weight: .black, design: .rounded))
+                                        .font(.system(.largeTitle, design: .rounded, weight: .black))
                                         .foregroundStyle(Color.openLARPCoral)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
