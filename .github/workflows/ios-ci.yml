@@ -220,6 +220,48 @@ jobs:
               sys.exit(1)
           PY
 
+      - name: Run accessibility audit
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+
+          ACCESSIBILITY_RESULT_BUNDLE="${RUNNER_TEMP}/OpenLARPAccessibility-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult"
+          xcodebuild \
+            -project OpenLARP.xcodeproj \
+            -scheme OpenLARPUIJourney \
+            -configuration Debug \
+            -destination "id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath /tmp/OpenLARPUIJourneyTests \
+            -resultBundlePath "$ACCESSIBILITY_RESULT_BUNDLE" \
+            -only-testing:OpenLARPUITests/OpenLARPAccessibilityAuditTests/testCoreCareerJourneyPassesAccessibilityAudit \
+            test
+
+          export ACCESSIBILITY_SUMMARY_JSON="$(
+            xcrun xcresulttool get test-results summary \
+              --path "$ACCESSIBILITY_RESULT_BUNDLE" \
+              --compact
+          )"
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          summary = json.loads(os.environ["ACCESSIBILITY_SUMMARY_JSON"])
+          expected = {
+              "totalTestCount": 1,
+              "passedTests": 1,
+              "failedTests": 0,
+              "skippedTests": 0,
+          }
+          actual = {key: summary.get(key) for key in expected}
+          if actual != expected:
+              print(
+                  f"::error::Accessibility audit test count mismatch: {actual}",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
+
       - name: Run optimized App Store Release contract
         timeout-minutes: 20
         run: |

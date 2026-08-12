@@ -293,6 +293,28 @@ jobs:
               print(f"::error::UI journey test count mismatch: {actual}", file=sys.stderr)
               sys.exit(1)
           PY
+      - name: Run accessibility audit
+        run: |
+          set -euo pipefail
+          ACCESSIBILITY_RESULT_BUNDLE="\${RUNNER_TEMP}/OpenLARPAccessibility-\${GITHUB_RUN_ID}-\${GITHUB_RUN_ATTEMPT}.xcresult"
+          xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARPUIJourney -configuration Debug -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPUIJourneyTests -resultBundlePath "$ACCESSIBILITY_RESULT_BUNDLE" -only-testing:OpenLARPUITests/OpenLARPAccessibilityAuditTests/testCoreCareerJourneyPassesAccessibilityAudit test
+          export ACCESSIBILITY_SUMMARY_JSON="$(xcrun xcresulttool get test-results summary --path "$ACCESSIBILITY_RESULT_BUNDLE" --compact)"
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          summary = json.loads(os.environ["ACCESSIBILITY_SUMMARY_JSON"])
+          expected = {
+              "totalTestCount": 1,
+              "passedTests": 1,
+              "failedTests": 0,
+              "skippedTests": 0,
+          }
+          actual = {key: summary.get(key) for key in expected}
+          if actual != expected:
+              print(f"::error::Accessibility audit test count mismatch: {actual}", file=sys.stderr)
+              sys.exit(1)
+          PY
       - name: Run optimized App Store Release contract
         run: |
           set -euo pipefail
@@ -370,6 +392,7 @@ const completeFiles = new Map([
   ["OpenLARP/Models/OpenLARPReleaseConfiguration.swift", "release configuration"],
   ["OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift", "presentation policy"],
   ["OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift", "release snapshot"],
+  ["OpenLARPUITests/OpenLARPAccessibilityAuditTests.swift", "accessibility audit"],
   ["OpenLARPUITests/OpenLARPFreshUserJourneyTests.swift", "fresh-user UI journey"],
   ["OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift", "ordinary import contract"],
   ["OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme", publicSchemeFixture],
@@ -431,7 +454,7 @@ const publicTargetBoundaryBlocker = "The App Store target must be isolated from 
 const publicPrivacyBlocker = "The App Store privacy manifest must declare no tracking and no collected data.";
 const publicSchemeBlocker = "The shared OpenLARP scheme must build only the App Store target.";
 const appIconWarning = "A referenced 1024x1024 App Store icon file is still required before submission.";
-const workflowBlocker = "CI workflow must fail closed and execute unsigned local and service builds, Debug tests, the fresh-user UI journey, and verified Release contract tests.";
+const workflowBlocker = "CI workflow must fail closed and execute unsigned local and service builds, Debug tests, the fresh-user UI journey, the accessibility audit, and verified Release contract tests.";
 
 describe("beta release gate", () => {
   it("passes repository-controlled checks while warning about external setup", () => {
@@ -838,5 +861,24 @@ describe("beta release gate", () => {
     const files = new Map(completeFiles);
     files.set(".github/workflows/ios-ci.yml", stringify(workflow));
     expectBlocker(files, workflowBlocker);
+  });
+
+  it("blocks CI without an automated accessibility audit", () => {
+    const workflow = parse(workflowFixture);
+    workflow.jobs["build-and-test"].steps = workflow.jobs["build-and-test"].steps
+      .filter((step) => step.name !== "Run accessibility audit");
+    const files = new Map(completeFiles);
+    files.set(".github/workflows/ios-ci.yml", stringify(workflow));
+    expectBlocker(files, workflowBlocker);
+  });
+
+  it("blocks a missing accessibility audit test source", () => {
+    const files = new Map(completeFiles);
+    files.delete("OpenLARPUITests/OpenLARPAccessibilityAuditTests.swift");
+
+    expectBlocker(
+      files,
+      "Missing required beta readiness file: OpenLARPUITests/OpenLARPAccessibilityAuditTests.swift"
+    );
   });
 });

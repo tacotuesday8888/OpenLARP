@@ -19,6 +19,7 @@ const REQUIRED_FILES = [
   "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
   "OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift",
   "OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift",
+  "OpenLARPUITests/OpenLARPAccessibilityAuditTests.swift",
   "OpenLARPUITests/OpenLARPFreshUserJourneyTests.swift",
   "OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift",
   "OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme",
@@ -46,7 +47,7 @@ const PUBLIC_PRIVACY_BLOCKER =
 const PUBLIC_SCHEME_BLOCKER =
   "The shared OpenLARP scheme must build only the App Store target.";
 const WORKFLOW_BLOCKER =
-  "CI workflow must fail closed and execute unsigned local and service builds, Debug tests, the fresh-user UI journey, and verified Release contract tests.";
+  "CI workflow must fail closed and execute unsigned local and service builds, Debug tests, the fresh-user UI journey, the accessibility audit, and verified Release contract tests.";
 
 function textIncludesAll(text, values) {
   return values.every((value) => text.includes(value));
@@ -412,6 +413,10 @@ function validateWorkflowDefinition(workflow) {
   );
   const debugTests = uniqueRequiredStep(steps, "Run Debug simulator tests");
   const uiJourney = uniqueRequiredStep(steps, "Run fresh-user UI journey");
+  const accessibilityAudit = uniqueRequiredStep(
+    steps,
+    "Run accessibility audit"
+  );
   const releaseContract = uniqueRequiredStep(
     steps,
     "Run optimized App Store Release contract"
@@ -428,8 +433,10 @@ function validateWorkflowDefinition(workflow) {
 
   if (!publicSafety || !betaGate || !backendTests || !truthfulnessEvals ||
       !productionAudit || !backendBuild || !rulesTests ||
-      !projectGeneration || !simulator || !unsignedBuild || !unsignedServiceBuild || !debugTests ||
-      !uiJourney || !releaseContract || !containerBuild || !containerSmoke || Object.hasOwn(containerJob, "if") ||
+      !projectGeneration || !simulator || !unsignedBuild ||
+      !unsignedServiceBuild || !debugTests || !uiJourney ||
+      !accessibilityAudit || !releaseContract || !containerBuild ||
+      !containerSmoke || Object.hasOwn(containerJob, "if") ||
       Object.hasOwn(containerJob, "continue-on-error")) {
     return false;
   }
@@ -440,17 +447,21 @@ function validateWorkflowDefinition(workflow) {
   const unsignedServiceBuildIndex = steps.indexOf(unsignedServiceBuild);
   const debugTestsIndex = steps.indexOf(debugTests);
   const uiJourneyIndex = steps.indexOf(uiJourney);
+  const accessibilityAuditIndex = steps.indexOf(accessibilityAudit);
   const releaseContractIndex = steps.indexOf(releaseContract);
   const requiredStepOrderValid =
     projectGenerationIndex < unsignedBuildIndex &&
     projectGenerationIndex < unsignedServiceBuildIndex &&
     projectGenerationIndex < debugTestsIndex &&
     projectGenerationIndex < uiJourneyIndex &&
+    projectGenerationIndex < accessibilityAuditIndex &&
     projectGenerationIndex < releaseContractIndex &&
     simulatorIndex < debugTestsIndex &&
     simulatorIndex < uiJourneyIndex &&
+    simulatorIndex < accessibilityAuditIndex &&
     debugTestsIndex < uiJourneyIndex &&
-    uiJourneyIndex < releaseContractIndex &&
+    uiJourneyIndex < accessibilityAuditIndex &&
+    accessibilityAuditIndex < releaseContractIndex &&
     simulatorIndex < releaseContractIndex;
 
   const simulatorRun = simulator.run;
@@ -563,6 +574,29 @@ function validateWorkflowDefinition(workflow) {
     "test"
     ]) && !uiJourneyScript.includes("rm -rf");
 
+  const accessibilityAuditScript = accessibilityAudit.run;
+  const normalizedAccessibilityAudit = normalizedShell(accessibilityAuditScript);
+  const accessibilityAuditVerified =
+    hasCanonicalShellContract(accessibilityAuditScript, /^set -euo pipefail$/) &&
+    textIncludesAll(normalizedAccessibilityAudit, [
+    "set -euo pipefail",
+    "-project OpenLARP.xcodeproj",
+    "-scheme OpenLARPUIJourney",
+    "-configuration Debug",
+    "steps.simulator.outputs.device_id",
+    "OpenLARPAccessibility-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult",
+    '-resultBundlePath "$ACCESSIBILITY_RESULT_BUNDLE"',
+    "-only-testing:OpenLARPUITests/OpenLARPAccessibilityAuditTests/testCoreCareerJourneyPassesAccessibilityAudit",
+    'xcrun xcresulttool get test-results summary --path "$ACCESSIBILITY_RESULT_BUNDLE"',
+    '"totalTestCount": 1',
+    '"passedTests": 1',
+    '"failedTests": 0',
+    '"skippedTests": 0',
+    "actual != expected",
+    "sys.exit(1)",
+    "test"
+    ]) && !accessibilityAuditScript.includes("rm -rf");
+
   const requiredCommandsValid =
     publicSafety.run.trim() === "npm run public:safety" &&
     betaGate.run.trim() === "npm run beta:gate" &&
@@ -581,10 +615,10 @@ function validateWorkflowDefinition(workflow) {
     typeof step?.name === "string" && step.name.toLowerCase().includes("skipped simulator")
   );
 
-  return requiredCommandsValid && simulatorFailsClosed && unsignedReleaseBuild &&
-    unsignedServiceReleaseBuild &&
-    debugSuite && uiJourneyVerified && releaseContractVerified &&
-    requiredStepOrderValid && !hasSkipStep;
+  return requiredCommandsValid && simulatorFailsClosed &&
+    unsignedReleaseBuild && unsignedServiceReleaseBuild && debugSuite &&
+    uiJourneyVerified && accessibilityAuditVerified &&
+    releaseContractVerified && requiredStepOrderValid && !hasSkipStep;
 }
 
 export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists = existsSync) {
@@ -717,7 +751,7 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   if (workflowText) {
     const workflow = parseYaml(workflowText);
     if (workflow && validateWorkflowDefinition(workflow)) {
-      addResult(results, "pass", "CI fails closed and verifies unsigned local and service builds, Debug tests, the fresh-user UI journey, and the optimized App Store Release contract.");
+      addResult(results, "pass", "CI fails closed and verifies unsigned local and service builds, Debug tests, the fresh-user UI journey, the accessibility audit, and the optimized App Store Release contract.");
     } else {
       addResult(results, "blocker", WORKFLOW_BLOCKER);
     }
