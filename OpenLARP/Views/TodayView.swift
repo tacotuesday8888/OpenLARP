@@ -324,9 +324,15 @@ struct TodayView: View {
             MissedDayRecoveryCard(content: recovery) {
                 store.startCurrentQuest()
             }
-        } else if let skipped = SkippedTodayContent(state: store.state) {
+        } else if let skipped = SkippedTodayContent(
+            state: store.state,
+            now: store.currentDate
+        ) {
             SkippedTodayCard(content: skipped)
-        } else if let completion = TodayCompletionContent(state: store.state) {
+        } else if let completion = TodayCompletionContent(
+            state: store.state,
+            now: store.currentDate
+        ) {
             VStack(spacing: 12) {
                 DoneForTodayCard(
                     content: completion,
