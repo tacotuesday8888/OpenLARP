@@ -7,6 +7,10 @@ struct QuestMapView: View {
     let viewToday: () -> Void
     @State private var selectedSheet: MapQuestSheet?
 
+    private var journeyContent: QuestJourneyContent {
+        QuestJourneyContent(plan: state.plan, sprint: state.activeSprint)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -58,26 +62,17 @@ struct QuestMapView: View {
                         }
                     }
 
-                    VStack(spacing: 12) {
-                        ForEach(state.plan) { quest in
-                            if quest.day == 1 || quest.day == 8 {
-                                HStack {
-                                    Text(quest.day == 1 ? "Chapter One · Build proof" : "Chapter Two · Apply proof")
-                                        .font(.caption.weight(.black))
-                                        .foregroundStyle(Color.openLARPSoftInk)
-                                        .textCase(.uppercase)
-                                    Spacer()
-                                }
-                                .padding(.top, quest.day == 1 ? 0 : 8)
-                            }
-                            QuestDayRow(
-                                quest: quest,
-                                openCompletedQuest: {
+                    VStack(spacing: 24) {
+                        ForEach(journeyContent.chapters) { chapter in
+                            QuestJourneyChapterSection(
+                                chapter: chapter,
+                                openCompletedQuest: { quest in
                                     selectedSheet = .completed(quest)
                                 },
-                                openPreviewQuest: {
+                                openPreviewQuest: { quest in
                                     selectedSheet = .preview(quest)
-                                }
+                                },
+                                openReview: viewToday
                             )
                         }
                     }
@@ -100,6 +95,152 @@ struct QuestMapView: View {
                 )
             case .preview(let quest):
                 QuestPreviewView(quest: quest, openToday: viewToday)
+            }
+        }
+    }
+}
+
+private struct QuestJourneyChapterSection: View {
+    let chapter: QuestJourneyChapter
+    let openCompletedQuest: (Quest) -> Void
+    let openPreviewQuest: (Quest) -> Void
+    let openReview: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            QuestJourneyChapterHeader(chapter: chapter)
+
+            if let lockedExplanation = chapter.lockedExplanation {
+                Card {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(Color.openLARPBlue)
+                            .frame(width: 32, height: 32)
+                            .background(Color.openLARPBlue.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Adaptive chapter")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(Color.openLARPInk)
+                            Text(lockedExplanation)
+                                .font(.subheadline)
+                                .foregroundStyle(Color.openLARPSoftInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            } else {
+                ForEach(chapter.quests) { quest in
+                    QuestDayRow(
+                        quest: quest,
+                        openCompletedQuest: { openCompletedQuest(quest) },
+                        openPreviewQuest: { openPreviewQuest(quest) }
+                    )
+                }
+            }
+
+            QuestJourneyMilestoneCard(milestone: chapter.milestone, openReview: openReview)
+        }
+    }
+}
+
+private struct QuestJourneyChapterHeader: View {
+    let chapter: QuestJourneyChapter
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text("Chapter \(chapter.number) · \(chapter.questRangeText)")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .textCase(.uppercase)
+
+                    Spacer()
+
+                    Text(chapter.status.label)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(chapter.status.color)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(chapter.status.color.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(chapter.title)
+                        .font(.title3.weight(.black))
+                        .foregroundStyle(Color.openLARPInk)
+                    Text(chapter.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !chapter.focusGaps.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 7) {
+                            ForEach(chapter.focusGaps) { gap in
+                                Label(gap.title, systemImage: "scope")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.openLARPGreen)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 6)
+                                    .background(Color.openLARPGreen.opacity(0.10))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    ProgressView(
+                        value: Double(chapter.completedQuestCount),
+                        total: Double(chapter.totalQuestCount)
+                    )
+                    .tint(chapter.status.color)
+
+                    Text("\(chapter.completedQuestCount)/\(chapter.totalQuestCount) actions")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.openLARPSoftInk)
+                }
+            }
+        }
+    }
+}
+
+private struct QuestJourneyMilestoneCard: View {
+    let milestone: QuestJourneyMilestone
+    let openReview: () -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: milestone.state.systemImage)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(milestone.state.color)
+                        .frame(width: 38, height: 38)
+                        .background(milestone.state.color.opacity(0.12))
+                        .clipShape(Circle())
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(milestone.title)
+                            .font(.headline)
+                            .foregroundStyle(Color.openLARPInk)
+                        Text(milestone.detail)
+                            .font(.subheadline)
+                            .foregroundStyle(Color.openLARPSoftInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if milestone.state == .ready {
+                    Button("Open review", action: openReview)
+                        .buttonStyle(PrimaryButtonStyle())
+                }
             }
         }
     }
@@ -150,11 +291,24 @@ private struct QuestDayRow: View {
                 VStack(alignment: .leading, spacing: 8) {
                     titleRow
 
-                    Text(quest.gap.title)
+                    Text(quest.purpose)
                         .font(.subheadline)
                         .foregroundStyle(Color.openLARPSoftInk)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 10) {
+                        Label(quest.timeEstimate, systemImage: "timer")
+                        Label(quest.difficulty, systemImage: "gauge.with.dots.needle.50percent")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPSoftInk)
 
                     HStack {
+                        Label(quest.gap.title, systemImage: "scope")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.openLARPBlue)
+
                         Text("+\(quest.xpReward) XP")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(Color.openLARPGreen)
@@ -220,6 +374,44 @@ private struct QuestDayRow: View {
             "Opens quest preview"
         case .locked, .skipped:
             ""
+        }
+    }
+}
+
+private extension QuestJourneyChapterStatus {
+    var label: String {
+        switch self {
+        case .active: "In progress"
+        case .locked: "Adapts later"
+        case .reviewReady: "Review ready"
+        case .complete: "Complete"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .active: .openLARPCoral
+        case .locked: .openLARPGray
+        case .reviewReady: .openLARPYellow
+        case .complete: .openLARPGreen
+        }
+    }
+}
+
+private extension QuestJourneyMilestoneState {
+    var color: Color {
+        switch self {
+        case .locked: .openLARPGray
+        case .ready: .openLARPYellow
+        case .complete: .openLARPGreen
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .locked: "lock.fill"
+        case .ready: "flag.checkered"
+        case .complete: "checkmark.seal.fill"
         }
     }
 }
