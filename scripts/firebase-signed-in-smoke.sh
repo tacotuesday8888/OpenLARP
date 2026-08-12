@@ -204,6 +204,7 @@ try {
   pass("Created temporary Firebase Auth smoke session");
 
   await smokeWorkflow(idToken);
+  await smokeCareerStateSync(idToken);
   await smokeProofPromotionAndReconciliation(idToken);
   await smokeBackendEventAcknowledgement(idToken);
   await smokeAccountDeletion(idToken);
@@ -263,6 +264,109 @@ async function smokeWorkflow(idToken) {
   assert(result.liveModelCallsEnabled === false, "workflow should keep live model calls disabled");
   assert(result.externalActionTaken === false, "workflow should not take external actions");
   pass("Signed-in workflow callable returned deterministic diagnostic");
+}
+
+async function smokeCareerStateSync(idToken) {
+  const initialPayload = careerStatePayload("initial-device-state");
+  const uploaded = await callCallable("syncOpenLARPCareerState", idToken, {
+    schemaVersion: 1,
+    action: "reconcile",
+    requestedAt: now.toISOString(),
+    hasMeaningfulLocalData: true,
+    payload: initialPayload
+  });
+  assert(uploaded.ok === true, "career-state upload did not return ok=true");
+  assert(uploaded.userID === uid, "career-state upload response userID did not match");
+  assert(uploaded.status === "uploaded", "career-state upload did not report uploaded");
+  assert(uploaded.revision === 1, "career-state upload did not create revision one");
+  assert(uploaded.didWrite === true, "career-state upload did not report its write");
+  assert(uploaded.externalActionTaken === false, "career-state upload reported an external action");
+
+  const snapshot = await withTransientRetry(
+    "signed-in Firestore career-state read",
+    () => clientGetDoc(clientDoc(clientFirestore, `users/${uid}/careerState/current`))
+  );
+  assert(snapshot.exists(), "signed-in Firestore read did not return the career-state snapshot");
+  assert(snapshot.data()?.ownerUserID === uid, "career-state snapshot owner did not match");
+  assert(snapshot.data()?.revision === 1, "career-state snapshot revision did not match");
+  assert(snapshot.data()?.payload?.state?.marker === "initial-device-state", "career-state snapshot payload changed");
+
+  const restored = await callCallable("syncOpenLARPCareerState", idToken, {
+    schemaVersion: 1,
+    action: "reconcile",
+    requestedAt: now.toISOString(),
+    hasMeaningfulLocalData: false,
+    payload: careerStatePayload("empty-device-state")
+  });
+  assert(restored.ok === true, "career-state restore did not return ok=true");
+  assert(restored.status === "restored", "career-state restore did not report restored");
+  assert(restored.revision === 1, "career-state restore returned an unexpected revision");
+  assert(restored.cloudPayload?.state?.marker === "initial-device-state", "career-state restore changed cloud data");
+  assert(restored.didWrite === false, "career-state restore unexpectedly wrote cloud data");
+
+  const replacementPayload = careerStatePayload("explicit-device-replacement");
+  const conflict = await callCallable("syncOpenLARPCareerState", idToken, {
+    schemaVersion: 1,
+    action: "reconcile",
+    requestedAt: now.toISOString(),
+    hasMeaningfulLocalData: true,
+    payload: replacementPayload
+  });
+  assert(conflict.ok === true, "career-state conflict did not return ok=true");
+  assert(conflict.status === "conflict", "career-state mismatch did not report conflict");
+  assert(conflict.revision === 1, "career-state conflict returned an unexpected revision");
+  assert(conflict.cloudPayload?.state?.marker === "initial-device-state", "career-state conflict omitted cloud data");
+  assert(conflict.didWrite === false, "career-state conflict silently overwrote cloud data");
+
+  const keptLocal = await callCallable("syncOpenLARPCareerState", idToken, {
+    schemaVersion: 1,
+    action: "keepLocal",
+    requestedAt: now.toISOString(),
+    hasMeaningfulLocalData: true,
+    expectedRevision: conflict.revision,
+    payload: replacementPayload
+  });
+  assert(keptLocal.ok === true, "career-state keep-local resolution did not return ok=true");
+  assert(keptLocal.status === "uploaded", "career-state keep-local resolution did not upload");
+  assert(keptLocal.revision === 2, "career-state keep-local resolution did not advance revision");
+  assert(keptLocal.didWrite === true, "career-state keep-local resolution did not report its write");
+
+  const usedCloud = await callCallable("syncOpenLARPCareerState", idToken, {
+    schemaVersion: 1,
+    action: "useCloud",
+    requestedAt: now.toISOString(),
+    hasMeaningfulLocalData: false,
+    payload: careerStatePayload("empty-device-state")
+  });
+  assert(usedCloud.ok === true, "career-state use-cloud resolution did not return ok=true");
+  assert(usedCloud.status === "restored", "career-state use-cloud resolution did not restore");
+  assert(usedCloud.revision === 2, "career-state use-cloud resolution returned an unexpected revision");
+  assert(usedCloud.cloudPayload?.state?.marker === "explicit-device-replacement", "career-state use-cloud resolution returned stale data");
+  assert(usedCloud.didWrite === false, "career-state use-cloud resolution unexpectedly wrote cloud data");
+  pass("Signed-in career-state sync proved upload, restore, conflict, and explicit resolution");
+}
+
+function careerStatePayload(marker) {
+  return {
+    schemaVersion: 1,
+    includesPrivateEvidence: false,
+    state: {
+      schemaVersion: 16,
+      marker,
+      userProfile: null,
+      questReminders: {
+        isEnabled: false,
+        hour: 19,
+        minute: 0,
+        cadence: "everyDay"
+      },
+      progress: { recentProof: [] },
+      outcomeLog: [],
+      betaEvents: [],
+      aiWorkflowRuns: [],
+      backendEvents: []
+    }
+  };
 }
 
 async function smokeProofPromotionAndReconciliation(idToken) {
