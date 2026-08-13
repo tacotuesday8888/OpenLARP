@@ -567,11 +567,11 @@ struct GuidedCareerOnboardingView: View {
             .padding(.vertical, 10)
             .padding(.horizontal, 8)
             .background(isSelected ? Color.openLARPBlue.opacity(0.14) : Color.openLARPBackground)
-            .foregroundStyle(isSelected ? Color.openLARPBlue : Color.openLARPInk)
+            .foregroundStyle(isSelected ? Color.openLARPBlueDark : Color.openLARPInk)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.openLARPBlue : Color.openLARPSoftInk.opacity(0.25), lineWidth: 1)
+                    .stroke(isSelected ? Color.openLARPBlueDark : Color.openLARPSoftInk.opacity(0.25), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
