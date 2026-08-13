@@ -14,6 +14,8 @@ struct GuidedCareerOnboardingView: View {
     let store: OpenLARPStore
     let onGoalConfirmed: (CookedDiagnosticResultContent) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var draft = CareerIntakeDraft.empty
     @State private var flow = CareerOnboardingFlow()
     @State private var reviewUnderstanding: CareerUnderstanding?
@@ -114,7 +116,6 @@ struct GuidedCareerOnboardingView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(!canUsePrimaryAction || isOnboardingWorkRunning)
-            .opacity(canUsePrimaryAction && !isOnboardingWorkRunning ? 1 : 0.5)
             .accessibilityIdentifier("onboarding.primaryAction")
 
             if flow.step != .outcome {
@@ -128,7 +129,7 @@ struct GuidedCareerOnboardingView: View {
                 .disabled(isOnboardingWorkRunning)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: flow.step)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: flow.step)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -169,7 +170,7 @@ struct GuidedCareerOnboardingView: View {
                     detail: "Choose the closest outcome. You can change it later without inventing a cleaner story."
                 )
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130))], spacing: 10) {
+                LazyVGrid(columns: choiceColumns(minimumWidth: 130), spacing: 10) {
                     ForEach(CareerOutcomeType.allCases) { outcomeType in
                         choiceButton(
                             title: outcomeType.title,
@@ -226,7 +227,7 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Urgency")
                         .font(.subheadline.weight(.semibold))
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
+                    LazyVGrid(columns: choiceColumns(minimumWidth: 100), spacing: 8) {
                         ForEach(CareerUrgency.allCases) { urgency in
                             choiceButton(
                                 title: urgency.title,
@@ -412,7 +413,7 @@ struct GuidedCareerOnboardingView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !question.options.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], spacing: 8) {
+                LazyVGrid(columns: choiceColumns(minimumWidth: 120), spacing: 8) {
                     ForEach(question.options, id: \.self) { option in
                         choiceButton(
                             title: option,
@@ -558,23 +559,31 @@ struct GuidedCareerOnboardingView: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .imageScale(.medium)
                 Text(title)
+                    .font(.subheadline.weight(.semibold))
                     .multilineTextAlignment(.leading)
             }
-            .font(.subheadline.weight(.semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .padding(.horizontal, 8)
             .background(isSelected ? Color.openLARPBlue.opacity(0.14) : Color.openLARPBackground)
-            .foregroundStyle(isSelected ? Color.openLARPBlue : Color.openLARPInk)
+            .foregroundStyle(isSelected ? Color.openLARPBlueDark : Color.openLARPInk)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.openLARPBlue : Color.openLARPSoftInk.opacity(0.25), lineWidth: 1)
+                    .stroke(isSelected ? Color.openLARPBlueDark : Color.openLARPSoftInk.opacity(0.25), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func choiceColumns(minimumWidth: CGFloat) -> [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible())]
+        }
+        return [GridItem(.adaptive(minimum: minimumWidth))]
     }
 
     private var canUsePrimaryAction: Bool {

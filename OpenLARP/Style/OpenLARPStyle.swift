@@ -9,6 +9,7 @@ extension Color {
     static let openLARPLine = Color(red: 0.86, green: 0.91, blue: 0.96)
     static let openLARPBlue = Color(red: 0.07, green: 0.46, blue: 1.00)
     static let openLARPBlueDark = Color(red: 0.03, green: 0.36, blue: 0.85)
+    static let openLARPDisabledControl = Color(red: 0.34, green: 0.40, blue: 0.48)
     static let openLARPCyan = Color(red: 0.20, green: 0.79, blue: 1.00)
     static let openLARPGreen = Color(red: 0.11, green: 0.75, blue: 0.46)
     static let openLARPMint = Color(red: 0.13, green: 0.83, blue: 0.63)
@@ -59,23 +60,35 @@ struct Pill: View {
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .black, design: .rounded))
+            .font(.system(.subheadline, design: .rounded, weight: .black))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
-            .background(configuration.isPressed ? Color.openLARPBlueDark : Color.openLARPBlue)
+            .background(backgroundColor(isPressed: configuration.isPressed))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: Color(red: 0.02, green: 0.27, blue: 0.66), radius: 0, x: 0, y: configuration.isPressed ? 2 : 6)
-            .offset(y: configuration.isPressed ? 4 : 0)
+            .shadow(
+                color: isEnabled ? Color(red: 0.02, green: 0.27, blue: 0.66) : .clear,
+                radius: 0,
+                x: 0,
+                y: configuration.isPressed ? 2 : 6
+            )
+            .offset(y: isEnabled && configuration.isPressed ? 4 : 0)
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard isEnabled else { return .openLARPDisabledControl }
+        return isPressed ? Color(red: 0.02, green: 0.27, blue: 0.66) : .openLARPBlueDark
     }
 }
 
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .black, design: .rounded))
+            .font(.system(.subheadline, design: .rounded, weight: .black))
             .foregroundStyle(Color.openLARPBlueDark)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
@@ -197,12 +210,12 @@ struct OpenLARPHeroCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(eyebrow.uppercased())
-                        .font(.system(size: 12, weight: .black, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.78))
+                        .font(.system(.caption, design: .rounded, weight: .black))
+                        .foregroundStyle(.white)
                         .lineLimit(1)
 
                     Text(title)
-                        .font(.system(size: 27, weight: .black, design: .rounded))
+                        .font(.system(.title2, design: .rounded, weight: .black))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                         .minimumScaleFactor(0.78)
@@ -211,7 +224,7 @@ struct OpenLARPHeroCard: View {
                 Spacer(minLength: 8)
 
                 Text(stat)
-                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .font(.system(.caption, design: .rounded, weight: .black))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
@@ -223,13 +236,19 @@ struct OpenLARPHeroCard: View {
             }
 
             Text(subtitle)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.86))
+                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: feature.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(
+            LinearGradient(
+                colors: [feature.shadow, Color.openLARPInk],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: feature.shadow.opacity(0.34), radius: 0, x: 0, y: 8)
     }
@@ -246,12 +265,12 @@ struct SectionHeader: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(eyebrow.uppercased())
-                    .font(.system(size: 10, weight: .black, design: .rounded))
+                    .font(.system(.caption2, design: .rounded, weight: .black))
                     .foregroundStyle(feature.accent)
                     .lineLimit(1)
 
                 Text(title)
-                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .font(.system(.headline, design: .rounded, weight: .black))
                     .foregroundStyle(Color.openLARPInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -267,13 +286,13 @@ struct SummaryTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.system(size: 17, weight: .black, design: .rounded))
+                .font(.system(.headline, design: .rounded, weight: .black))
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
 
             Text(label)
-                .font(.system(size: 10, weight: .black, design: .rounded))
+                .font(.system(.caption2, design: .rounded, weight: .black))
                 .foregroundStyle(Color.openLARPInk)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
@@ -352,7 +371,7 @@ struct ReadinessRings: View {
                 .rotationEffect(.degrees(-90))
 
             Text("\(value)")
-                .font(.system(size: 34, weight: .black, design: .rounded))
+                .font(.system(.largeTitle, design: .rounded, weight: .black))
                 .foregroundStyle(Color.openLARPBlueDark)
         }
         .frame(width: 142, height: 142)

@@ -86,7 +86,6 @@ struct AgentDashboardView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(store.isAgentScanning)
-                .opacity(store.isAgentScanning ? 0.65 : 1)
             }
         }
     }
