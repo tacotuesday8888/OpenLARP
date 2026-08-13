@@ -9,6 +9,7 @@ extension Color {
     static let openLARPLine = Color(red: 0.86, green: 0.91, blue: 0.96)
     static let openLARPBlue = Color(red: 0.07, green: 0.46, blue: 1.00)
     static let openLARPBlueDark = Color(red: 0.03, green: 0.36, blue: 0.85)
+    static let openLARPDisabledControl = Color(red: 0.34, green: 0.40, blue: 0.48)
     static let openLARPCyan = Color(red: 0.20, green: 0.79, blue: 1.00)
     static let openLARPGreen = Color(red: 0.11, green: 0.75, blue: 0.46)
     static let openLARPMint = Color(red: 0.13, green: 0.83, blue: 0.63)
@@ -59,16 +60,28 @@ struct Pill: View {
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.subheadline, design: .rounded, weight: .black))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
-            .background(configuration.isPressed ? Color.openLARPBlueDark : Color.openLARPBlue)
+            .background(backgroundColor(isPressed: configuration.isPressed))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: Color(red: 0.02, green: 0.27, blue: 0.66), radius: 0, x: 0, y: configuration.isPressed ? 2 : 6)
-            .offset(y: configuration.isPressed ? 4 : 0)
+            .shadow(
+                color: isEnabled ? Color(red: 0.02, green: 0.27, blue: 0.66) : .clear,
+                radius: 0,
+                x: 0,
+                y: configuration.isPressed ? 2 : 6
+            )
+            .offset(y: isEnabled && configuration.isPressed ? 4 : 0)
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard isEnabled else { return .openLARPDisabledControl }
+        return isPressed ? Color(red: 0.02, green: 0.27, blue: 0.66) : .openLARPBlueDark
     }
 }
 

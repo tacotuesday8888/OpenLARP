@@ -1325,7 +1325,6 @@ private struct ProofComposer: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(!canSubmit || isSavingAttachments || store.isProofChecking)
-            .opacity(canSubmit && !isSavingAttachments && !store.isProofChecking ? 1 : 0.5)
             .accessibilityIdentifier("proof.check")
 
             AskOpenLARPButton(

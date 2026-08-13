@@ -115,7 +115,6 @@ struct GuidedCareerOnboardingView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(!canUsePrimaryAction || isOnboardingWorkRunning)
-            .opacity(canUsePrimaryAction && !isOnboardingWorkRunning ? 1 : 0.5)
             .accessibilityIdentifier("onboarding.primaryAction")
 
             if flow.step != .outcome {

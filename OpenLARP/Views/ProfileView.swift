@@ -749,7 +749,6 @@ struct ProfileView: View {
                         store.isSynchronizingCareerState ||
                         store.state.needsGoalSetup
                 )
-                .opacity(store.state.needsGoalSetup ? 0.45 : 1)
 
                 Text(store.state.needsGoalSetup
                     ? "Set a career goal before previewing your career graph."
