@@ -103,6 +103,11 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
             app.staticTexts["What are you working toward?"]
                 .waitForExistence(timeout: 10)
         )
+        let heroTitle = app.staticTexts["Name the outcome"]
+        XCTAssertTrue(heroTitle.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(heroTitle.frame.width, 250)
+        XCTAssertGreaterThanOrEqual(heroTitle.frame.height, 44)
+
         let job = app.buttons["Job"]
         let internship = app.buttons["Internship"]
         scrollUntilChoicesExist(job, internship)

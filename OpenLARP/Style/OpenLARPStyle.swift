@@ -203,37 +203,11 @@ struct OpenLARPHeroCard: View {
     let subtitle: String
     let stat: String
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                FeatureMark(feature: feature, size: 42)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(eyebrow.uppercased())
-                        .font(.system(.caption, design: .rounded, weight: .black))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-
-                    Text(title)
-                        .font(.system(.title2, design: .rounded, weight: .black))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.78)
-                }
-
-                Spacer(minLength: 8)
-
-                Text(stat)
-                    .font(.system(.caption, design: .rounded, weight: .black))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .frame(minWidth: 45, minHeight: 29)
-                    .padding(.horizontal, 9)
-                    .background(.white.opacity(0.18))
-                    .overlay(Capsule().stroke(.white.opacity(0.16), lineWidth: 1))
-                    .clipShape(Capsule())
-            }
+            heroHeader
 
             Text(subtitle)
                 .font(.system(.subheadline, design: .rounded, weight: .bold))
@@ -251,6 +225,60 @@ struct OpenLARPHeroCard: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: feature.shadow.opacity(0.34), radius: 0, x: 0, y: 8)
+    }
+
+    @ViewBuilder
+    private var heroHeader: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    FeatureMark(feature: feature, size: 42)
+                    eyebrowLabel
+                }
+
+                titleLabel
+                statBadge
+            }
+        } else {
+            HStack(spacing: 12) {
+                FeatureMark(feature: feature, size: 42)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    eyebrowLabel
+                    titleLabel
+                }
+
+                Spacer(minLength: 8)
+                statBadge
+            }
+        }
+    }
+
+    private var eyebrowLabel: some View {
+        Text(eyebrow.uppercased())
+            .font(.system(.caption, design: .rounded, weight: .black))
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var titleLabel: some View {
+        Text(title)
+            .font(.system(.title2, design: .rounded, weight: .black))
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var statBadge: some View {
+        Text(stat)
+            .font(.system(.caption, design: .rounded, weight: .black))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minWidth: 45, minHeight: 29)
+            .padding(.horizontal, 9)
+            .background(.white.opacity(0.18))
+            .overlay(Capsule().stroke(.white.opacity(0.16), lineWidth: 1))
+            .clipShape(Capsule())
     }
 }
 
