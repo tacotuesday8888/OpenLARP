@@ -11,6 +11,12 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
 
         let targetOutcome = app.textFields["onboarding.targetOutcome"]
         XCTAssertTrue(targetOutcome.waitForExistence(timeout: 10))
+        let promotionChoice = app.buttons["Promotion"]
+        XCTAssertTrue(promotionChoice.waitForExistence(timeout: 5))
+        XCTAssertFalse(
+            app.staticTexts["Promotion"].exists,
+            "Onboarding choices must expose one labeled button instead of a duplicate static-text child."
+        )
         try auditCurrentScreen(named: "Target outcome")
 
         targetOutcome.tap()
