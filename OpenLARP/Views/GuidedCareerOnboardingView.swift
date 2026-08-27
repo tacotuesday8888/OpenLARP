@@ -273,7 +273,7 @@ struct GuidedCareerOnboardingView: View {
                         in: 1...5,
                         step: 1
                     )
-                    .tint(.openLARPGreen)
+                    .tint(.openLARPBlueDark)
                     .accessibilityLabel("Current confidence")
                     .accessibilityValue("\(draft.confidence) out of 5")
                 }
