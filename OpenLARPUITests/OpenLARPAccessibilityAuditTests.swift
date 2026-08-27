@@ -139,7 +139,7 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
                 )
                 let isKnownXcodeDynamicTypeFalsePositive =
                     issue.auditType == .dynamicType &&
-                    issue.element?.identifier == scalableChoiceLabelIdentifier
+                    issue.element?.identifier == self.scalableChoiceLabelIdentifier
                 if isKnownXcodeDynamicTypeFalsePositive {
                     print(
                         "Ignoring Xcode 26.6 Dynamic Type false positive for the " +
