@@ -20,10 +20,7 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
         dismissKeyboardIfAvailable()
 
         tapPrimaryAction(expectedTitle: "Describe My Current Reality")
-        try auditOnboardingScreen(
-            named: "Current reality",
-            expectedAction: "Set My Daily Commitment"
-        )
+        try auditCurrentRealityScreen()
 
         tapPrimaryAction(expectedTitle: "Set My Daily Commitment")
         try auditOnboardingScreen(
@@ -147,6 +144,21 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
     }
 
     @MainActor
+    private func auditCurrentRealityScreen() throws {
+        let action = app.buttons["onboarding.primaryAction"]
+        XCTAssertTrue(action.waitForExistence(timeout: 10))
+        XCTAssertEqual(action.label, "Set My Daily Commitment")
+
+        let prompt = app.staticTexts["What is true today?"]
+        scrollToReveal(prompt)
+        try auditCurrentScreen(named: "Current reality — upper fields")
+
+        let confidence = app.staticTexts["onboarding.confidenceLabel"]
+        scrollToReveal(confidence)
+        try auditCurrentScreen(named: "Current reality — confidence and actions")
+    }
+
+    @MainActor
     private func auditCurrentScreen(named name: String) throws {
         try XCTContext.runActivity(named: "Accessibility audit: \(name)") { _ in
             try app.performAccessibilityAudit { issue in
@@ -191,6 +203,13 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
 
     @MainActor
     private func scrollToAndTap(_ element: XCUIElement) {
+        scrollToReveal(element)
+        guard element.isHittable else { return }
+        element.tap()
+    }
+
+    @MainActor
+    private func scrollToReveal(_ element: XCUIElement) {
         var attempts = 0
         while !element.isHittable && attempts < 8 {
             if element.frame.midY < app.frame.midY {
@@ -201,7 +220,5 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
             attempts += 1
         }
         XCTAssertTrue(element.isHittable)
-        guard element.isHittable else { return }
-        element.tap()
     }
 }

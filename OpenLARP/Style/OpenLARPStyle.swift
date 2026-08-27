@@ -94,6 +94,10 @@ struct SecondaryButtonStyle: ButtonStyle {
             .padding(.vertical, 14)
             .background(configuration.isPressed ? Color(red: 0.82, green: 0.90, blue: 0.98) : Color(red: 0.92, green: 0.96, blue: 1.00))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.openLARPBlueDark, lineWidth: 2)
+            }
             .shadow(color: Color(red: 0.79, green: 0.85, blue: 0.91), radius: 0, x: 0, y: configuration.isPressed ? 2 : 5)
             .offset(y: configuration.isPressed ? 3 : 0)
     }

@@ -265,15 +265,13 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Confidence: \(draft.confidence) of 5")
                         .font(.subheadline.weight(.semibold))
-                    Slider(
-                        value: Binding(
-                            get: { Double(draft.confidence) },
-                            set: { draft.confidence = Int($0) }
-                        ),
-                        in: 1...5,
-                        step: 1
-                    )
-                    .tint(.openLARPBlueDark)
+                        .accessibilityIdentifier("onboarding.confidenceLabel")
+                    Picker("Current confidence", selection: $draft.confidence) {
+                        ForEach(1...5, id: \.self) { confidence in
+                            Text("\(confidence)").tag(confidence)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                     .accessibilityLabel("Current confidence")
                     .accessibilityValue("\(draft.confidence) out of 5")
                 }
