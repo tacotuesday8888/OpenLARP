@@ -101,7 +101,18 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
     @MainActor
     private func auditCurrentScreen(named name: String) throws {
         try XCTContext.runActivity(named: "Accessibility audit: \(name)") { _ in
-            try app.performAccessibilityAudit()
+            try app.performAccessibilityAudit { issue in
+                print(
+                    """
+                    Accessibility audit issue on \(name):
+                    Type: \(issue.auditType.rawValue)
+                    Summary: \(issue.compactDescription)
+                    Details: \(issue.detailedDescription)
+                    Element: \(issue.element?.debugDescription ?? "none")
+                    """
+                )
+                return false
+            }
         }
     }
 
