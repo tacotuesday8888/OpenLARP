@@ -99,8 +99,13 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
     private func verifyLargestAccessibilityTextLayout() {
         launchFreshApp(dynamicTypeSize: "accessibility5")
 
+        XCTAssertTrue(
+            app.staticTexts["What are you working toward?"]
+                .waitForExistence(timeout: 10)
+        )
         let job = app.buttons["Job"]
         let internship = app.buttons["Internship"]
+        scrollUntilChoicesExist(job, internship)
         XCTAssertTrue(job.waitForExistence(timeout: 10))
         XCTAssertTrue(internship.waitForExistence(timeout: 5))
 
@@ -114,6 +119,18 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
         scrollToAndTap(internship)
         XCTAssertTrue(internship.isSelected)
         app.terminate()
+    }
+
+    @MainActor
+    private func scrollUntilChoicesExist(
+        _ firstChoice: XCUIElement,
+        _ secondChoice: XCUIElement
+    ) {
+        var attempts = 0
+        while (!firstChoice.exists || !secondChoice.exists) && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
     }
 
     @MainActor
