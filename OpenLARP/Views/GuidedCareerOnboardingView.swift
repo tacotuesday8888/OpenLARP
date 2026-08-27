@@ -250,10 +250,10 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Relevant experience")
                         .font(.subheadline.weight(.semibold))
+                    onboardingFieldHint("Examples: coursework, projects, or current work.")
                     TextField(
                         "Relevant experience",
                         text: $draft.experience,
-                        prompt: onboardingFieldPrompt("Coursework, projects, current work…"),
                         axis: .vertical
                     )
                         .lineLimit(3, reservesSpace: true)
@@ -265,10 +265,10 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Proof you already have")
                         .font(.subheadline.weight(.semibold))
+                    onboardingFieldHint("Examples: shipped work, links, screenshots, or results.")
                     TextField(
                         "Existing career proof",
                         text: $draft.existingProof,
-                        prompt: onboardingFieldPrompt("Shipped work, links, screenshots, results…"),
                         axis: .vertical
                     )
                         .lineLimit(3, reservesSpace: true)
@@ -320,10 +320,10 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Constraints")
                         .font(.subheadline.weight(.semibold))
+                    onboardingFieldHint("Examples: budget, schedule, location, or access.")
                     TextField(
                         "Career plan constraints",
                         text: $draft.constraints,
-                        prompt: onboardingFieldPrompt("Budget, schedule, location, access…"),
                         axis: .vertical
                     )
                         .lineLimit(3, reservesSpace: true)
@@ -335,10 +335,10 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Biggest blocker")
                         .font(.subheadline.weight(.semibold))
+                    onboardingFieldHint("What makes this outcome feel risky?")
                     TextField(
                         "Biggest career blocker",
                         text: $draft.biggestBlocker,
-                        prompt: onboardingFieldPrompt("What makes this outcome feel risky?"),
                         axis: .vertical
                     )
                         .lineLimit(3, reservesSpace: true)
@@ -451,10 +451,10 @@ struct GuidedCareerOnboardingView: View {
                 }
             }
 
+            onboardingFieldHint("Answer only if you know.")
             TextField(
                 question.question,
                 text: $adaptiveAnswer,
-                prompt: onboardingFieldPrompt("Answer only if you know"),
                 axis: .vertical
             )
                 .lineLimit(3, reservesSpace: true)
@@ -491,13 +491,13 @@ struct GuidedCareerOnboardingView: View {
                     Text(fact.value)
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
+                    onboardingFieldHint("Correct this suggestion if it is inaccurate.")
                     TextField(
                         "Edited value for \(fact.kind.title)",
                         text: Binding(
                             get: { hypothesisEdits[fact.id] ?? fact.value },
                             set: { hypothesisEdits[fact.id] = $0 }
                         ),
-                        prompt: onboardingFieldPrompt("Correct this suggestion"),
                         axis: .vertical
                     )
                     .lineLimit(3, reservesSpace: true)
@@ -586,6 +586,13 @@ struct GuidedCareerOnboardingView: View {
     private func onboardingFieldPrompt(_ title: LocalizedStringKey) -> Text {
         Text(title)
             .foregroundColor(.openLARPSoftInk)
+    }
+
+    private func onboardingFieldHint(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(.caption)
+            .foregroundStyle(Color.openLARPSoftInk)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func choiceButton(
