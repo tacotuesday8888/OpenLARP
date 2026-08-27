@@ -193,6 +193,7 @@ struct GuidedCareerOnboardingView: View {
                         .textInputAutocapitalization(.sentences)
                         .focused($focusedField, equals: .targetOutcome)
                         .accessibilityLabel("Target role or career outcome")
+                        .accessibilityHint("Example: Entry-level iOS engineer.")
                         .accessibilityIdentifier("onboarding.targetOutcome")
                 }
 
@@ -230,6 +231,7 @@ struct GuidedCareerOnboardingView: View {
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .timeline)
                         .accessibilityLabel("Career goal timeline")
+                        .accessibilityHint("Example: Within 90 days.")
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
