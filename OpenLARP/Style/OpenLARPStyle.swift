@@ -261,8 +261,12 @@ struct OpenLARPHeroCard: View {
     private var eyebrowLabel: some View {
         Text(eyebrow.uppercased())
             .font(.system(.caption, design: .rounded, weight: .black))
-            .foregroundStyle(.white)
+            .foregroundStyle(Color.openLARPInk)
             .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.white)
+            .clipShape(Capsule())
     }
 
     private var titleLabel: some View {
