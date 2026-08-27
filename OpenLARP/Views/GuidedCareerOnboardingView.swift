@@ -563,6 +563,7 @@ struct GuidedCareerOnboardingView: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .multilineTextAlignment(.leading)
+                    .accessibilityIdentifier("onboarding.scalableChoiceLabel")
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
@@ -576,8 +577,6 @@ struct GuidedCareerOnboardingView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(title))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
