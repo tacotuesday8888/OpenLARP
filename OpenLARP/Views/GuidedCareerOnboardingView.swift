@@ -184,7 +184,11 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Target role or outcome")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Entry-level iOS engineer", text: $draft.targetOutcome)
+                    TextField(
+                        "Target role or career outcome",
+                        text: $draft.targetOutcome,
+                        prompt: onboardingFieldPrompt("Entry-level iOS engineer")
+                    )
                         .textFieldStyle(.roundedBorder)
                         .textInputAutocapitalization(.sentences)
                         .focused($focusedField, equals: .targetOutcome)
@@ -218,7 +222,11 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Timeline")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Within 90 days", text: $draft.timeline)
+                    TextField(
+                        "Career goal timeline",
+                        text: $draft.timeline,
+                        prompt: onboardingFieldPrompt("Within 90 days")
+                    )
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .timeline)
                         .accessibilityLabel("Career goal timeline")
@@ -242,7 +250,12 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Relevant experience")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Coursework, projects, current work…", text: $draft.experience, axis: .vertical)
+                    TextField(
+                        "Relevant experience",
+                        text: $draft.experience,
+                        prompt: onboardingFieldPrompt("Coursework, projects, current work…"),
+                        axis: .vertical
+                    )
                         .lineLimit(3, reservesSpace: true)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .experience)
@@ -252,7 +265,12 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Proof you already have")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Shipped work, links, screenshots, results…", text: $draft.existingProof, axis: .vertical)
+                    TextField(
+                        "Existing career proof",
+                        text: $draft.existingProof,
+                        prompt: onboardingFieldPrompt("Shipped work, links, screenshots, results…"),
+                        axis: .vertical
+                    )
                         .lineLimit(3, reservesSpace: true)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .existingProof)
@@ -302,7 +320,12 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Constraints")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Budget, schedule, location, access…", text: $draft.constraints, axis: .vertical)
+                    TextField(
+                        "Career plan constraints",
+                        text: $draft.constraints,
+                        prompt: onboardingFieldPrompt("Budget, schedule, location, access…"),
+                        axis: .vertical
+                    )
                         .lineLimit(3, reservesSpace: true)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .constraints)
@@ -312,7 +335,12 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Biggest blocker")
                         .font(.subheadline.weight(.semibold))
-                    TextField("What makes this outcome feel risky?", text: $draft.biggestBlocker, axis: .vertical)
+                    TextField(
+                        "Biggest career blocker",
+                        text: $draft.biggestBlocker,
+                        prompt: onboardingFieldPrompt("What makes this outcome feel risky?"),
+                        axis: .vertical
+                    )
                         .lineLimit(3, reservesSpace: true)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .biggestBlocker)
@@ -423,7 +451,12 @@ struct GuidedCareerOnboardingView: View {
                 }
             }
 
-            TextField("Answer only if you know", text: $adaptiveAnswer, axis: .vertical)
+            TextField(
+                question.question,
+                text: $adaptiveAnswer,
+                prompt: onboardingFieldPrompt("Answer only if you know"),
+                axis: .vertical
+            )
                 .lineLimit(3, reservesSpace: true)
                 .textFieldStyle(.roundedBorder)
                 .focused($focusedField, equals: .adaptiveAnswer)
@@ -459,11 +492,12 @@ struct GuidedCareerOnboardingView: View {
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
                     TextField(
-                        "Correct this suggestion",
+                        "Edited value for \(fact.kind.title)",
                         text: Binding(
                             get: { hypothesisEdits[fact.id] ?? fact.value },
                             set: { hypothesisEdits[fact.id] = $0 }
                         ),
+                        prompt: onboardingFieldPrompt("Correct this suggestion"),
                         axis: .vertical
                     )
                     .lineLimit(3, reservesSpace: true)
@@ -547,6 +581,11 @@ struct GuidedCareerOnboardingView: View {
                 .foregroundStyle(Color.openLARPSoftInk)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func onboardingFieldPrompt(_ title: LocalizedStringKey) -> Text {
+        Text(title)
+            .foregroundColor(.openLARPSoftInk)
     }
 
     private func choiceButton(
