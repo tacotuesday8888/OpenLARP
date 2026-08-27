@@ -93,7 +93,7 @@ struct GuidedCareerOnboardingView: View {
             if let validationMessage {
                 Label(validationMessage, systemImage: "exclamationmark.circle.fill")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.openLARPCoral)
+                    .foregroundStyle(Color.openLARPAttentionText)
                     .accessibilityAddTraits(.updatesFrequently)
             }
 

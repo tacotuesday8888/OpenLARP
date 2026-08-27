@@ -667,7 +667,7 @@ struct ProfileView: View {
                 HStack(spacing: 8) {
                     Label(content.nextActionTitle, systemImage: "arrow.right.circle.fill")
                         .font(.caption.weight(.black))
-                        .foregroundStyle(Color.openLARPBlue)
+                        .foregroundStyle(Color.openLARPBlueDark)
                     Pill(
                         title: session.isAuthenticated ? "Cross-device sync" : "Local only",
                         systemImage: session.isAuthenticated ? "icloud.fill" : "lock.fill",
@@ -883,7 +883,7 @@ struct ProfileView: View {
             if let message = result?.message, !message.isEmpty {
                 Text(message)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.openLARPCoral)
+                    .foregroundStyle(Color.openLARPAttentionText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1111,7 +1111,7 @@ struct ProfileView: View {
                                     Spacer()
                                     Text("\(sprint.endReadiness.overall)%")
                                         .font(.headline.weight(.black))
-                                        .foregroundStyle(Color.openLARPBlue)
+                                        .foregroundStyle(Color.openLARPBlueDark)
                                 }
                                 .padding(10)
                                 .background(Color.openLARPBackground)
@@ -1182,7 +1182,7 @@ struct ProfileView: View {
 
                     Label("External actions always require approval.", systemImage: "hand.raised.fill")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.openLARPCoral)
+                        .foregroundStyle(Color.openLARPAttentionText)
                         .fixedSize(horizontal: false, vertical: true)
                 case .cloudControls:
                     SectionHeader(feature: .privacy, eyebrow: "Private by default", title: "Memory and sharing")
@@ -1231,7 +1231,7 @@ struct ProfileView: View {
 
                         Label("External actions always require approval.", systemImage: "hand.raised.fill")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.openLARPCoral)
+                            .foregroundStyle(Color.openLARPAttentionText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -1422,7 +1422,7 @@ struct ProfileView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("\(store.state.progress.streakCount)")
                             .font(.largeTitle.weight(.black))
-                            .foregroundStyle(Color.openLARPCoral)
+                            .foregroundStyle(Color.openLARPAttentionText)
 
                         Text(store.state.progress.streakCount == 1 ? "day" : "days")
                             .font(.headline)
@@ -1826,7 +1826,7 @@ private struct CareerGraphSyncPreviewSummary: View {
             VStack(alignment: .leading, spacing: 5) {
                 Label(content.title, systemImage: "checkmark.seal.fill")
                     .font(.subheadline.weight(.black))
-                    .foregroundStyle(Color.openLARPGreen)
+                    .foregroundStyle(Color.openLARPSuccessText)
 
                 Text(content.subtitle)
                     .font(.caption)
@@ -1907,7 +1907,7 @@ private struct ProfileDetailRow: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(Color.openLARPGreen)
+                .foregroundStyle(Color.openLARPSuccessText)
                 .textCase(.uppercase)
             Text(value)
                 .font(.subheadline)
@@ -1925,7 +1925,7 @@ private struct FlowLayout: View {
             ForEach(items, id: \.self) { item in
                 Text(item)
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.openLARPGreen)
+                    .foregroundStyle(Color.openLARPSuccessText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 9)

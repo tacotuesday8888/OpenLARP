@@ -56,7 +56,7 @@ struct QuestMapView: View {
                             if let recovery = MissedDayRecoveryContent(state: state) {
                                 Label("\(recovery.missedDaysText) Continue from Today to rebuild the active streak.", systemImage: "arrow.counterclockwise")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.openLARPCoral)
+                                    .foregroundStyle(Color.openLARPAttentionText)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -115,7 +115,7 @@ private struct QuestJourneyChapterSection: View {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "wand.and.stars")
                             .font(.title3.weight(.bold))
-                            .foregroundStyle(Color.openLARPBlue)
+                            .foregroundStyle(Color.openLARPBlueDark)
                             .frame(width: 32, height: 32)
                             .background(Color.openLARPBlue.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -185,7 +185,7 @@ private struct QuestJourneyChapterHeader: View {
                             ForEach(chapter.focusGaps) { gap in
                                 Label(gap.title, systemImage: "scope")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.openLARPGreen)
+                                    .foregroundStyle(Color.openLARPSuccessText)
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 6)
                                     .background(Color.openLARPGreen.opacity(0.10))
@@ -307,22 +307,22 @@ private struct QuestDayRow: View {
                     HStack {
                         Label(quest.gap.title, systemImage: "scope")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.openLARPBlue)
+                            .foregroundStyle(Color.openLARPBlueDark)
 
                         Text("+\(quest.xpReward) XP")
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.openLARPGreen)
+                            .foregroundStyle(Color.openLARPSuccessText)
 
                         Spacer()
 
                         if quest.status == .completed {
                             Label("Details", systemImage: "chevron.right")
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(Color.openLARPGreen)
+                                .foregroundStyle(Color.openLARPSuccessText)
                         } else if quest.status == .available || quest.status == .inProgress {
                             Label("Preview", systemImage: "chevron.right")
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(Color.openLARPGreen)
+                                .foregroundStyle(Color.openLARPSuccessText)
                         }
                     }
                 }

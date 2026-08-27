@@ -20,6 +20,10 @@ extension Color {
     static let openLARPPink = Color(red: 1.00, green: 0.37, blue: 0.62)
     static let openLARPRed = Color(red: 1.00, green: 0.31, blue: 0.43)
     static let openLARPGray = Color(red: 0.54, green: 0.60, blue: 0.67)
+    static let openLARPSuccessText = Color(red: 0.04, green: 0.40, blue: 0.22)
+    static let openLARPAttentionText = Color(red: 0.65, green: 0.08, blue: 0.20)
+    static let openLARPPurpleText = Color(red: 0.25, green: 0.20, blue: 0.62)
+    static let openLARPOrangeText = Color(red: 0.58, green: 0.25, blue: 0.05)
 }
 
 struct Card<Content: View>: View {
@@ -51,7 +55,7 @@ struct Pill: View {
     var body: some View {
         Label(title, systemImage: systemImage)
             .font(.caption.weight(.black))
-            .foregroundStyle(color)
+            .foregroundStyle(Color.openLARPInk)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(color.opacity(0.12))
@@ -174,6 +178,23 @@ enum OpenLARPFeature {
         case .profile, .privacy: Color(red: 0.04, green: 0.06, blue: 0.12)
         }
     }
+
+    var textAccent: Color {
+        switch self {
+        case .path:
+            .openLARPBlueDark
+        case .quest, .agent:
+            .openLARPPurpleText
+        case .cooked:
+            .openLARPAttentionText
+        case .proof:
+            .openLARPSuccessText
+        case .stats:
+            .openLARPOrangeText
+        case .recovery, .profile, .privacy:
+            .openLARPInk
+        }
+    }
 }
 
 struct FeatureMark: View {
@@ -279,13 +300,13 @@ struct OpenLARPHeroCard: View {
     private var statBadge: some View {
         Text(stat)
             .font(.system(.caption, design: .rounded, weight: .black))
-            .foregroundStyle(.white)
+            .foregroundStyle(Color.openLARPInk)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .frame(minWidth: 45, minHeight: 29)
             .padding(.horizontal, 9)
-            .background(.white.opacity(0.18))
-            .overlay(Capsule().stroke(.white.opacity(0.16), lineWidth: 1))
+            .background(.white)
+            .overlay(Capsule().stroke(Color.openLARPInk.opacity(0.14), lineWidth: 1))
             .clipShape(Capsule())
     }
 }
@@ -302,7 +323,7 @@ struct SectionHeader: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(eyebrow.uppercased())
                     .font(.system(.caption2, design: .rounded, weight: .black))
-                    .foregroundStyle(feature.accent)
+                    .foregroundStyle(feature.textAccent)
                     .lineLimit(1)
 
                 Text(title)
@@ -323,7 +344,7 @@ struct SummaryTile: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
                 .font(.system(.headline, design: .rounded, weight: .black))
-                .foregroundStyle(color)
+                .foregroundStyle(Color.openLARPInk)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
 

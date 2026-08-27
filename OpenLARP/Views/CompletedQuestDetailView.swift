@@ -50,7 +50,7 @@ struct CompletedQuestDetailView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(content.dayText)
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.openLARPGreen)
+                            .foregroundStyle(Color.openLARPSuccessText)
                             .textCase(.uppercase)
 
                         Text(content.title)
@@ -122,7 +122,7 @@ private struct CompletedQuestMetric: View {
         VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: systemImage)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(Color.openLARPGreen)
+                .foregroundStyle(Color.openLARPSuccessText)
                 .textCase(.uppercase)
 
             Text(value)
@@ -145,7 +145,7 @@ private struct CompletedQuestDetailTextBlock: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(Color.openLARPGreen)
+                .foregroundStyle(Color.openLARPSuccessText)
                 .textCase(.uppercase)
 
             Text(bodyText)
@@ -163,7 +163,7 @@ private struct CompletedQuestStepsBlock: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Action steps")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(Color.openLARPGreen)
+                .foregroundStyle(Color.openLARPSuccessText)
                 .textCase(.uppercase)
 
             VStack(alignment: .leading, spacing: 7) {
@@ -171,7 +171,7 @@ private struct CompletedQuestStepsBlock: View {
                     HStack(alignment: .top, spacing: 8) {
                         Text("\(index + 1).")
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.openLARPGreen)
+                            .foregroundStyle(Color.openLARPSuccessText)
                             .frame(width: 20, alignment: .trailing)
 
                         Text(step)
