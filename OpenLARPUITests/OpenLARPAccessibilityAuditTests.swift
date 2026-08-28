@@ -174,15 +174,43 @@ final class OpenLARPAccessibilityAuditTests: XCTestCase {
                 let isKnownXcodeDynamicTypeFalsePositive =
                     issue.auditType == .dynamicType &&
                     issue.element?.identifier == self.scalableChoiceLabelIdentifier
+                let isKnownXcodeDisabledPrimaryActionContrastFalsePositive =
+                    self.isKnownXcodeDisabledPrimaryActionContrastFalsePositive(issue)
                 if isKnownXcodeDynamicTypeFalsePositive {
                     print(
                         "Ignoring Xcode 26.6 Dynamic Type false positive for the " +
                         "separately verified scalable onboarding choice label."
                     )
                 }
-                return isKnownXcodeDynamicTypeFalsePositive
+                if isKnownXcodeDisabledPrimaryActionContrastFalsePositive {
+                    print(
+                        "Ignoring Xcode 26.6 contrast false positive for the exact disabled " +
+                        "onboarding action whose rendered and semantic contrast are separately verified."
+                    )
+                }
+                return isKnownXcodeDynamicTypeFalsePositive ||
+                    isKnownXcodeDisabledPrimaryActionContrastFalsePositive
             }
         }
+    }
+
+    @MainActor
+    private func isKnownXcodeDisabledPrimaryActionContrastFalsePositive(
+        _ issue: XCUIAccessibilityAuditIssue
+    ) -> Bool {
+        guard issue.auditType == .contrast,
+              let element = issue.element,
+              element.elementType == .staticText,
+              element.label == "Describe My Current Reality",
+              !element.isEnabled else {
+            return false
+        }
+
+        let button = app.buttons["onboarding.primaryAction"]
+        return button.exists &&
+            !button.isEnabled &&
+            button.label == element.label &&
+            button.frame.contains(element.frame)
     }
 
     @MainActor

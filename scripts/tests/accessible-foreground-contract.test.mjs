@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 
 const appRoot = fileURLToPath(new URL("../../OpenLARP", import.meta.url));
 const stylePath = join(appRoot, "Style", "OpenLARPStyle.swift");
+const accessibilityAuditPath = fileURLToPath(
+  new URL("../../OpenLARPUITests/OpenLARPAccessibilityAuditTests.swift", import.meta.url)
+);
 const decorativeForegroundPattern = /\.foregroundStyle\(.*(?:Color\.|\.)(openLARPBlue|openLARPGreen|openLARPCoral|openLARPPurple)\b/;
 
 function swiftFiles(directory) {
@@ -76,6 +79,19 @@ describe("accessible foreground contract", () => {
     expect(primaryButton).toContain("guard isEnabled else { return .openLARPInk }");
     expect(primaryButton).toContain("guard isEnabled else { return .openLARPLine }");
     expect(contrastRatio([0.06, 0.13, 0.20], [0.86, 0.91, 0.96])).toBeGreaterThanOrEqual(7);
+  });
+
+  it("keeps the disabled-primary-action audit workaround narrowly scoped", () => {
+    const auditSource = readFileSync(accessibilityAuditPath, "utf8");
+
+    expect(auditSource).toContain("isKnownXcodeDisabledPrimaryActionContrastFalsePositive");
+    expect(auditSource).toContain("issue.auditType == .contrast");
+    expect(auditSource).toContain("element.elementType == .staticText");
+    expect(auditSource).toContain('element.label == "Describe My Current Reality"');
+    expect(auditSource).toContain("!element.isEnabled");
+    expect(auditSource).toContain('app.buttons["onboarding.primaryAction"]');
+    expect(auditSource).toContain("!button.isEnabled");
+    expect(auditSource).toContain("button.frame.contains(element.frame)");
   });
 
   it("keeps shared light-surface components on accessible foregrounds", () => {

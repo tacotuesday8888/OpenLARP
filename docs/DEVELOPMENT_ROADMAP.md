@@ -35,7 +35,7 @@ OpenLARP currently has:
 - RevenueCat/subscription contracts and local entitlement state, without live App Store products
 - GitHub Actions CI plus local backend, rules, simulator, unsigned local-only Release, and unsigned service-enabled Release build validation gates
 - A focused fresh-user UI journey in CI that exercises the public local-only flow from onboarding through mission approval, all 14 persisted daily proof loops, the Day 7 report and adaptive second chapter, the Day 14 report, and starting another sprint
-- A fail-closed Apple accessibility audit in CI across core onboarding, fact confirmation, Cooked evaluation, mission, quest, proof, feedback, and completion states, plus a largest-accessibility-text onboarding layout scenario for the one narrowly identified Xcode 26.6 Dynamic Type false positive; manual VoiceOver and device-layout review still remain release checks
+- A fail-closed Apple accessibility audit in CI across core onboarding, fact confirmation, Cooked evaluation, mission, quest, proof, feedback, and completion states, plus separate layout/contrast contracts for the two narrowly reproduced Xcode 26.6 false positives: one native SwiftUI choice-label Dynamic Type report and one exact disabled primary-action text contrast report; manual VoiceOver and device-layout review still remain release checks
 - Asynchronous, downsampled proof-image loading for thumbnails and detail previews, with attachment decoding kept out of SwiftUI view rendering
 
 OpenLARP does not yet have:
