@@ -221,11 +221,13 @@ jobs:
           PY
 
       - name: Run accessibility audit
+        id: accessibility-audit
         timeout-minutes: 12
         run: |
           set -euo pipefail
 
           ACCESSIBILITY_RESULT_BUNDLE="${RUNNER_TEMP}/OpenLARPAccessibility-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult"
+          echo "result_bundle=$ACCESSIBILITY_RESULT_BUNDLE" >> "$GITHUB_OUTPUT"
           xcodebuild \
             -project OpenLARP.xcodeproj \
             -scheme OpenLARPUIJourney \
@@ -261,6 +263,15 @@ jobs:
               )
               sys.exit(1)
           PY
+
+      - name: Upload failed accessibility result
+        if: failure() && steps.accessibility-audit.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: OpenLARPAccessibility-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.accessibility-audit.outputs.result_bundle }}
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Run optimized App Store Release contract
         timeout-minutes: 20

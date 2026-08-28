@@ -294,9 +294,11 @@ jobs:
               sys.exit(1)
           PY
       - name: Run accessibility audit
+        id: accessibility-audit
         run: |
           set -euo pipefail
           ACCESSIBILITY_RESULT_BUNDLE="\${RUNNER_TEMP}/OpenLARPAccessibility-\${GITHUB_RUN_ID}-\${GITHUB_RUN_ATTEMPT}.xcresult"
+          echo "result_bundle=$ACCESSIBILITY_RESULT_BUNDLE" >> "$GITHUB_OUTPUT"
           xcodebuild -project OpenLARP.xcodeproj -scheme OpenLARPUIJourney -configuration Debug -destination "id=\${{ steps.simulator.outputs.device_id }}" -derivedDataPath /tmp/OpenLARPUIJourneyTests -resultBundlePath "$ACCESSIBILITY_RESULT_BUNDLE" -only-testing:OpenLARPUITests/OpenLARPAccessibilityAuditTests/testCoreCareerJourneyPassesAccessibilityAudit test
           export ACCESSIBILITY_SUMMARY_JSON="$(xcrun xcresulttool get test-results summary --path "$ACCESSIBILITY_RESULT_BUNDLE" --compact)"
           python3 - <<'PY'
@@ -315,6 +317,14 @@ jobs:
               print(f"::error::Accessibility audit test count mismatch: {actual}", file=sys.stderr)
               sys.exit(1)
           PY
+      - name: Upload failed accessibility result
+        if: failure() && steps.accessibility-audit.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: OpenLARPAccessibility-\${{ github.run_id }}-\${{ github.run_attempt }}
+          path: \${{ steps.accessibility-audit.outputs.result_bundle }}
+          if-no-files-found: error
+          retention-days: 1
       - name: Run optimized App Store Release contract
         run: |
           set -euo pipefail
@@ -697,6 +707,12 @@ describe("beta release gate", () => {
     ["UI journey named test", "-only-testing:OpenLARPUITests/OpenLARPFreshUserJourneyTests/testFreshUserCompletesFourteenDaySprintAndStartsAgain", ""],
     ["UI journey result bundle", "-resultBundlePath \"$UI_RESULT_BUNDLE\"", ""],
     ["UI journey exact passed count", '"passedTests": 1', '"passedTests": 0'],
+    ["accessibility result output", 'echo "result_bundle=$ACCESSIBILITY_RESULT_BUNDLE" >> "$GITHUB_OUTPUT"', "echo missing-result-output"],
+    ["failure-only accessibility artifact", "if: failure() && steps.accessibility-audit.outcome == 'failure'", "if: success()"],
+    ["pinned accessibility artifact action", "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "actions/upload-artifact@v7"],
+    ["accessibility artifact path", "path: ${{ steps.accessibility-audit.outputs.result_bundle }}", "path: /tmp/missing.xcresult"],
+    ["missing accessibility artifact failure", "if-no-files-found: error", "if-no-files-found: ignore"],
+    ["short accessibility artifact retention", "retention-days: 1", "retention-days: 90"],
     ["conditional Release contract", "      - name: Run optimized App Store Release contract\n", "      - name: Run optimized App Store Release contract\n        if: success()\n"],
     ["continue-on-error Release contract", "      - name: Run optimized App Store Release contract\n", "      - name: Run optimized App Store Release contract\n        continue-on-error: true\n"],
     ["contract scheme", "-scheme OpenLARPReleaseContract", "-scheme OpenLARP"],
