@@ -20,4 +20,14 @@ describe("accessible onboarding form contract", () => {
     expect(source).not.toContain("prompt: onboardingFieldPrompt");
     expect(source).not.toContain("private func onboardingFieldPrompt");
   });
+
+  it("keeps visible guidance out of native text-field placeholders", () => {
+    const source = readFileSync(onboardingPath, "utf8");
+    const emptyPlaceholderFields = [...source.matchAll(/TextField\(\s+"",/g)];
+
+    expect(emptyPlaceholderFields).toHaveLength(8);
+    expect(source).not.toContain('TextField(\n                        "Target role or career outcome",');
+    expect(source).not.toContain('TextField(\n                    "Career goal timeline",');
+    expect(source).not.toContain("TextField(\n                question.question,");
+  });
 });
