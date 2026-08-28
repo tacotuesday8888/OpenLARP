@@ -184,16 +184,15 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Target role or outcome")
                         .font(.subheadline.weight(.semibold))
+                    onboardingFieldHint("Example: Entry-level iOS engineer.")
                     TextField(
                         "Target role or career outcome",
-                        text: $draft.targetOutcome,
-                        prompt: onboardingFieldPrompt("Entry-level iOS engineer")
+                        text: $draft.targetOutcome
                     )
                         .textFieldStyle(.roundedBorder)
                         .textInputAutocapitalization(.sentences)
                         .focused($focusedField, equals: .targetOutcome)
                         .accessibilityLabel("Target role or career outcome")
-                        .accessibilityHint("Example: Entry-level iOS engineer.")
                         .accessibilityIdentifier("onboarding.targetOutcome")
                 }
 
@@ -223,15 +222,14 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Timeline")
                         .font(.subheadline.weight(.semibold))
+                    onboardingFieldHint("Example: Within 90 days.")
                     TextField(
                         "Career goal timeline",
-                        text: $draft.timeline,
-                        prompt: onboardingFieldPrompt("Within 90 days")
+                        text: $draft.timeline
                     )
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .timeline)
                         .accessibilityLabel("Career goal timeline")
-                        .accessibilityHint("Example: Within 90 days.")
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -583,11 +581,6 @@ struct GuidedCareerOnboardingView: View {
                 .foregroundStyle(Color.openLARPSoftInk)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func onboardingFieldPrompt(_ title: LocalizedStringKey) -> Text {
-        Text(title)
-            .foregroundColor(.openLARPSoftInk)
     }
 
     private func onboardingFieldHint(_ title: LocalizedStringKey) -> some View {

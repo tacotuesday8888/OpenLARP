@@ -7,16 +7,17 @@ const onboardingPath = fileURLToPath(
 );
 
 describe("accessible onboarding form contract", () => {
-  it("pairs every visible single-line example prompt with the same spoken hint", () => {
+  it("renders single-line examples as persistent accessibility elements", () => {
     const source = readFileSync(onboardingPath, "utf8");
-    const prompts = [...source.matchAll(/prompt: onboardingFieldPrompt\("([^"]+)"\)/g)]
-      .map((match) => match[1])
-      .sort();
-    const spokenHints = [...source.matchAll(/\.accessibilityHint\("Example: ([^"]+)\."\)/g)]
+    const persistentExamples = [...source.matchAll(/onboardingFieldHint\("Example: ([^"]+)\."\)/g)]
       .map((match) => match[1])
       .sort();
 
-    expect(prompts.length).toBeGreaterThan(0);
-    expect(spokenHints).toEqual(prompts);
+    expect(persistentExamples).toEqual([
+      "Entry-level iOS engineer",
+      "Within 90 days",
+    ]);
+    expect(source).not.toContain("prompt: onboardingFieldPrompt");
+    expect(source).not.toContain("private func onboardingFieldPrompt");
   });
 });
