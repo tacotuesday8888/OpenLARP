@@ -9,7 +9,6 @@ extension Color {
     static let openLARPLine = Color(red: 0.86, green: 0.91, blue: 0.96)
     static let openLARPBlue = Color(red: 0.07, green: 0.46, blue: 1.00)
     static let openLARPBlueDark = Color(red: 0.03, green: 0.36, blue: 0.85)
-    static let openLARPDisabledControl = Color(red: 0.34, green: 0.40, blue: 0.48)
     static let openLARPCyan = Color(red: 0.20, green: 0.79, blue: 1.00)
     static let openLARPGreen = Color(red: 0.11, green: 0.75, blue: 0.46)
     static let openLARPMint = Color(red: 0.13, green: 0.83, blue: 0.63)
@@ -69,7 +68,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.subheadline, design: .rounded, weight: .black))
-            .foregroundStyle(.white)
+            .foregroundStyle(foregroundColor)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
             .background(backgroundColor(isPressed: configuration.isPressed))
@@ -83,8 +82,13 @@ struct PrimaryButtonStyle: ButtonStyle {
             .offset(y: isEnabled && configuration.isPressed ? 4 : 0)
     }
 
+    private var foregroundColor: Color {
+        guard isEnabled else { return .openLARPInk }
+        return .white
+    }
+
     private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return .openLARPDisabledControl }
+        guard isEnabled else { return .openLARPLine }
         return isPressed ? Color(red: 0.02, green: 0.27, blue: 0.66) : .openLARPBlueDark
     }
 }

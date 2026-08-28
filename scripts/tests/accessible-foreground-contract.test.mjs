@@ -15,14 +15,21 @@ function swiftFiles(directory) {
   });
 }
 
-function contrastAgainstWhite([red, green, blue]) {
+function relativeLuminance([red, green, blue]) {
   const linearize = (value) => value <= 0.04045
     ? value / 12.92
     : ((value + 0.055) / 1.055) ** 2.4;
-  const luminance = 0.2126 * linearize(red) +
+  return 0.2126 * linearize(red) +
     0.7152 * linearize(green) +
     0.0722 * linearize(blue);
-  return 1.05 / (luminance + 0.05);
+}
+
+function contrastRatio(first, second) {
+  const firstLuminance = relativeLuminance(first);
+  const secondLuminance = relativeLuminance(second);
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 function sourceBetween(source, start, end) {
@@ -54,7 +61,21 @@ describe("accessible foreground contract", () => {
   ])("defines %s with at least 4.5:1 contrast on white", (token, rgb) => {
     const styleSource = readFileSync(stylePath, "utf8");
     expect(styleSource).toContain(`static let ${token} = Color`);
-    expect(contrastAgainstWhite(rgb)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(rgb, [1, 1, 1])).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps disabled primary-button text on a high-contrast neutral surface", () => {
+    const styleSource = readFileSync(stylePath, "utf8");
+    const primaryButton = sourceBetween(
+      styleSource,
+      "struct PrimaryButtonStyle: ButtonStyle",
+      "struct SecondaryButtonStyle: ButtonStyle"
+    );
+
+    expect(primaryButton).toContain(".foregroundStyle(foregroundColor)");
+    expect(primaryButton).toContain("guard isEnabled else { return .openLARPInk }");
+    expect(primaryButton).toContain("guard isEnabled else { return .openLARPLine }");
+    expect(contrastRatio([0.06, 0.13, 0.20], [0.86, 0.91, 0.96])).toBeGreaterThanOrEqual(7);
   });
 
   it("keeps shared light-surface components on accessible foregrounds", () => {
