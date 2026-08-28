@@ -100,7 +100,7 @@ struct MissionBriefReviewView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("Non-negotiable boundaries", systemImage: "checkmark.shield.fill")
                         .font(.headline)
-                        .foregroundStyle(Color.openLARPGreen)
+                        .foregroundStyle(Color.openLARPSuccessText)
                     ForEach(mission.ethicalBoundaries, id: \.self) { boundary in
                         Label(boundary, systemImage: "checkmark")
                             .font(.subheadline)
@@ -113,7 +113,7 @@ struct MissionBriefReviewView: View {
             if let validationMessage {
                 Label(validationMessage, systemImage: "exclamationmark.circle.fill")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.openLARPCoral)
+                    .foregroundStyle(Color.openLARPAttentionText)
                     .accessibilityAddTraits(.updatesFrequently)
             }
 

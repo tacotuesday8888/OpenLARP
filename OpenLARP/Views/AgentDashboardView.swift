@@ -86,7 +86,6 @@ struct AgentDashboardView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(store.isAgentScanning)
-                .opacity(store.isAgentScanning ? 0.65 : 1)
             }
         }
     }
@@ -124,7 +123,7 @@ struct AgentDashboardView: View {
                 ForEach(store.state.agentBrief.nextSteps) { step in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Color.openLARPGreen)
+                            .foregroundStyle(Color.openLARPSuccessText)
                             .frame(width: 24)
 
                         VStack(alignment: .leading, spacing: 4) {
@@ -175,7 +174,7 @@ struct OpportunityBriefCard: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(isFeatured ? "Top ranked brief" : "Opportunity")
                             .font(.caption.weight(.black))
-                            .foregroundStyle(Color.openLARPBlue)
+                            .foregroundStyle(Color.openLARPBlueDark)
                             .textCase(.uppercase)
 
                         Text(opportunity.title)
@@ -188,7 +187,7 @@ struct OpportunityBriefCard: View {
 
                     Text("#\(opportunity.rank == 0 ? 1 : opportunity.rank)")
                         .font(.headline.weight(.black))
-                        .foregroundStyle(Color.openLARPBlue)
+                        .foregroundStyle(Color.openLARPBlueDark)
                         .frame(width: 44, height: 36)
                         .background(Color.openLARPBlue.opacity(0.12))
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -283,7 +282,7 @@ private struct AgentActivityRow: View {
                 if activity.approvalRequired {
                     Label("Approval required before external action", systemImage: "hand.raised.fill")
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(Color.openLARPCoral)
+                        .foregroundStyle(Color.openLARPAttentionText)
                 }
             }
         }

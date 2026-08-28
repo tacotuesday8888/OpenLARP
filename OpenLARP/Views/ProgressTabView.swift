@@ -195,7 +195,7 @@ struct ProgressTabView: View {
                         HStack(alignment: .top, spacing: 12) {
                             Text("\(snapshot.overall)")
                                 .font(.headline.weight(.black))
-                                .foregroundStyle(Color.openLARPBlue)
+                                .foregroundStyle(Color.openLARPBlueDark)
                                 .frame(width: 44, height: 36)
                                 .background(Color.openLARPBlue.opacity(0.12))
                                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -288,12 +288,12 @@ struct ProgressTabView: View {
                 if let recovery = MissedDayRecoveryContent(state: state) {
                     Label("\(recovery.previousStreakText). Active streak reset after \(recovery.missedDaysText.lowercased())", systemImage: "arrow.counterclockwise")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.openLARPCoral)
+                        .foregroundStyle(Color.openLARPAttentionText)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let skipped = SkippedTodayContent(state: state) {
                     Label("\(skipped.previousStreakText). \(skipped.unlockMessage)", systemImage: "forward.end")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.openLARPCoral)
+                        .foregroundStyle(Color.openLARPAttentionText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -361,7 +361,7 @@ struct ProgressTabView: View {
                         ForEach(state.progress.badges) { badge in
                             Label(badge.rawValue, systemImage: "seal.fill")
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(Color.openLARPGreen)
+                                .foregroundStyle(Color.openLARPSuccessText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 9)
@@ -480,7 +480,7 @@ struct OutcomeRecordRow: View {
 
                 Text(outcome.kind.recoveryPrompt)
                     .font(.caption)
-                    .foregroundStyle(Color.openLARPPurple)
+                    .foregroundStyle(Color.openLARPPurpleText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -659,7 +659,7 @@ struct OutcomeDetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Label(outcome.kind.label, systemImage: outcome.kind.systemImage)
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.openLARPPurple)
+                    .foregroundStyle(Color.openLARPPurpleText)
                     .textCase(.uppercase)
 
                 Text(outcome.displayTitle)
@@ -776,7 +776,7 @@ private struct OutcomeDetailMetric: View {
         VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: systemImage)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(Color.openLARPGreen)
+                .foregroundStyle(Color.openLARPSuccessText)
                 .textCase(.uppercase)
 
             Text(value)
@@ -799,7 +799,7 @@ private struct OutcomeDetailTextRow: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(Color.openLARPGreen)
+                .foregroundStyle(Color.openLARPSuccessText)
                 .textCase(.uppercase)
             Text(value)
                 .font(.subheadline)

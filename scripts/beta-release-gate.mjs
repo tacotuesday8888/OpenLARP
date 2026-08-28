@@ -19,6 +19,7 @@ const REQUIRED_FILES = [
   "OpenLARP/Models/OpenLARPReleaseConfiguration.swift",
   "OpenLARP/Models/OpenLARPReleasePresentationPolicy.swift",
   "OpenLARP/Models/OpenLARPReleaseContractSnapshot.swift",
+  "OpenLARPUITests/OpenLARPAccessibilityAuditTests.swift",
   "OpenLARPUITests/OpenLARPFreshUserJourneyTests.swift",
   "OpenLARPReleaseContractTests/OpenLARPReleaseContractTests.swift",
   "OpenLARP.xcodeproj/xcshareddata/xcschemes/OpenLARP.xcscheme",
@@ -46,7 +47,7 @@ const PUBLIC_PRIVACY_BLOCKER =
 const PUBLIC_SCHEME_BLOCKER =
   "The shared OpenLARP scheme must build only the App Store target.";
 const WORKFLOW_BLOCKER =
-  "CI workflow must fail closed and execute unsigned local and service builds, Debug tests, the fresh-user UI journey, and verified Release contract tests.";
+  "CI workflow must fail closed and execute unsigned local and service builds, Debug tests, the fresh-user UI journey, the accessibility audit, and verified Release contract tests.";
 
 function textIncludesAll(text, values) {
   return values.every((value) => text.includes(value));
@@ -412,6 +413,16 @@ function validateWorkflowDefinition(workflow) {
   );
   const debugTests = uniqueRequiredStep(steps, "Run Debug simulator tests");
   const uiJourney = uniqueRequiredStep(steps, "Run fresh-user UI journey");
+  const accessibilityAudit = uniqueRequiredStep(
+    steps,
+    "Run accessibility audit"
+  );
+  const accessibilityArtifactMatches = steps.filter(
+    (step) => step?.name === "Upload failed accessibility result"
+  );
+  const accessibilityArtifact = accessibilityArtifactMatches.length === 1
+    ? accessibilityArtifactMatches[0]
+    : null;
   const releaseContract = uniqueRequiredStep(
     steps,
     "Run optimized App Store Release contract"
@@ -428,8 +439,10 @@ function validateWorkflowDefinition(workflow) {
 
   if (!publicSafety || !betaGate || !backendTests || !truthfulnessEvals ||
       !productionAudit || !backendBuild || !rulesTests ||
-      !projectGeneration || !simulator || !unsignedBuild || !unsignedServiceBuild || !debugTests ||
-      !uiJourney || !releaseContract || !containerBuild || !containerSmoke || Object.hasOwn(containerJob, "if") ||
+      !projectGeneration || !simulator || !unsignedBuild ||
+      !unsignedServiceBuild || !debugTests || !uiJourney ||
+      !accessibilityAudit || !accessibilityArtifact || !releaseContract || !containerBuild ||
+      !containerSmoke || Object.hasOwn(containerJob, "if") ||
       Object.hasOwn(containerJob, "continue-on-error")) {
     return false;
   }
@@ -440,17 +453,23 @@ function validateWorkflowDefinition(workflow) {
   const unsignedServiceBuildIndex = steps.indexOf(unsignedServiceBuild);
   const debugTestsIndex = steps.indexOf(debugTests);
   const uiJourneyIndex = steps.indexOf(uiJourney);
+  const accessibilityAuditIndex = steps.indexOf(accessibilityAudit);
+  const accessibilityArtifactIndex = steps.indexOf(accessibilityArtifact);
   const releaseContractIndex = steps.indexOf(releaseContract);
   const requiredStepOrderValid =
     projectGenerationIndex < unsignedBuildIndex &&
     projectGenerationIndex < unsignedServiceBuildIndex &&
     projectGenerationIndex < debugTestsIndex &&
     projectGenerationIndex < uiJourneyIndex &&
+    projectGenerationIndex < accessibilityAuditIndex &&
     projectGenerationIndex < releaseContractIndex &&
     simulatorIndex < debugTestsIndex &&
     simulatorIndex < uiJourneyIndex &&
+    simulatorIndex < accessibilityAuditIndex &&
     debugTestsIndex < uiJourneyIndex &&
-    uiJourneyIndex < releaseContractIndex &&
+    uiJourneyIndex < accessibilityAuditIndex &&
+    accessibilityAuditIndex < accessibilityArtifactIndex &&
+    accessibilityArtifactIndex < releaseContractIndex &&
     simulatorIndex < releaseContractIndex;
 
   const simulatorRun = simulator.run;
@@ -563,6 +582,43 @@ function validateWorkflowDefinition(workflow) {
     "test"
     ]) && !uiJourneyScript.includes("rm -rf");
 
+  const accessibilityAuditScript = accessibilityAudit.run;
+  const normalizedAccessibilityAudit = normalizedShell(accessibilityAuditScript);
+  const accessibilityAuditVerified =
+    accessibilityAudit.id === "accessibility-audit" &&
+    hasCanonicalShellContract(accessibilityAuditScript, /^set -euo pipefail$/) &&
+    textIncludesAll(normalizedAccessibilityAudit, [
+    "set -euo pipefail",
+    "-project OpenLARP.xcodeproj",
+    "-scheme OpenLARPUIJourney",
+    "-configuration Debug",
+    "steps.simulator.outputs.device_id",
+    "OpenLARPAccessibility-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult",
+    'echo "result_bundle=$ACCESSIBILITY_RESULT_BUNDLE" >> "$GITHUB_OUTPUT"',
+    '-resultBundlePath "$ACCESSIBILITY_RESULT_BUNDLE"',
+    "-only-testing:OpenLARPUITests/OpenLARPAccessibilityAuditTests/testCoreCareerJourneyPassesAccessibilityAudit",
+    'xcrun xcresulttool get test-results summary --path "$ACCESSIBILITY_RESULT_BUNDLE"',
+    '"totalTestCount": 1',
+    '"passedTests": 1',
+    '"failedTests": 0',
+    '"skippedTests": 0',
+    "actual != expected",
+    "sys.exit(1)",
+    "test"
+    ]) && !accessibilityAuditScript.includes("rm -rf");
+  const accessibilityArtifactConfig = accessibilityArtifact.with ?? {};
+  const accessibilityArtifactVerified =
+    accessibilityArtifact.if ===
+      "failure() && steps.accessibility-audit.outcome == 'failure'" &&
+    accessibilityArtifact.uses ===
+      "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" &&
+    accessibilityArtifactConfig.name ===
+      "OpenLARPAccessibility-${{ github.run_id }}-${{ github.run_attempt }}" &&
+    accessibilityArtifactConfig.path ===
+      "${{ steps.accessibility-audit.outputs.result_bundle }}" &&
+    accessibilityArtifactConfig["if-no-files-found"] === "error" &&
+    accessibilityArtifactConfig["retention-days"] === 1;
+
   const requiredCommandsValid =
     publicSafety.run.trim() === "npm run public:safety" &&
     betaGate.run.trim() === "npm run beta:gate" &&
@@ -581,10 +637,11 @@ function validateWorkflowDefinition(workflow) {
     typeof step?.name === "string" && step.name.toLowerCase().includes("skipped simulator")
   );
 
-  return requiredCommandsValid && simulatorFailsClosed && unsignedReleaseBuild &&
-    unsignedServiceReleaseBuild &&
-    debugSuite && uiJourneyVerified && releaseContractVerified &&
-    requiredStepOrderValid && !hasSkipStep;
+  return requiredCommandsValid && simulatorFailsClosed &&
+    unsignedReleaseBuild && unsignedServiceReleaseBuild && debugSuite &&
+    uiJourneyVerified && accessibilityAuditVerified &&
+    accessibilityArtifactVerified &&
+    releaseContractVerified && requiredStepOrderValid && !hasSkipStep;
 }
 
 export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists = existsSync) {
@@ -717,7 +774,7 @@ export function evaluateBetaReleaseGate(readText = readTrackedText, fileExists =
   if (workflowText) {
     const workflow = parseYaml(workflowText);
     if (workflow && validateWorkflowDefinition(workflow)) {
-      addResult(results, "pass", "CI fails closed and verifies unsigned local and service builds, Debug tests, the fresh-user UI journey, and the optimized App Store Release contract.");
+      addResult(results, "pass", "CI fails closed and verifies unsigned local and service builds, Debug tests, the fresh-user UI journey, the accessibility audit, and the optimized App Store Release contract.");
     } else {
       addResult(results, "blocker", WORKFLOW_BLOCKER);
     }

@@ -14,6 +14,8 @@ struct GuidedCareerOnboardingView: View {
     let store: OpenLARPStore
     let onGoalConfirmed: (CookedDiagnosticResultContent) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var draft = CareerIntakeDraft.empty
     @State private var flow = CareerOnboardingFlow()
     @State private var reviewUnderstanding: CareerUnderstanding?
@@ -91,7 +93,7 @@ struct GuidedCareerOnboardingView: View {
             if let validationMessage {
                 Label(validationMessage, systemImage: "exclamationmark.circle.fill")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.openLARPCoral)
+                    .foregroundStyle(Color.openLARPAttentionText)
                     .accessibilityAddTraits(.updatesFrequently)
             }
 
@@ -114,7 +116,6 @@ struct GuidedCareerOnboardingView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(!canUsePrimaryAction || isOnboardingWorkRunning)
-            .opacity(canUsePrimaryAction && !isOnboardingWorkRunning ? 1 : 0.5)
             .accessibilityIdentifier("onboarding.primaryAction")
 
             if flow.step != .outcome {
@@ -128,7 +129,7 @@ struct GuidedCareerOnboardingView: View {
                 .disabled(isOnboardingWorkRunning)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: flow.step)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: flow.step)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -169,7 +170,7 @@ struct GuidedCareerOnboardingView: View {
                     detail: "Choose the closest outcome. You can change it later without inventing a cleaner story."
                 )
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130))], spacing: 10) {
+                LazyVGrid(columns: choiceColumns(minimumWidth: 130), spacing: 10) {
                     ForEach(CareerOutcomeType.allCases) { outcomeType in
                         choiceButton(
                             title: outcomeType.title,
@@ -183,7 +184,11 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Target role or outcome")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Entry-level iOS engineer", text: $draft.targetOutcome)
+                    onboardingFieldHint("Example: Entry-level iOS engineer.")
+                    TextField(
+                        "Target role or career outcome",
+                        text: $draft.targetOutcome
+                    )
                         .textFieldStyle(.roundedBorder)
                         .textInputAutocapitalization(.sentences)
                         .focused($focusedField, equals: .targetOutcome)
@@ -217,7 +222,11 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Timeline")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Within 90 days", text: $draft.timeline)
+                    onboardingFieldHint("Example: Within 90 days.")
+                    TextField(
+                        "Career goal timeline",
+                        text: $draft.timeline
+                    )
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .timeline)
                         .accessibilityLabel("Career goal timeline")
@@ -226,7 +235,7 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Urgency")
                         .font(.subheadline.weight(.semibold))
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
+                    LazyVGrid(columns: choiceColumns(minimumWidth: 100), spacing: 8) {
                         ForEach(CareerUrgency.allCases) { urgency in
                             choiceButton(
                                 title: urgency.title,
@@ -241,7 +250,12 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Relevant experience")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Coursework, projects, current work…", text: $draft.experience, axis: .vertical)
+                    onboardingFieldHint("Examples: coursework, projects, or current work.")
+                    TextField(
+                        "Relevant experience",
+                        text: $draft.experience,
+                        axis: .vertical
+                    )
                         .lineLimit(3, reservesSpace: true)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .experience)
@@ -251,7 +265,12 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Proof you already have")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Shipped work, links, screenshots, results…", text: $draft.existingProof, axis: .vertical)
+                    onboardingFieldHint("Examples: shipped work, links, screenshots, or results.")
+                    TextField(
+                        "Existing career proof",
+                        text: $draft.existingProof,
+                        axis: .vertical
+                    )
                         .lineLimit(3, reservesSpace: true)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .existingProof)
@@ -264,15 +283,13 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Confidence: \(draft.confidence) of 5")
                         .font(.subheadline.weight(.semibold))
-                    Slider(
-                        value: Binding(
-                            get: { Double(draft.confidence) },
-                            set: { draft.confidence = Int($0) }
-                        ),
-                        in: 1...5,
-                        step: 1
-                    )
-                    .tint(.openLARPGreen)
+                        .accessibilityIdentifier("onboarding.confidenceLabel")
+                    Picker("Current confidence", selection: $draft.confidence) {
+                        ForEach(1...5, id: \.self) { confidence in
+                            Text("\(confidence)").tag(confidence)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                     .accessibilityLabel("Current confidence")
                     .accessibilityValue("\(draft.confidence) out of 5")
                 }
@@ -303,7 +320,12 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Constraints")
                         .font(.subheadline.weight(.semibold))
-                    TextField("Budget, schedule, location, access…", text: $draft.constraints, axis: .vertical)
+                    onboardingFieldHint("Examples: budget, schedule, location, or access.")
+                    TextField(
+                        "Career plan constraints",
+                        text: $draft.constraints,
+                        axis: .vertical
+                    )
                         .lineLimit(3, reservesSpace: true)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .constraints)
@@ -313,7 +335,12 @@ struct GuidedCareerOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Biggest blocker")
                         .font(.subheadline.weight(.semibold))
-                    TextField("What makes this outcome feel risky?", text: $draft.biggestBlocker, axis: .vertical)
+                    onboardingFieldHint("What makes this outcome feel risky?")
+                    TextField(
+                        "Biggest career blocker",
+                        text: $draft.biggestBlocker,
+                        axis: .vertical
+                    )
                         .lineLimit(3, reservesSpace: true)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .biggestBlocker)
@@ -412,7 +439,7 @@ struct GuidedCareerOnboardingView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !question.options.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], spacing: 8) {
+                LazyVGrid(columns: choiceColumns(minimumWidth: 120), spacing: 8) {
                     ForEach(question.options, id: \.self) { option in
                         choiceButton(
                             title: option,
@@ -424,7 +451,12 @@ struct GuidedCareerOnboardingView: View {
                 }
             }
 
-            TextField("Answer only if you know", text: $adaptiveAnswer, axis: .vertical)
+            onboardingFieldHint("Answer only if you know.")
+            TextField(
+                question.question,
+                text: $adaptiveAnswer,
+                axis: .vertical
+            )
                 .lineLimit(3, reservesSpace: true)
                 .textFieldStyle(.roundedBorder)
                 .focused($focusedField, equals: .adaptiveAnswer)
@@ -459,8 +491,9 @@ struct GuidedCareerOnboardingView: View {
                     Text(fact.value)
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
+                    onboardingFieldHint("Correct this suggestion if it is inaccurate.")
                     TextField(
-                        "Correct this suggestion",
+                        "Edited value for \(fact.kind.title)",
                         text: Binding(
                             get: { hypothesisEdits[fact.id] ?? fact.value },
                             set: { hypothesisEdits[fact.id] = $0 }
@@ -550,6 +583,13 @@ struct GuidedCareerOnboardingView: View {
         }
     }
 
+    private func onboardingFieldHint(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(.caption)
+            .foregroundStyle(Color.openLARPSoftInk)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     private func choiceButton(
         title: String,
         isSelected: Bool,
@@ -558,23 +598,32 @@ struct GuidedCareerOnboardingView: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .imageScale(.medium)
                 Text(title)
+                    .font(.subheadline.weight(.semibold))
                     .multilineTextAlignment(.leading)
+                    .accessibilityIdentifier("onboarding.scalableChoiceLabel")
             }
-            .font(.subheadline.weight(.semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .padding(.horizontal, 8)
             .background(isSelected ? Color.openLARPBlue.opacity(0.14) : Color.openLARPBackground)
-            .foregroundStyle(isSelected ? Color.openLARPBlue : Color.openLARPInk)
+            .foregroundStyle(isSelected ? Color.openLARPBlueDark : Color.openLARPInk)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.openLARPBlue : Color.openLARPSoftInk.opacity(0.25), lineWidth: 1)
+                    .stroke(isSelected ? Color.openLARPBlueDark : Color.openLARPSoftInk.opacity(0.25), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func choiceColumns(minimumWidth: CGFloat) -> [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible())]
+        }
+        return [GridItem(.adaptive(minimum: minimumWidth))]
     }
 
     private var canUsePrimaryAction: Bool {

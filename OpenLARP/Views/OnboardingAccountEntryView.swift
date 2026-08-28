@@ -78,7 +78,7 @@ struct OnboardingAccountEntryView: View {
                !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Label(message, systemImage: "info.circle")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.openLARPCoral)
+                    .foregroundStyle(Color.openLARPAttentionText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.updatesFrequently)
             }

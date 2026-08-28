@@ -43,6 +43,8 @@ struct TodayView: View {
         .background(Color.openLARPBackground)
         .navigationTitle("Today")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.openLARPBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .sheet(isPresented: $showingAgent) {
             NavigationStack {
                 AgentChatView(store: store)
@@ -257,8 +259,8 @@ struct TodayView: View {
                             SectionHeader(feature: .cooked, eyebrow: content.eyebrow, title: "The roast report")
 
                             Text(content.title)
-                                .font(.system(size: 34, weight: .black, design: .rounded))
-                                .foregroundStyle(Color.openLARPCoral)
+                                .font(.system(.largeTitle, design: .rounded, weight: .black))
+                                .foregroundStyle(Color.openLARPAttentionText)
                         }
 
                         Spacer()
@@ -411,7 +413,7 @@ struct TodayView: View {
                     case .completed:
                         Label("Quest complete. Your next quest is ready on the map.", systemImage: "checkmark.circle.fill")
                             .font(.headline)
-                            .foregroundStyle(Color.openLARPGreen)
+                            .foregroundStyle(Color.openLARPSuccessText)
                     case .locked:
                         Label("This quest unlocks after today's proof.", systemImage: "lock.fill")
                             .font(.headline)
@@ -528,7 +530,7 @@ struct TodayView: View {
             if didSaveOutcome, let latestOutcome = OutcomeLogContent(outcomes: store.state.outcomeLog).outcomes.first {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(Color.openLARPGreen)
+                        .foregroundStyle(Color.openLARPSuccessText)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Latest outcome saved")
                             .font(.caption.weight(.bold))
@@ -613,7 +615,7 @@ struct TodayView: View {
                     if let opportunity = store.state.agentBrief.opportunities.first {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: opportunity.type.systemImage)
-                                .foregroundStyle(Color.openLARPPurple)
+                                .foregroundStyle(Color.openLARPPurpleText)
                                 .frame(width: 30, height: 30)
                                 .background(Color.openLARPPurple.opacity(0.12))
                                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -648,7 +650,7 @@ private struct SkippedTodayCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 Label(content.title, systemImage: "forward.end.circle.fill")
                     .font(.headline)
-                    .foregroundStyle(Color.openLARPCoral)
+                    .foregroundStyle(Color.openLARPAttentionText)
 
                 Text(content.skippedQuestTitle)
                     .font(.title2.weight(.bold))
@@ -673,7 +675,7 @@ private struct SkippedTodayCard: View {
                 VStack(alignment: .leading, spacing: 9) {
                     Text(content.nextQuestTitle == nil ? "Track status" : "Tomorrow preview")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(Color.openLARPGreen)
+                        .foregroundStyle(Color.openLARPSuccessText)
                         .textCase(.uppercase)
                         .accessibilityIdentifier("today.tomorrowPreview")
 
@@ -703,7 +705,7 @@ private struct SkippedTodayCard: View {
 
                     Label(content.unlockMessage, systemImage: content.nextQuestTitle == nil ? "checkmark.seal.fill" : "lock.fill")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.openLARPCoral)
+                        .foregroundStyle(Color.openLARPAttentionText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
@@ -723,7 +725,7 @@ private struct MissedDayRecoveryCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 Label(content.title, systemImage: "arrow.counterclockwise.circle.fill")
                     .font(.headline)
-                    .foregroundStyle(Color.openLARPCoral)
+                    .foregroundStyle(Color.openLARPAttentionText)
 
                 Text(content.missedDaysText)
                     .font(.title3.weight(.bold))
@@ -743,7 +745,7 @@ private struct MissedDayRecoveryCard: View {
                 VStack(alignment: .leading, spacing: 9) {
                     Text("Next quest")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(Color.openLARPGreen)
+                        .foregroundStyle(Color.openLARPSuccessText)
                         .textCase(.uppercase)
 
                     Text(content.nextQuestTitle)
@@ -785,7 +787,7 @@ private struct DoneForTodayCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 Label("Done for today", systemImage: "checkmark.circle.fill")
                     .font(.headline)
-                    .foregroundStyle(Color.openLARPGreen)
+                    .foregroundStyle(Color.openLARPSuccessText)
                     .accessibilityIdentifier("today.done")
 
                 Text(content.completedQuestTitle)
@@ -819,7 +821,7 @@ private struct DoneForTodayCard: View {
                 VStack(alignment: .leading, spacing: 9) {
                     Text("Tomorrow preview")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(Color.openLARPGreen)
+                        .foregroundStyle(Color.openLARPSuccessText)
                         .textCase(.uppercase)
                         .accessibilityIdentifier("today.tomorrowPreview")
 
@@ -849,7 +851,7 @@ private struct DoneForTodayCard: View {
 
                     Label(content.unlockMessage, systemImage: content.nextQuestTitle == nil ? "checkmark.seal.fill" : "lock.fill")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.openLARPCoral)
+                        .foregroundStyle(Color.openLARPAttentionText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
@@ -967,8 +969,8 @@ private struct DiagnosticResultBridgeView: View {
                                     SectionHeader(feature: .cooked, eyebrow: content.eyebrow, title: "The roast report")
 
                                     Text(content.title)
-                                        .font(.system(size: 40, weight: .black, design: .rounded))
-                                        .foregroundStyle(Color.openLARPCoral)
+                                        .font(.system(.largeTitle, design: .rounded, weight: .black))
+                                        .foregroundStyle(Color.openLARPAttentionText)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
 
@@ -1277,7 +1279,7 @@ private struct ProofComposer: View {
                 } else {
                     Label("4 of 4 proof images added", systemImage: "checkmark.circle.fill")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.openLARPGreen)
+                        .foregroundStyle(Color.openLARPSuccessText)
                 }
 
                 Text("Up to 4 PNG, JPEG, HEIC, or HEIF images; 8 MB per image after processing.")
@@ -1294,7 +1296,7 @@ private struct ProofComposer: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Draft images saved locally")
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.openLARPGreen)
+                            .foregroundStyle(Color.openLARPSuccessText)
                             .textCase(.uppercase)
 
                         ProofAttachmentStrip(attachments: attachments) { attachment in
@@ -1308,7 +1310,7 @@ private struct ProofComposer: View {
                                 Label("Remove \(attachment.originalFileName.isEmpty ? "image" : attachment.originalFileName)", systemImage: "xmark.circle")
                                     .font(.caption.weight(.semibold))
                             }
-                            .foregroundStyle(Color.openLARPCoral)
+                            .foregroundStyle(Color.openLARPAttentionText)
                             .disabled(store.isProofChecking)
                         }
                     }
@@ -1325,7 +1327,6 @@ private struct ProofComposer: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(!canSubmit || isSavingAttachments || store.isProofChecking)
-            .opacity(canSubmit && !isSavingAttachments && !store.isProofChecking ? 1 : 0.5)
             .accessibilityIdentifier("proof.check")
 
             AskOpenLARPButton(
@@ -1508,12 +1509,12 @@ private struct QualityResultCard: View {
             if let disclosure {
                 Label(disclosure.reviewedText, systemImage: "text.magnifyingglass")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.openLARPGreen)
+                    .foregroundStyle(Color.openLARPSuccessText)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Label(disclosure.notInspectedText, systemImage: "eye.slash")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.openLARPCoral)
+                    .foregroundStyle(Color.openLARPAttentionText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

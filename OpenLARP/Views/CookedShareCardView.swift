@@ -79,7 +79,7 @@ struct CookedShareCardSheet: View {
                     if let exportErrorMessage {
                         Text(exportErrorMessage)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.openLARPCoral)
+                            .foregroundStyle(Color.openLARPAttentionText)
 
                         ShareLink(item: activeContent.shareText) {
                             Label("Share Text Instead", systemImage: "text.quote")
@@ -171,7 +171,7 @@ struct CookedShareCardPreview: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("OpenLARP")
                         .font(.caption.weight(.black))
-                        .foregroundStyle(Color.openLARPGreen)
+                        .foregroundStyle(Color.openLARPSuccessText)
                         .textCase(.uppercase)
 
                     Text(content.title)
@@ -188,7 +188,7 @@ struct CookedShareCardPreview: View {
 
             Text(content.cookedLabel)
                 .font(.system(size: 34, weight: .black, design: .rounded))
-                .foregroundStyle(Color.openLARPCoral)
+                .foregroundStyle(Color.openLARPAttentionText)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack {
@@ -241,7 +241,7 @@ private struct CookedShareCardExportImage: View {
 
             Text(payload.cookedLabel)
                 .font(.system(size: 106, weight: .black, design: .rounded))
-                .foregroundStyle(Color.openLARPCoral)
+                .foregroundStyle(Color.openLARPAttentionText)
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
                 .fixedSize(horizontal: false, vertical: true)
@@ -291,7 +291,7 @@ private struct CookedShareCardExportImage: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("OpenLARP")
                     .font(.system(size: 28, weight: .black, design: .rounded))
-                    .foregroundStyle(Color.openLARPGreen)
+                    .foregroundStyle(Color.openLARPSuccessText)
                     .textCase(.uppercase)
 
                 Text(payload.title)

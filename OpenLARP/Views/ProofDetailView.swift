@@ -43,7 +43,7 @@ struct ProofReceiptRow: View {
                     HStack(spacing: 8) {
                         Text(content.qualityLabel)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle((proof.quality?.isAccepted ?? false) ? Color.openLARPGreen : Color.openLARPCoral)
+                            .foregroundStyle((proof.quality?.isAccepted ?? false) ? Color.openLARPSuccessText : Color.openLARPAttentionText)
 
                         Text(content.xpText)
                             .font(.caption.weight(.semibold))
@@ -69,7 +69,7 @@ struct ProofReceiptRow: View {
             if let proofLinkText = content.proofLinkText {
                 Label(proofLinkText, systemImage: "link")
                     .font(.caption)
-                    .foregroundStyle(Color.openLARPGreen)
+                    .foregroundStyle(Color.openLARPSuccessText)
                     .lineLimit(1)
             }
 
@@ -199,14 +199,14 @@ struct ProofDetailView: View {
 
                         Text(content.qualityLabel)
                             .font(.subheadline.weight(.bold))
-                            .foregroundStyle((proof.quality?.isAccepted ?? false) ? Color.openLARPGreen : Color.openLARPCoral)
+                            .foregroundStyle((proof.quality?.isAccepted ?? false) ? Color.openLARPSuccessText : Color.openLARPAttentionText)
                     }
 
                     Spacer()
 
                     Text(content.xpText)
                         .font(.headline.weight(.black))
-                        .foregroundStyle(Color.openLARPGreen)
+                        .foregroundStyle(Color.openLARPSuccessText)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                         .background(Color.openLARPGreen.opacity(0.12))
@@ -237,7 +237,7 @@ struct ProofDetailView: View {
                             .foregroundStyle(Color.openLARPInk)
                         Text(evidenceCard.confirmationState.label)
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(evidenceCard.confirmationState == .userConfirmed ? Color.openLARPGreen : Color.openLARPCoral)
+                            .foregroundStyle(evidenceCard.confirmationState == .userConfirmed ? Color.openLARPSuccessText : Color.openLARPAttentionText)
                             .textCase(.uppercase)
                     }
 
@@ -440,7 +440,7 @@ private struct ProofDetailMetric: View {
         VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: systemImage)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(Color.openLARPGreen)
+                .foregroundStyle(Color.openLARPSuccessText)
                 .textCase(.uppercase)
 
             Text(value)
@@ -460,7 +460,7 @@ private struct ProofDetailTextBlock: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(Color.openLARPGreen)
+                .foregroundStyle(Color.openLARPSuccessText)
                 .textCase(.uppercase)
 
             Text(bodyText)

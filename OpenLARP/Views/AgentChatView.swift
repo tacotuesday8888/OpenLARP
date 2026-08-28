@@ -140,7 +140,7 @@ struct AgentChatView: View {
                             .multilineTextAlignment(.leading)
                         Spacer()
                         Image(systemName: "arrow.down.left")
-                            .foregroundStyle(Color.openLARPGreen)
+                            .foregroundStyle(Color.openLARPSuccessText)
                     }
                     .padding(14)
                     .background(Color.white)
@@ -167,7 +167,7 @@ struct AgentChatView: View {
                                 if let fact = store.state.careerUnderstanding.confirmedFacts.first(where: { $0.id == factID }) {
                                     Label(fact.value, systemImage: "checkmark.seal.fill")
                                         .font(.subheadline)
-                                        .foregroundStyle(Color.openLARPGreen)
+                                        .foregroundStyle(Color.openLARPSuccessText)
                                 }
                             }
                         }

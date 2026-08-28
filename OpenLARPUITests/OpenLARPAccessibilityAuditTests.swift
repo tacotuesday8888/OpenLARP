@@ -1,0 +1,312 @@
+import XCTest
+
+final class OpenLARPAccessibilityAuditTests: XCTestCase {
+    private var app: XCUIApplication!
+    private let sprintStart = Date(timeIntervalSince1970: 1_800_000_000)
+    private let scalableChoiceLabelIdentifier = "onboarding.scalableChoiceLabel"
+
+    @MainActor
+    func testCoreCareerJourneyPassesAccessibilityAudit() throws {
+        continueAfterFailure = false
+        verifyLargestAccessibilityTextLayout()
+        launchFreshApp()
+
+        let targetOutcome = app.textFields["onboarding.targetOutcome"]
+        XCTAssertTrue(targetOutcome.waitForExistence(timeout: 10))
+        verifyTargetOutcomeAccessibilityCoverage()
+        try auditCurrentScreen(named: "Target outcome")
+
+        targetOutcome.tap()
+        targetOutcome.typeText("Entry-level iOS engineer")
+        dismissKeyboardIfAvailable()
+
+        tapPrimaryAction(expectedTitle: "Describe My Current Reality")
+        try auditCurrentRealityScreen()
+
+        tapPrimaryAction(expectedTitle: "Set My Daily Commitment")
+        try auditOnboardingScreen(
+            named: "Daily commitment",
+            expectedAction: "Review OpenLARP's Understanding"
+        )
+
+        tapPrimaryAction(expectedTitle: "Review OpenLARP's Understanding")
+        try auditOnboardingScreen(
+            named: "Understanding review",
+            expectedAction: "Confirm Facts & Personalize My Check"
+        )
+
+        tapPrimaryAction(expectedTitle: "Confirm Facts & Personalize My Check")
+        let keepUnknown = app.buttons["onboarding.keepUnknown"]
+        XCTAssertTrue(keepUnknown.waitForExistence(timeout: 10))
+        try auditCurrentScreen(named: "Fact confirmation")
+        scrollToAndTap(keepUnknown)
+
+        tapPrimaryAction(expectedTitle: "Approve Understanding & Check My Readiness")
+        let diagnosticAction = app.buttons["diagnostic.primaryAction"]
+        XCTAssertTrue(diagnosticAction.waitForExistence(timeout: 10))
+        try auditCurrentScreen(named: "Cooked evaluation")
+        scrollToAndTap(diagnosticAction)
+
+        let approveMission = app.buttons["mission.approve"]
+        XCTAssertTrue(approveMission.waitForExistence(timeout: 10))
+        try auditCurrentScreen(named: "Mission review")
+        scrollToAndTap(approveMission)
+
+        let startQuest = app.buttons["quest.start"]
+        XCTAssertTrue(startQuest.waitForExistence(timeout: 10))
+        try auditCurrentScreen(named: "Daily quest")
+        scrollToAndTap(startQuest)
+
+        let proofText = app.textViews["proof.text"]
+        XCTAssertTrue(proofText.waitForExistence(timeout: 10))
+        try auditCurrentScreen(named: "Proof preparation")
+        scrollToAndTap(proofText)
+        proofText.typeText(
+            "I completed the real career action and saved a truthful note about what changed."
+        )
+        dismissKeyboardIfAvailable()
+
+        let checkProof = app.buttons["proof.check"]
+        XCTAssertTrue(checkProof.waitForExistence(timeout: 5))
+        scrollToAndTap(checkProof)
+
+        let claimXP = app.buttons["proof.claim"]
+        XCTAssertTrue(claimXP.waitForExistence(timeout: 10))
+        try auditCurrentScreen(named: "Proof feedback")
+        scrollToAndTap(claimXP)
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["today.tomorrowPreview"]
+                .waitForExistence(timeout: 10)
+        )
+        try auditCurrentScreen(named: "Completed quest")
+    }
+
+    @MainActor
+    private func launchFreshApp(dynamicTypeSize: String? = nil) {
+        app = XCUIApplication()
+        app.launchEnvironment["OPENLARP_UI_TEST_RESET_LOCAL_DATA"] = "1"
+        app.launchEnvironment["OPENLARP_UI_TEST_NOW"] = String(sprintStart.timeIntervalSince1970)
+        if let dynamicTypeSize {
+            app.launchEnvironment["OPENLARP_UI_TEST_DYNAMIC_TYPE_SIZE"] = dynamicTypeSize
+        }
+        app.launch()
+    }
+
+    @MainActor
+    private func verifyLargestAccessibilityTextLayout() {
+        launchFreshApp(dynamicTypeSize: "accessibility5")
+
+        XCTAssertTrue(
+            app.staticTexts["What are you working toward?"]
+                .waitForExistence(timeout: 10)
+        )
+        let heroTitle = app.staticTexts["Name the outcome"]
+        XCTAssertTrue(heroTitle.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(heroTitle.frame.width, 250)
+        XCTAssertGreaterThanOrEqual(heroTitle.frame.height, 44)
+
+        let job = app.buttons["Job"]
+        let internship = app.buttons["Internship"]
+        scrollUntilChoicesExist(job, internship)
+        XCTAssertTrue(job.waitForExistence(timeout: 10))
+        XCTAssertTrue(internship.waitForExistence(timeout: 5))
+
+        XCTAssertGreaterThan(job.frame.width, 250)
+        XCTAssertGreaterThan(internship.frame.width, 250)
+        XCTAssertGreaterThanOrEqual(job.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(internship.frame.height, 44)
+        XCTAssertLessThan(abs(job.frame.minX - internship.frame.minX), 2)
+        XCTAssertGreaterThan(internship.frame.minY, job.frame.maxY)
+
+        scrollToAndTap(internship)
+        XCTAssertTrue(internship.isSelected)
+        app.terminate()
+    }
+
+    @MainActor
+    private func scrollUntilChoicesExist(
+        _ firstChoice: XCUIElement,
+        _ secondChoice: XCUIElement
+    ) {
+        var attempts = 0
+        while (!firstChoice.exists || !secondChoice.exists) && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+    }
+
+    @MainActor
+    private func auditOnboardingScreen(named name: String, expectedAction: String) throws {
+        let action = app.buttons["onboarding.primaryAction"]
+        XCTAssertTrue(action.waitForExistence(timeout: 10))
+        XCTAssertEqual(action.label, expectedAction)
+        try auditCurrentScreen(named: name)
+    }
+
+    @MainActor
+    private func auditCurrentRealityScreen() throws {
+        let action = app.buttons["onboarding.primaryAction"]
+        XCTAssertTrue(action.waitForExistence(timeout: 10))
+        XCTAssertEqual(action.label, "Set My Daily Commitment")
+
+        let prompt = app.staticTexts["What is true today?"]
+        scrollToReveal(prompt)
+        try auditCurrentScreen(named: "Current reality — upper fields")
+
+        let confidence = app.staticTexts["onboarding.confidenceLabel"]
+        scrollToReveal(confidence)
+        try auditCurrentScreen(named: "Current reality — confidence and actions")
+    }
+
+    @MainActor
+    private func auditCurrentScreen(named name: String) throws {
+        try XCTContext.runActivity(named: "Accessibility audit: \(name)") { _ in
+            try app.performAccessibilityAudit { issue in
+                print(
+                    """
+                    Accessibility audit issue on \(name):
+                    Type: \(issue.auditType.rawValue)
+                    Summary: \(issue.compactDescription)
+                    Details: \(issue.detailedDescription)
+                    Element: \(issue.element?.debugDescription ?? "none")
+                    """
+                )
+                let isKnownXcodeDynamicTypeFalsePositive =
+                    issue.auditType == .dynamicType &&
+                    issue.element?.identifier == self.scalableChoiceLabelIdentifier
+                let isKnownXcodeDisabledPrimaryActionContrastFalsePositive =
+                    self.isKnownXcodeDisabledPrimaryActionContrastFalsePositive(issue)
+                let isKnownXcodeTargetOutcomeElementDetectionFalsePositive =
+                    self.isKnownXcodeTargetOutcomeElementDetectionFalsePositive(
+                        issue,
+                        screenName: name
+                    )
+                if isKnownXcodeDynamicTypeFalsePositive {
+                    print(
+                        "Ignoring Xcode 26.6 Dynamic Type false positive for the " +
+                        "separately verified scalable onboarding choice label."
+                    )
+                }
+                if isKnownXcodeDisabledPrimaryActionContrastFalsePositive {
+                    print(
+                        "Ignoring Xcode 26.6 contrast false positive for the exact disabled " +
+                        "onboarding action whose rendered and semantic contrast are separately verified."
+                    )
+                }
+                if isKnownXcodeTargetOutcomeElementDetectionFalsePositive {
+                    print(
+                        "Ignoring Xcode 26.6 element-detection false positive with no reported " +
+                        "element on the separately verified target-outcome screen."
+                    )
+                }
+                return isKnownXcodeDynamicTypeFalsePositive ||
+                    isKnownXcodeDisabledPrimaryActionContrastFalsePositive ||
+                    isKnownXcodeTargetOutcomeElementDetectionFalsePositive
+            }
+        }
+    }
+
+    @MainActor
+    private func verifyTargetOutcomeAccessibilityCoverage() {
+        let expectedTextLabels = [
+            "CAREER UNDERSTANDING",
+            "Name the outcome",
+            "1 of 4",
+            "Start with one honest target. This should feel like getting help, not filling out paperwork.",
+            "What are you working toward?",
+            "Choose the closest outcome. You can change it later without inventing a cleaner story.",
+            "Target role or outcome",
+            "Example: Entry-level iOS engineer.",
+            "Current stage",
+        ]
+        for label in expectedTextLabels {
+            XCTAssertTrue(
+                app.staticTexts[label].exists,
+                "Expected visible text to be represented in the accessibility hierarchy: \(label)"
+            )
+        }
+
+        for label in ["Job", "Internship", "Promotion", "Career change"] {
+            XCTAssertTrue(
+                app.buttons[label].exists,
+                "Expected choice to be represented as an accessible button: \(label)"
+            )
+        }
+
+        let targetOutcome = app.textFields["onboarding.targetOutcome"]
+        XCTAssertTrue(targetOutcome.exists)
+        XCTAssertEqual(targetOutcome.label, "Target role or career outcome")
+
+        let primaryAction = app.buttons["onboarding.primaryAction"]
+        XCTAssertTrue(primaryAction.exists)
+        XCTAssertEqual(primaryAction.label, "Describe My Current Reality")
+        XCTAssertFalse(primaryAction.isEnabled)
+    }
+
+    @MainActor
+    private func isKnownXcodeTargetOutcomeElementDetectionFalsePositive(
+        _ issue: XCUIAccessibilityAuditIssue,
+        screenName: String
+    ) -> Bool {
+        screenName == "Target outcome" &&
+            issue.auditType == .elementDetection &&
+            issue.element == nil
+    }
+
+    @MainActor
+    private func isKnownXcodeDisabledPrimaryActionContrastFalsePositive(
+        _ issue: XCUIAccessibilityAuditIssue
+    ) -> Bool {
+        guard issue.auditType == .contrast,
+              let element = issue.element,
+              element.elementType == .staticText,
+              element.label == "Describe My Current Reality",
+              !element.isEnabled else {
+            return false
+        }
+
+        let button = app.buttons["onboarding.primaryAction"]
+        return button.exists &&
+            !button.isEnabled &&
+            button.label == element.label &&
+            button.frame.contains(element.frame)
+    }
+
+    @MainActor
+    private func tapPrimaryAction(expectedTitle: String) {
+        let action = app.buttons["onboarding.primaryAction"]
+        XCTAssertTrue(action.waitForExistence(timeout: 10))
+        XCTAssertEqual(action.label, expectedTitle)
+        scrollToAndTap(action)
+    }
+
+    @MainActor
+    private func dismissKeyboardIfAvailable() {
+        let done = app.toolbars.buttons["Done"]
+        if done.waitForExistence(timeout: 1) {
+            done.tap()
+        }
+    }
+
+    @MainActor
+    private func scrollToAndTap(_ element: XCUIElement) {
+        scrollToReveal(element)
+        guard element.isHittable else { return }
+        element.tap()
+    }
+
+    @MainActor
+    private func scrollToReveal(_ element: XCUIElement) {
+        var attempts = 0
+        while !element.isHittable && attempts < 8 {
+            if element.frame.midY < app.frame.midY {
+                app.swipeDown()
+            } else {
+                app.swipeUp()
+            }
+            attempts += 1
+        }
+        XCTAssertTrue(element.isHittable)
+    }
+}

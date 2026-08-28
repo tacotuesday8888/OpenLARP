@@ -84,7 +84,7 @@ struct ProofArchiveView: View {
 
                 Text(content.countText)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.openLARPGreen)
+                    .foregroundStyle(Color.openLARPSuccessText)
 
                 Text("Open a card to edit your notes and future use without changing its source or receipt history.")
                     .font(.body)
