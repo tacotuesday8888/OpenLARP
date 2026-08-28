@@ -94,6 +94,16 @@ describe("accessible foreground contract", () => {
     expect(auditSource).toContain("button.frame.contains(element.frame)");
   });
 
+  it("backs the target-outcome element-detection workaround with UI coverage", () => {
+    const auditSource = readFileSync(accessibilityAuditPath, "utf8");
+
+    expect(auditSource).toContain("verifyTargetOutcomeAccessibilityCoverage()");
+    expect(auditSource).toContain("isKnownXcodeTargetOutcomeElementDetectionFalsePositive");
+    expect(auditSource).toContain('screenName == "Target outcome"');
+    expect(auditSource).toContain("issue.auditType == .elementDetection");
+    expect(auditSource).toContain("issue.element == nil");
+  });
+
   it("keeps shared light-surface components on accessible foregrounds", () => {
     const styleSource = readFileSync(stylePath, "utf8");
     const pill = sourceBetween(styleSource, "struct Pill: View", "struct PrimaryButtonStyle");

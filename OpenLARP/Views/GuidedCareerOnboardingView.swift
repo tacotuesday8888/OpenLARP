@@ -186,7 +186,7 @@ struct GuidedCareerOnboardingView: View {
                         .font(.subheadline.weight(.semibold))
                     onboardingFieldHint("Example: Entry-level iOS engineer.")
                     TextField(
-                        "",
+                        "Target role or career outcome",
                         text: $draft.targetOutcome
                     )
                         .textFieldStyle(.roundedBorder)
@@ -224,7 +224,7 @@ struct GuidedCareerOnboardingView: View {
                         .font(.subheadline.weight(.semibold))
                     onboardingFieldHint("Example: Within 90 days.")
                     TextField(
-                        "",
+                        "Career goal timeline",
                         text: $draft.timeline
                     )
                         .textFieldStyle(.roundedBorder)
@@ -252,7 +252,7 @@ struct GuidedCareerOnboardingView: View {
                         .font(.subheadline.weight(.semibold))
                     onboardingFieldHint("Examples: coursework, projects, or current work.")
                     TextField(
-                        "",
+                        "Relevant experience",
                         text: $draft.experience,
                         axis: .vertical
                     )
@@ -267,7 +267,7 @@ struct GuidedCareerOnboardingView: View {
                         .font(.subheadline.weight(.semibold))
                     onboardingFieldHint("Examples: shipped work, links, screenshots, or results.")
                     TextField(
-                        "",
+                        "Existing career proof",
                         text: $draft.existingProof,
                         axis: .vertical
                     )
@@ -322,7 +322,7 @@ struct GuidedCareerOnboardingView: View {
                         .font(.subheadline.weight(.semibold))
                     onboardingFieldHint("Examples: budget, schedule, location, or access.")
                     TextField(
-                        "",
+                        "Career plan constraints",
                         text: $draft.constraints,
                         axis: .vertical
                     )
@@ -337,7 +337,7 @@ struct GuidedCareerOnboardingView: View {
                         .font(.subheadline.weight(.semibold))
                     onboardingFieldHint("What makes this outcome feel risky?")
                     TextField(
-                        "",
+                        "Biggest career blocker",
                         text: $draft.biggestBlocker,
                         axis: .vertical
                     )
@@ -453,7 +453,7 @@ struct GuidedCareerOnboardingView: View {
 
             onboardingFieldHint("Answer only if you know.")
             TextField(
-                "",
+                question.question,
                 text: $adaptiveAnswer,
                 axis: .vertical
             )
@@ -493,7 +493,7 @@ struct GuidedCareerOnboardingView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     onboardingFieldHint("Correct this suggestion if it is inaccurate.")
                     TextField(
-                        "",
+                        "Edited value for \(fact.kind.title)",
                         text: Binding(
                             get: { hypothesisEdits[fact.id] ?? fact.value },
                             set: { hypothesisEdits[fact.id] = $0 }
