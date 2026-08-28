@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const appRoot = fileURLToPath(new URL("../../OpenLARP", import.meta.url));
 const stylePath = join(appRoot, "Style", "OpenLARPStyle.swift");
+const todayViewPath = join(appRoot, "Views", "TodayView.swift");
 const accessibilityAuditPath = fileURLToPath(
   new URL("../../OpenLARPUITests/OpenLARPAccessibilityAuditTests.swift", import.meta.url)
 );
@@ -102,6 +103,15 @@ describe("accessible foreground contract", () => {
     expect(auditSource).toContain('screenName == "Target outcome"');
     expect(auditSource).toContain("issue.auditType == .elementDetection");
     expect(auditSource).toContain("issue.element == nil");
+  });
+
+  it("keeps the Today navigation bar opaque over scrolling onboarding content", () => {
+    const todaySource = readFileSync(todayViewPath, "utf8");
+
+    expect(todaySource).toContain(
+      ".toolbarBackground(Color.openLARPBackground, for: .navigationBar)"
+    );
+    expect(todaySource).toContain(".toolbarBackground(.visible, for: .navigationBar)");
   });
 
   it("keeps shared light-surface components on accessible foregrounds", () => {

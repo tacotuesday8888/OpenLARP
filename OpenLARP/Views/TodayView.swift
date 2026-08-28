@@ -43,6 +43,8 @@ struct TodayView: View {
         .background(Color.openLARPBackground)
         .navigationTitle("Today")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.openLARPBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .sheet(isPresented: $showingAgent) {
             NavigationStack {
                 AgentChatView(store: store)
