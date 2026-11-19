@@ -281,6 +281,7 @@ struct ProfileView: View {
         case .detail(let outcome):
             OutcomeDetailView(
                 outcome: outcome,
+                store: store,
                 isEditable: !store.state.needsGoalSetup,
                 edit: {
                     outcomeSheetDestination = .edit(outcome)
@@ -1180,45 +1181,38 @@ struct ProfileView: View {
                             .foregroundStyle(Color.openLARPSoftInk)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-
-                    Label("External actions always require approval.", systemImage: "hand.raised.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.openLARPCoral)
-                        .fixedSize(horizontal: false, vertical: true)
                 case .cloudControls:
-                    SectionHeader(feature: .privacy, eyebrow: "Private by default", title: "Memory and sharing")
+                    SectionHeader(feature: .privacy, eyebrow: "Private by default", title: "Sharing and backup")
+                }
 
-                    if store.state.userProfile == nil {
-                        Text("Set a goal first to create local privacy controls for memory and sharing.")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.openLARPSoftInk)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        ForEach(presentation.visibleControls) { control in
-                            switch control {
-                            case .longTermMemory:
-                                PrivacyToggleRow(
-                                    title: "Long-term memory",
-                                    detail: "Keep local context on this device.",
-                                    isOn: memoryBinding
-                                )
-                            case .shareableWins:
-                                PrivacyToggleRow(
-                                    title: "Shareable wins",
-                                    detail: "Allow proof wins to be shared later.",
-                                    isOn: shareWinsBinding
-                                )
-                            case .privateEvidenceCloudSync:
-                                PrivacyToggleRow(
-                                    title: "Private evidence cloud sync",
-                                    detail: "Allow future proof, files, links, and private notes in account backup.",
-                                    isOn: privateEvidenceCloudSyncBinding
-                                )
-                                .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
-                            }
+                if store.state.userProfile != nil {
+                    ForEach(presentation.visibleControls) { control in
+                        switch control {
+                        case .longTermMemory:
+                            PrivacyToggleRow(
+                                title: "Long-term memory",
+                                detail: "Keep local context on this device.",
+                                isOn: memoryBinding
+                            )
+                        case .shareableWins:
+                            PrivacyToggleRow(
+                                title: "Shareable wins",
+                                detail: "Preview cards for earned streaks, badges, and outcomes you mark shareable. You choose when to share.",
+                                isOn: shareWinsBinding
+                            )
+                            .accessibilityIdentifier("profile.shareWins")
+                        case .privateEvidenceCloudSync:
+                            PrivacyToggleRow(
+                                title: "Private evidence cloud sync",
+                                detail: "Allow future proof, files, links, and private notes in account backup.",
+                                isOn: privateEvidenceCloudSyncBinding
+                            )
+                            .disabled(store.isUpdatingPrivateEvidenceCloudSyncConsent)
                         }
+                    }
 
-                        Text("Turning this off stops future private evidence sync. Removing already synced proof backups is a separate cleanup request and is not full account deletion.")
+                    if presentation == .cloudControls {
+                        Text("Turning off private evidence cloud sync stops future backups. You can remove previously synced proof in account data controls.")
                             .font(.caption)
                             .foregroundStyle(Color.openLARPSoftInk)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1229,13 +1223,17 @@ struct ProfileView: View {
                             .font(.subheadline)
                             .foregroundStyle(Color.openLARPSoftInk)
                             .fixedSize(horizontal: false, vertical: true)
-
-                        Label("External actions always require approval.", systemImage: "hand.raised.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.openLARPCoral)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
+                } else {
+                    Text("Set a goal to manage sharing preferences.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.openLARPSoftInk)
                 }
+
+                Label("External actions always require approval.", systemImage: "hand.raised.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.openLARPCoral)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -1876,7 +1874,7 @@ private struct PrivacyToggleRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        Toggle(isOn: $isOn) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.subheadline.weight(.bold))
@@ -1887,13 +1885,8 @@ private struct PrivacyToggleRow: View {
                     .foregroundStyle(Color.openLARPSoftInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 12)
-
-            Toggle(title, isOn: $isOn)
-                .labelsHidden()
-                .tint(.openLARPBlue)
         }
+        .tint(.openLARPBlue)
         .padding(12)
         .background(Color.openLARPBackground)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

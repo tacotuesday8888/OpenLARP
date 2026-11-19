@@ -43,6 +43,10 @@ final class OpenLARPFreshUserJourneyTests: XCTestCase {
             }
             completeAvailableQuest(day: day)
 
+            if day == 1 {
+                previewFirstStreakCardWithConsent()
+            }
+
             if day < 7 {
                 XCTAssertTrue(
                     app.descendants(matching: .any)["today.tomorrowPreview"]
@@ -89,6 +93,41 @@ final class OpenLARPFreshUserJourneyTests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Map"].exists)
         XCTAssertTrue(app.tabBars.buttons["Progress"].exists)
         XCTAssertTrue(app.tabBars.buttons["Profile"].exists)
+    }
+
+    @MainActor
+    private func previewFirstStreakCardWithConsent() {
+        let tabs = app.tabBars.buttons
+        let streakCard = app.buttons["progress.shareStreak"]
+        let shareWins = app.switches["profile.shareWins"]
+
+        tabs["Progress"].tap()
+        XCTAssertFalse(streakCard.exists)
+
+        tabs["Profile"].tap()
+        XCTAssertTrue(shareWins.waitForExistence(timeout: 5))
+        XCTAssertEqual(shareWins.value as? String, "0")
+        scrollToAndTap(shareWins)
+        XCTAssertEqual(shareWins.value as? String, "1")
+
+        tabs["Progress"].tap()
+        XCTAssertTrue(streakCard.waitForExistence(timeout: 5))
+        scrollToAndTap(streakCard)
+        XCTAssertTrue(app.buttons["milestone.shareImage"].waitForExistence(timeout: 10))
+        let preview = app.images["milestone.preview"]
+        XCTAssertEqual(preview.label, "1-day streak")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Streak card preview"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["milestone.dismiss"].tap()
+
+        tabs["Profile"].tap()
+        scrollToAndTap(shareWins)
+        XCTAssertEqual(shareWins.value as? String, "0")
+        tabs["Progress"].tap()
+        XCTAssertFalse(streakCard.exists)
+        tabs["Today"].tap()
     }
 
     @MainActor

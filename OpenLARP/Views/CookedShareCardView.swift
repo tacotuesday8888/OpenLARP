@@ -8,27 +8,14 @@ struct CookedShareCardImageExportService {
         self.scale = scale
     }
 
-    func render(payload: CookedShareCardExportPayload) throws -> CookedShareCardImageExport {
-        let exportView = CookedShareCardExportImage(payload: payload)
-            .frame(width: payload.pixelSize.width, height: payload.pixelSize.height)
-            .environment(\.colorScheme, .light)
-        let renderer = ImageRenderer(content: exportView)
-        renderer.proposedSize = ProposedViewSize(payload.pixelSize)
-        renderer.scale = scale
-
-        guard let image = renderer.uiImage else {
-            throw CookedShareCardExportError.renderingFailed
-        }
-        guard let data = image.pngData(), !data.isEmpty else {
-            throw CookedShareCardExportError.emptyPNGData
-        }
-
-        return CookedShareCardImageExport(
-            pngData: data,
+    func render(payload: CookedShareCardExportPayload) throws -> ShareCardImageExport {
+        try ShareCardImageExport.render(
+            CookedShareCardExportImage(payload: payload),
+            size: payload.pixelSize,
+            scale: scale,
             filename: payload.suggestedFilename,
             caption: payload.caption,
-            subject: payload.subject,
-            pixelSize: image.size
+            subject: payload.subject
         )
     }
 }
@@ -39,7 +26,7 @@ struct CookedShareCardSheet: View {
     let onImagePrepared: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var hideDetails = true
-    @State private var imageExport: CookedShareCardImageExport?
+    @State private var imageExport: ShareCardImageExport?
     @State private var exportErrorMessage: String?
     @State private var isRenderingExport = false
     @State private var preparedContentIDs: Set<String> = []

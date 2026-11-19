@@ -23,6 +23,7 @@ OpenLARP currently has:
 - JSON persistence in the app documents directory
 - Local text/link proof and app-private screenshot/photo attachment storage
 - Proof receipts, proof detail, proof archive, completed quest detail, and map preview screens
+- Optional milestone cards for an active streak, an earned badge, or a shareable outcome type. Users can preview the image and caption before sharing through iOS. Outcome cards identify the update as self-reported and omit titles, organizations, and notes.
 - Daily cadence, intentional skip-today, and missed-day recovery behavior
 - Privacy-safe local quest reminders with contextual permission, an editable time, daily or weekday cadence, clear disable and Settings recovery controls, and no private career details in notification content
 - XCTest coverage for the core local behavior
