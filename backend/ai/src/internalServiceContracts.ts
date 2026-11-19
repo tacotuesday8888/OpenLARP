@@ -44,7 +44,7 @@ export const internalWorkflowRequestSchema = z.object({
 export const internalWorkflowSuccessSchema = z.object({
   ok: z.literal(true),
   schemaVersion: z.literal(1),
-  requestID: z.string().uuid(),
+  requestID: z.guid(),
   kind: z.string().min(1).max(80),
   externalActionTaken: z.literal(false),
   result: z.unknown(),
@@ -63,7 +63,7 @@ export const internalWorkflowSuccessSchema = z.object({
 export type InternalWorkflowRequest = z.infer<typeof internalWorkflowRequestSchema>;
 export type InternalWorkflowSuccess = z.infer<typeof internalWorkflowSuccessSchema>;
 
-function livePayloadSchema(kind: string): z.ZodTypeAny | null {
+function livePayloadSchema(kind: string): z.ZodType | null {
   switch (kind) {
     case "adaptiveCareerIntake": return adaptiveCareerIntakePayloadSchema;
     case "cookedDiagnostic": return diagnosticPayloadSchema;
@@ -76,7 +76,7 @@ function livePayloadSchema(kind: string): z.ZodTypeAny | null {
   }
 }
 
-function liveResultSchema(kind: string): z.ZodTypeAny | null {
+function liveResultSchema(kind: string): z.ZodType | null {
   switch (kind) {
     case "adaptiveCareerIntake": return adaptiveCareerIntakeResponseSchema;
     case "cookedDiagnostic": return diagnosticResponseSchema;

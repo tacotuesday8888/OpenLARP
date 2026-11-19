@@ -88,4 +88,4 @@ Do not commit:
 
 `npm run public:safety` fails if local Firebase or RevenueCat plists, `.env` files, Apple signing assets, macOS metadata, or common real-looking key patterns become tracked. This keeps the public-readable repository clean while still allowing ignored local config on a developer machine.
 
-The app is intentionally structured so the iOS client does not call LLM providers directly. AI providers should be routed through backend services such as Cloud Run, Cloud Functions, or Genkit.
+Service-enabled iOS builds call Firebase Functions. The callable can dispatch to a private Cloud Run service, which runs Gemini on Vertex AI.

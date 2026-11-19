@@ -213,7 +213,7 @@ jobs:
         run: npm run public:safety
       - name: Check beta release gate
         run: npm run beta:gate
-      - name: Test Genkit backend
+      - name: Test backend
         run: npm run test:backend
       - name: Test AI truthfulness evals
         run: npm run test:evals

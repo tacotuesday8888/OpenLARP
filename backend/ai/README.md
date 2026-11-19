@@ -1,6 +1,6 @@
 # OpenLARP AI Backend
 
-This package owns OpenLARP's server-side Genkit contracts, grounded prompts,
+This package owns OpenLARP's server-side workflow contracts, grounded prompts,
 structured Gemini generation, post-generation truth checks, deterministic
 fallbacks, and provider-safe usage accounting. The iOS app never imports a
 model SDK or receives provider credentials, model IDs, prompts, pricing, or
@@ -8,7 +8,7 @@ budget configuration.
 
 ## Current Runtime
 
-- Genkit: `genkit` with `@genkit-ai/google-genai`
+- SDK: `@google/genai` in Vertex AI mode
 - Provider: Vertex AI (`vertex-ai`)
 - Default model: `gemini-3.5-flash`
 - Default location: `global`

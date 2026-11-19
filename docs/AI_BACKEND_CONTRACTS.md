@@ -25,7 +25,7 @@ It intentionally does not encode owner user IDs, account IDs, session IDs, email
 
 ## Provider Boundary
 
-iOS contracts carry `V0AIProviderRoute` only, such as `cloudRunGenkit` or `firebaseCallableGenkit`.
+The existing `V0AIProviderRoute` identifiers, including `cloudRunGenkit` and `firebaseCallableGenkit`, remain part of the wire format for deployed clients.
 
 The backend owns the mapping from that route to a concrete provider, SDK, deployment, and model. If a server target model is chosen, keep that value in backend configuration and backend docs, not in iOS runtime contracts.
 
@@ -71,11 +71,11 @@ The adapter:
 
 The repo includes:
 
-- `backend/ai/`: shared schemas, deterministic handlers, grounded prompt builders, post-generation safety validation, Genkit/Gemini execution, and backend-only model configuration.
+- `backend/ai/`: shared schemas, deterministic handlers, grounded prompt builders, post-generation safety validation, Vertex AI Gemini generation, and backend-only model configuration.
 - `backend/ai-service/`: the narrow private Cloud Run HTTP runtime for live workflows.
 - `backend/functions/`: the authenticated Firebase Callable Functions boundary, runtime policy reader, per-user quota guard, provider budget ledger, and IAM-authenticated Cloud Run client.
 
-Shared request/response contracts import Zod directly. This keeps the deployable Firebase Functions package free of Genkit runtime dependencies while the Genkit/Gemini orchestration layer remains isolated behind the private AI service.
+Firebase Functions and the private AI service validate shared request and response contracts with Zod 4. Only the private AI service uses the Google Gen AI SDK to generate content on Vertex AI.
 
 Current backend verification commands:
 
@@ -85,7 +85,7 @@ npm run test:backend
 npm run build:backend
 ```
 
-The backend package defines server-side schemas, deterministic mock workflow handlers, safety validation, and Genkit flow definitions for:
+The backend package defines schemas, deterministic workflow handlers, and safety checks for the following workflows.
 
 - cooked diagnostic generation
 - quest plan generation
@@ -156,8 +156,8 @@ scripts/live-ai-smoke.sh --service-url CLOUD_RUN_ORIGIN --require-live
 
 To stop live traffic, set the Firestore runtime policy `enabled` field to `false`; allow up to the 30-second cache TTL. For immediate defense in depth, also set `OPENLARP_ENABLE_LIVE_AI=false` on Functions or the AI service. Restore a previous Cloud Run revision only after dispatch is disabled.
 
-### Controlled-beta dependency risk
+### Production dependency audit
 
-`npm run audit:production` currently accepts exactly six enumerated high-severity findings in the shipped production dependency graph, all transitive through Genkit/OpenTelemetry. It rejects critical findings, direct high-severity findings, malformed audit output, or any unenumerated high finding. The development/tooling dependency graph has separate Firebase CLI advisories and is not part of the deployed service image.
+`npm run audit:production` audits the workspace lockfile used for the AI service build and the standalone lockfile used by Firebase Functions deployment. It omits development dependencies and requires zero high or critical findings, including transitive dependencies. Both reports must be complete and internally consistent for the check to pass.
 
-This is an explicit controlled-beta risk acceptance, not approval for broad production traffic. Keep the allowlist narrow, rerun the audit in CI, review upstream fixes, and remove each exception as soon as compatible patched releases are available. Live deployment and the authenticated `--require-live` smoke remain pending operator actions.
+Live deployment and the authenticated `--require-live` smoke remain pending operator actions.

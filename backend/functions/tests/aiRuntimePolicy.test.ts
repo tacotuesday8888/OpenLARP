@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Timestamp } from "firebase-admin/firestore";
 import { createCachedAIRuntimePolicyReader } from "../src/aiRuntimePolicy.js";
 
 const now = new Date("2026-08-10T10:00:00.000Z");
@@ -60,9 +61,19 @@ describe("createCachedAIRuntimePolicyReader", () => {
     expect(JSON.stringify(readDocument.mock.calls)).not.toContain("iOS engineer");
   });
 
+  it("reads expiry from a Firestore Timestamp with its original receiver", async () => {
+    const validUntil = Timestamp.fromDate(new Date(now.getTime() + 60_000));
+    const reader = createCachedAIRuntimePolicyReader({
+      readDocument: async () => ({ ...validPolicy(), validUntil }),
+      cacheTTLms: 30_000
+    });
+    await expect(reader.read("cookedDiagnostic", now)).resolves.toMatchObject({ enabled: true });
+  });
+
   it.each([
     ["missing", null],
     ["malformed", { schemaVersion: 1, enabled: true }],
+    ["invalid timestamp", { ...validPolicy(), validUntil: { toDate: () => "2099-01-01T00:00:00Z" } }],
     ["expired", { ...validPolicy(), validUntil: "2026-08-10T09:59:59.000Z" }]
   ])("fails closed for a %s policy", async (_name, document) => {
     const reader = createCachedAIRuntimePolicyReader({

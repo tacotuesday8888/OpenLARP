@@ -41,10 +41,10 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Typecheck Genkit backend
+      - name: Typecheck backend
         run: npm run typecheck:backend
 
-      - name: Test Genkit backend
+      - name: Test backend
         run: npm run test:backend
 
       - name: Test AI truthfulness evals

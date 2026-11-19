@@ -146,8 +146,8 @@ Firestore rules now prevent backend event documents from bypassing the dedicated
 - Security rules validate through Firebase MCP.
 - Emulator-based rules tests now exist under `firebase-rules/` and cover career graph document shapes, backend event spoofing, private evidence sync consent gates, proof attachment Storage metadata, and upload receipt constraints. This workstation has OpenJDK 21 installed through Homebrew for local emulator verification.
 - Firebase Functions config points to `backend/functions` with Node.js 22. `runOpenLARPWorkflow` is the callable AI workflow boundary, `syncOpenLARPCareerState` is the transactional Rich V0 snapshot boundary, `setPrivateEvidenceCloudSyncConsent` is the server-owned private evidence consent boundary, `promoteProofUploadReceipt` is the server-trusted proof receipt boundary, `reconcileProofUploads` is the conservative orphan repair/report boundary, `acknowledgeBackendEvents` is the server-owned backend event acknowledgement boundary, and `deleteOpenLARPAccount` is the server-owned account deletion boundary.
-- The deployable Functions package is intentionally Genkit-free. It can dispatch validated live workflows to an IAM-private Cloud Run service, while Genkit/Gemini dependencies remain isolated in `backend/ai` and `backend/ai-service`.
-- `backend/functions/package-lock.json` is committed because Firebase deploys from that source directory, and the package pins Firebase Admin to the latest 13.x version compatible with `firebase-functions@7.2.5`.
+- The deployable Functions package dispatches validated live workflows to an IAM-private Cloud Run service. The service uses the Google Gen AI SDK to call Gemini on Vertex AI.
+- `backend/functions/package-lock.json` is committed because Firebase deploys from that source directory, and the deployment manifest pins compatible Firebase Admin and Functions SDK versions.
 - The iOS app is wired to try `runOpenLARPWorkflow` through Firebase Functions first and preserve local V0 behavior through fallback when live Firebase is unavailable.
 - `setPrivateEvidenceCloudSyncConsent` exists as an authenticated callable that records accepted/revoked private evidence sync consent server-side.
 - `promoteProofUploadReceipt` exists as an authenticated callable that checks accepted private evidence sync consent, verifies uploaded proof Storage objects with the Admin SDK, and writes Firestore upload receipts server-side.
@@ -194,7 +194,7 @@ The kill-switch document is `_serverConfig/aiRuntimePolicy`. Its required shape 
 
 Start disabled, use a short expiry, and enable one workflow at a time. Missing, unreadable, malformed, expired, globally disabled, or workflow-disabled policy state produces deterministic fallback. The policy reader caches a valid policy for no more than 30 seconds.
 
-Before deployment, verify `npm run test:evals`, `npm run audit:production`, `npm run public:safety`, and `npm run beta:gate`. The production audit currently permits exactly six enumerated transitive Genkit/OpenTelemetry high findings for controlled beta, with no critical or direct high finding; do not treat that exception as broad-production approval.
+Before deployment, verify `npm run test:evals`, `npm run audit:production`, `npm run public:safety`, and `npm run beta:gate`. The production audit requires zero high or critical findings in both the workspace dependencies and the standalone Functions deployment dependencies.
 
 Deploy the service from a clean reviewed revision, then configure Functions with the returned HTTPS origin, its own `OPENLARP_ENABLE_LIVE_AI=true` switch, and explicit current provider pricing/daily budget values:
 
