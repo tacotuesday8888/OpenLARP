@@ -17,14 +17,12 @@ const runtimePolicySchema = z.object({
   revision: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/),
   enabled: z.boolean(),
   validUntil: z.union([
-    z.string().datetime(),
+    z.iso.datetime().transform((value) => new Date(value)),
     z.date(),
-    z.object({ toDate: z.function().returns(z.date()) })
-  ]).transform((value) => {
-    if (typeof value === "string") return new Date(value);
-    if (value instanceof Date) return value;
-    return value.toDate();
-  }),
+    z.custom<{ toDate(): unknown }>((value) =>
+      typeof value === "object" && value !== null && "toDate" in value && typeof value.toDate === "function"
+    ).transform((value) => value.toDate()).pipe(z.date())
+  ]),
   timeoutMs: z.number().int().min(1_000).max(45_000),
   maxOutputTokens: z.number().int().min(128).max(8_192),
   workflows: z.object({

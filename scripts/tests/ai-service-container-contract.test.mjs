@@ -6,7 +6,7 @@ const repoRoot = resolve(import.meta.dirname, "../..");
 const read = (path) => readFileSync(resolve(repoRoot, path), "utf8");
 
 describe("private AI service container contract", () => {
-  it("uses a CommonJS bundle that can start Genkit's Node dependencies", () => {
+  it("starts the private service from its bundled CommonJS entry point", () => {
     const packageJSON = JSON.parse(read("backend/ai-service/package.json"));
     const dockerfile = read("backend/ai-service/Dockerfile");
 

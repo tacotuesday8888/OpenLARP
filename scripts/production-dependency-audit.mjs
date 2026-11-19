@@ -2,89 +2,85 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const ACCEPTED_CONTROLLED_BETA_HIGH_PACKAGES = Object.freeze([
-  "@genkit-ai/core",
-  "@genkit-ai/google-cloud",
-  "@opentelemetry/auto-instrumentations-node",
-  "@opentelemetry/propagator-jaeger",
-  "@opentelemetry/sdk-node",
-  "@opentelemetry/sdk-trace-node"
-]);
+const severityLevels = ["info", "low", "moderate", "high", "critical"];
+const invalidReport = { ok: false, message: "Production dependency audit report was invalid." };
 
 export function evaluateProductionAuditReport(report) {
   const counts = report?.metadata?.vulnerabilities;
   const vulnerabilities = report?.vulnerabilities;
   if (
     report?.auditReportVersion !== 2 ||
-    !counts ||
-    !Number.isInteger(counts.critical) ||
-    !Number.isInteger(counts.high) ||
+    report.error ||
+    ![...severityLevels, "total"].every((key) => Number.isSafeInteger(counts?.[key]) && counts[key] >= 0) ||
     !vulnerabilities ||
     typeof vulnerabilities !== "object" ||
     Array.isArray(vulnerabilities)
   ) {
-    return failure("Production dependency audit report format was invalid.");
+    return invalidReport;
   }
 
-  const entries = Object.values(vulnerabilities);
-  if (counts.critical > 0 || entries.some((entry) => entry?.severity === "critical")) {
-    return failure("Production dependency audit found a critical vulnerability.");
+  const entries = Object.entries(vulnerabilities);
+  const observed = Object.fromEntries(severityLevels.map((level) => [level, 0]));
+  for (const [name, entry] of entries) {
+    if (
+      !name || entry?.name !== name || !severityLevels.includes(entry.severity) ||
+      typeof entry.isDirect !== "boolean" || !Array.isArray(entry.via) || entry.via.length === 0
+    ) {
+      return invalidReport;
+    }
+    for (const cause of entry.via) {
+      if (typeof cause === "string" && Object.hasOwn(vulnerabilities, cause)) continue;
+      if (!severityLevels.includes(cause?.severity) ||
+          severityLevels.indexOf(cause.severity) > severityLevels.indexOf(entry.severity)) {
+        return invalidReport;
+      }
+    }
+    observed[entry.severity] += 1;
   }
 
-  const highEntries = entries.filter((entry) => entry?.severity === "high");
-  if (highEntries.length !== counts.high) {
-    return failure("Production dependency audit high-severity counts were inconsistent.");
+  if (entries.length !== counts.total || severityLevels.some((level) => observed[level] !== counts[level])) {
+    return invalidReport;
   }
-  if (highEntries.some((entry) => entry?.isDirect === true)) {
-    return failure("Production dependency audit found a direct high-severity vulnerability.");
-  }
-
-  const actualHighPackages = highEntries
-    .map((entry) => entry?.name)
-    .filter((name) => typeof name === "string")
-    .sort();
-  const acceptedHighPackages = [...ACCEPTED_CONTROLLED_BETA_HIGH_PACKAGES].sort();
-  if (
-    actualHighPackages.length !== acceptedHighPackages.length ||
-    actualHighPackages.some((name, index) => name !== acceptedHighPackages[index])
-  ) {
-    return failure("Production dependency audit high-severity residual changed and requires review.");
+  if (counts.high > 0 || counts.critical > 0) {
+    return { ok: false, message: `Production dependency audit found ${counts.high} high and ${counts.critical} critical findings.` };
   }
 
   return {
     ok: true,
-    acceptedTransitiveHighCount: acceptedHighPackages.length,
-    message: `Production dependency audit accepted ${acceptedHighPackages.length} enumerated transitive high findings for controlled beta.`
+    message: "Production dependency audit found zero high or critical findings."
   };
 }
 
-function failure(message) {
-  return { ok: false, acceptedTransitiveHighCount: 0, message };
-}
-
-function runCLI() {
-  const audit = spawnSync("npm", ["audit", "--omit=dev", "--json"], {
-    cwd: process.cwd(),
+function auditLockfile(directory, options = []) {
+  const args = ["--prefix", directory, "audit", "--package-lock-only", "--omit=dev", "--audit-level=high", "--json", ...options];
+  const audit = spawnSync("npm", args, {
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024
   });
-  if (audit.error || !audit.stdout) {
-    console.error("BLOCKER production dependency audit could not run.");
-    process.exit(1);
+  if (audit.error || audit.signal || !audit.stdout) {
+    return { ok: false, message: "Production dependency audit could not run." };
   }
 
   let report;
   try {
     report = JSON.parse(audit.stdout);
   } catch {
-    console.error("BLOCKER production dependency audit did not return JSON.");
-    process.exit(1);
+    return { ok: false, message: "Production dependency audit did not return JSON." };
   }
   const result = evaluateProductionAuditReport(report);
-  console.log(`${result.ok ? "PASS" : "BLOCKER"} ${result.message}`);
-  process.exit(result.ok ? 0 : 1);
+  if (result.ok && audit.status !== 0) {
+    return { ok: false, message: "npm audit returned an unsuccessful exit status." };
+  }
+  return result;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  runCLI();
+  const audits = [
+    ["Workspace", auditLockfile(".")],
+    ["Firebase Functions", auditLockfile("backend/functions", ["--workspaces=false"])]
+  ];
+  for (const [label, result] of audits) {
+    console.log(`${result.ok ? "PASS" : "BLOCKER"} ${label}: ${result.message}`);
+  }
+  process.exitCode = audits.every(([, result]) => result.ok) ? 0 : 1;
 }

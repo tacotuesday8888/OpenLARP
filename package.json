@@ -8,10 +8,6 @@
     "backend/functions",
     "firebase-rules"
   ],
-  "overrides": {
-    "brace-expansion": "2.1.4",
-    "fast-uri": "3.1.5"
-  },
   "scripts": {
     "typecheck:backend": "npm --workspace backend/ai run typecheck && npm --workspace backend/ai-service run typecheck && npm --workspace backend/functions run typecheck",
     "test:backend": "npm --workspace backend/ai test && npm --workspace backend/ai-service test && npm --workspace backend/functions test",
@@ -28,7 +24,7 @@
     "live-ai:smoke": "scripts/live-ai-smoke.sh"
   },
   "devDependencies": {
-    "firebase": "12.15.0",
+    "firebase": "12.19.0",
     "firebase-tools": "15.21.0",
     "yaml": "2.9.0"
   }

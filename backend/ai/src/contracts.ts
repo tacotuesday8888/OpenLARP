@@ -41,7 +41,7 @@ export const runMetadataSchema = z.object({
   kind: workflowKindSchema,
   providerRoute: providerRouteSchema,
   requestedAt: z.string().datetime(),
-  requestID: z.string().uuid(),
+  requestID: z.guid(),
   privacy: privacySchema
 });
 
@@ -81,7 +81,7 @@ export const careerFactKindSchema = z.enum([
 ]);
 
 const intakeFactBaseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   kind: careerFactKindSchema,
   value: z.string().min(1).max(4000),
   lastUpdatedAt: z.string().datetime()
@@ -103,7 +103,7 @@ export const adaptiveCareerIntakePayloadSchema = z.object({
     source: z.literal("aiHypothesis"),
     confirmationState: z.literal("awaitingConfirmation")
   })).max(12),
-  rejectedHypothesisIDs: z.array(z.string().uuid()).max(24),
+  rejectedHypothesisIDs: z.array(z.guid()).max(24),
   unknownKinds: z.array(careerFactKindSchema).max(11),
   questionHistory: z.array(z.object({
     factKind: careerFactKindSchema,
@@ -139,7 +139,7 @@ export const readinessMetricsSchema = z.object({
 });
 
 export const questSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.guid().optional(),
   day: z.number().int().min(1).max(14),
   title: z.string().min(1).max(120),
   purpose: z.string().min(1).max(500),
@@ -224,7 +224,7 @@ export const questPlanPayloadSchema = z.object({
   }),
   mission: z.lazy(() => missionBriefResponseSchema).optional(),
   chapterTwoContext: z.object({
-    sprintID: z.string().uuid(),
+    sprintID: z.guid(),
     checkpointSummary: z.string().min(1).max(800),
     nextFocus: z.string().min(1).max(500),
     readiness: readinessMetricsSchema,
@@ -263,7 +263,7 @@ export const contextualAssistantSurfaceSchema = z.enum([
 ]);
 
 const contextualAssistantFactSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   kind: careerFactKindSchema,
   value: z.string().min(1).max(4000)
 });
@@ -478,7 +478,7 @@ export const progressSummaryResponseSchema = z.object({
 
 export const contextualAssistantResponseSchema = z.object({
   answer: z.string().min(1).max(1200),
-  factIDsUsed: z.array(z.string().uuid()).max(8),
+  factIDsUsed: z.array(z.guid()).max(8),
   inferences: z.array(z.string().min(1).max(500)).max(4),
   advice: z.array(z.string().min(1).max(500)).min(1).max(4),
   nextAction: z.object({
