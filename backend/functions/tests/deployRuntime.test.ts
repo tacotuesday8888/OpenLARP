@@ -65,26 +65,27 @@ describe("Firebase Functions deploy runtime", () => {
     expect(entrypoint).toContain("providerBudgetGuard");
   });
 
-  it("keeps the deployable Functions package free of Genkit runtime dependencies", () => {
+  it("keeps the model provider SDK out of the deployable Functions package", () => {
     const packageJson = JSON.parse(readText("package.json")) as {
       dependencies?: Record<string, string>;
       scripts?: Record<string, string>;
     };
 
     expect(packageJson.dependencies).not.toHaveProperty("genkit");
-    expect(packageJson.dependencies).toHaveProperty("google-auth-library", "9.15.1");
-    expect(packageJson.dependencies).toHaveProperty("zod", "3.25.76");
-    expect(packageJson.scripts?.build).not.toContain("external:genkit");
+    expect(packageJson.dependencies).not.toHaveProperty("@google/genai");
+    expect(packageJson.dependencies).toHaveProperty("google-auth-library", "11.3.4");
+    expect(packageJson.dependencies).toHaveProperty("zod", "4.6.7");
+    expect(packageJson.scripts?.build).not.toContain("external:@google/genai");
   });
 
-  it("keeps shared request contracts on direct Zod instead of importing Genkit", () => {
+  it("keeps shared request contracts on direct Zod", () => {
     const sharedContracts = readFileSync(resolve(functionsRoot, "../ai/src/contracts.ts"), "utf8");
 
     expect(sharedContracts).toContain('from "zod"');
-    expect(sharedContracts).not.toContain('from "genkit"');
+    expect(sharedContracts).not.toContain('from "@google/genai"');
   });
 
-  it("keeps the bundled callable graph away from Genkit and AI barrel imports", async () => {
+  it("keeps provider code and AI barrel imports out of the bundled callable graph", async () => {
     const result = await build({
       entryPoints: [resolve(functionsRoot, "src/index.ts")],
       bundle: true,
@@ -100,7 +101,8 @@ describe("Firebase Functions deploy runtime", () => {
     const forbiddenInputs = inputs.filter((input) =>
       input.includes("node_modules/genkit")
       || input.includes("node_modules/@genkit-ai")
-      || input.endsWith("backend/ai/src/genkitFlows.ts")
+      || input.includes("node_modules/@google/genai/")
+      || input.endsWith("backend/ai/src/liveGeneration.ts")
       || input.endsWith("backend/ai/src/index.ts")
     );
 

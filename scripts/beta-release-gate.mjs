@@ -398,7 +398,7 @@ function validateWorkflowDefinition(workflow) {
 
   const publicSafety = uniqueRequiredStep(steps, "Check public repo safety");
   const betaGate = uniqueRequiredStep(steps, "Check beta release gate");
-  const backendTests = uniqueRequiredStep(steps, "Test Genkit backend");
+  const backendTests = uniqueRequiredStep(steps, "Test backend");
   const truthfulnessEvals = uniqueRequiredStep(steps, "Test AI truthfulness evals");
   const productionAudit = uniqueRequiredStep(steps, "Check production dependency audit");
   const backendBuild = uniqueRequiredStep(steps, "Build Firebase Functions backend");

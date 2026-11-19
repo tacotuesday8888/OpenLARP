@@ -167,7 +167,7 @@ function deterministicLiveWorkflow(envelope: RequestEnvelope): unknown {
   }
 }
 
-function responseSchemaForLiveWorkflow(kind: RequestEnvelope["run"]["kind"]): z.ZodTypeAny {
+function responseSchemaForLiveWorkflow(kind: RequestEnvelope["run"]["kind"]): z.ZodType {
   switch (kind) {
     case "adaptiveCareerIntake": return adaptiveCareerIntakeResponseSchema;
     case "cookedDiagnostic": return diagnosticResponseSchema;
@@ -183,7 +183,7 @@ function responseSchemaForLiveWorkflow(kind: RequestEnvelope["run"]["kind"]): z.
 async function generateWithTimeout(input: {
   generator: StructuredGenerator;
   prompt: ReturnType<typeof buildLiveWorkflowPrompt>;
-  schema: z.ZodTypeAny;
+  schema: z.ZodType;
   maxOutputTokens: number;
   timeoutMs: number;
   callerSignal?: AbortSignal;

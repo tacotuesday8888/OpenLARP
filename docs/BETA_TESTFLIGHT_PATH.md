@@ -17,13 +17,13 @@ This document tracks the practical path from the current local product foundatio
 - CI compiles both the public local-only and internal service-enabled targets as unsigned generic Release builds, in addition to exercising the internal target's Debug test suite on a simulator.
 - Firebase Auth, Sign in with Apple capability, and Google Sign-In packages are declared through XcodeGen/SPM while private plist config remains ignored.
 - App composition uses Firebase-ready backend session and backend event sync services without breaking local/no-auth mode.
-- Genkit backend package scaffolding exists with schemas, safety validation, deterministic testable flows, and backend-only Gemini model config.
-- Firebase Callable Functions package exists for auth-required AI workflow dispatch while live model calls remain disabled, and its deploy package is kept free of Genkit runtime dependencies.
+- The AI backend provides shared schemas, safety validation, deterministic workflows, and backend-only Gemini model configuration.
+- Firebase Callable Functions authenticate AI workflow requests and can dispatch them to the private Cloud Run service. Live model calls remain disabled by default.
 - Deterministic Firebase Callable Functions are deployed to the `openlarp-dev-langqi` dev project in `us-central1` with Node.js 22: `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`, `promoteProofUploadReceipt`, `reconcileProofUploads`, `cleanupRevokedPrivateEvidenceUploads`, `acknowledgeBackendEvents`, and `deleteOpenLARPAccount`.
 - `syncOpenLARPCareerState` is implemented and locally verified for versioned cross-device restore and conflict repair, but is not included in the current dev deployment yet.
 - The live callable endpoint is reachable and rejects unsigned workflow requests with `UNAUTHENTICATED`.
 - Functions Artifact Registry cleanup policies are installed for the dev project so old deployment images do not accumulate without a retention policy.
-- The iOS app now tries the Firebase callable Genkit route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.
+- The iOS app now tries the Firebase callable route for core V0 AI workflows and falls back to local mock output when Firebase is missing, signed out, or unavailable.
 - Authenticated proof upload reconciliation callable exists for report-only scans and explicit safe deletion of orphaned Storage proof uploads.
 - Firebase Auth service boundary exists for restore, Google sign-in, Apple sign-in, sign-out, missing-config states, callback URL handling, and Apple token revocation preparation before account deletion.
 - Google Sign-In is enabled in the Firebase dev project, the ignored local iOS plist has OAuth client IDs, and the XcodeGen project declares the public reversed client ID URL scheme.
@@ -53,7 +53,7 @@ This document tracks the practical path from the current local product foundatio
 4. Verify uploaded proof backup cleanup and account deletion controls on signed-in Google and Apple simulator/device sessions, including Google recent reauthentication, Apple token revocation before deletion, lost-response/unknown-result support handling, then finalize privacy/legal/support copy for broad external TestFlight.
 5. Create RevenueCat/App Store products, add ignored local `RevenueCat-Info.plist`, replace the compact purchase CTA with the designer-led paywall, and complete sandbox/Test Store purchase verification including anonymous purchase aliasing, Firebase UID login, sign-out reset, restore, cancellation, expiration, and account-switch cases.
 6. Register App Check in Firebase Console, register simulator debug tokens as private secrets, verify device App Attest metrics, update live smoke tooling for App Check tokens, then enable App Check enforcement before treating all cloud data as authoritative or enabling live AI.
-7. Decide whether TestFlight ships with deterministic backend AI only or waits for live Genkit/Gemini. Keep LLM providers server-side either way, and configure explicit provider pricing/budgets before enabling live model calls.
+7. Decide whether TestFlight ships with deterministic backend AI only or waits for live Gemini. Keep LLM providers server-side either way, and configure explicit provider pricing/budgets before enabling live model calls.
 8. Finalize hosted privacy policy, support URL, App Store screenshots, and TestFlight notes from the draft launch packet.
 9. Run a signed archive on the Apple Developer team and upload to App Store Connect.
 
@@ -70,7 +70,7 @@ npm run firebase:live-readiness
 
 ## Backend Dependency Risk
 
-`npm audit --workspace backend/ai --omit=dev --audit-level=high` currently reports upstream Genkit/OpenTelemetry transitive advisories. Keep live Genkit/Gemini AI disabled until the backend dependency tree is upgraded or pinned to advisory-free versions, and run a fresh audit before deployment.
+Run `npm run audit:production` before deployment. Both the workspace and the standalone Firebase Functions lockfile must have zero high or critical production dependency findings.
 
 ## What Should Wait For Designer HTML
 

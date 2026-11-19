@@ -16,13 +16,10 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 - Callable quota: per-user daily Firestore-backed units for work-producing
   authenticated callables
 - Runtime: Node.js 22
-- Firebase Admin: pinned to `13.10.0` to satisfy
-  `firebase-functions@7.2.5` peer dependencies
+- The deployment manifest pins compatible Firebase Admin and Functions SDK versions.
 - Live model calls: disabled
 - Provider secrets: not required locally and must never be committed
 - Workflow contracts: imported from `backend/ai`
-- Deploy package: intentionally does not depend on Genkit while live model calls
-  are disabled
 - Deploy lockfile: `backend/functions/package-lock.json` is committed so
   Firebase Cloud Build installs the same deploy-source dependency graph
 - Dev deploy: `runOpenLARPWorkflow`, `setPrivateEvidenceCloudSyncConsent`,
@@ -34,10 +31,8 @@ The iOS app should call Firebase Auth-protected callable functions, not provider
 - Artifact cleanup: `gcf-artifacts` keeps the most recent 5 versions and deletes
   artifacts older than 7 days
 
-The deployable Functions runtime validates shared request/response contracts with
-direct Zod imports. Genkit stays isolated in `backend/ai` so deterministic
-callable functions can be built and deployed without bundling the current
-Genkit/OpenTelemetry dependency tree.
+The deployable Functions runtime validates shared request and response contracts with
+Zod 4. The private Cloud Run service owns the Google Gen AI SDK and Vertex AI access.
 
 ## Proof Upload Promotion
 
@@ -173,9 +168,8 @@ Consent toggles and account deletion are intentionally outside the daily quota
 guard so users can always revoke private evidence cloud sync and request account
 deletion.
 
-This is a beta request-unit guard. Live Genkit/Gemini still needs provider token
-accounting, App Check enforcement, observability, and alerting before broad
-traffic.
+This guard limits request units. Before enabling broad traffic, verify provider token
+accounting, App Check enforcement, observability, and alerting.
 
 ## Backend Event Acknowledgement
 
