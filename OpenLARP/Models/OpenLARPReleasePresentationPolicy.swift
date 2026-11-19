@@ -152,9 +152,9 @@ enum ProfilePrivacyPresentation: String, Equatable, Sendable {
     var visibleControls: [ProfilePrivacyControl] {
         switch self {
         case .localOnlyNotice:
-            []
+            [.shareableWins]
         case .cloudControls:
-            [.privateEvidenceCloudSync]
+            [.shareableWins, .privateEvidenceCloudSync]
         }
     }
 

@@ -59,7 +59,9 @@
 		52877978FB95B59C9302B2B9 /* BetaMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D94367071D26EC53B70E4C2 /* BetaMeasurementTests.swift */; };
 		52F52AA3274E6F522B33536D /* OpenLARPBetaMeasurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 404CAE7BD2E7B7A1199D312D /* OpenLARPBetaMeasurement.swift */; };
 		54E8488BD24F11C2B5E77326 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = C0AC7D45644C89C4DC16CE5B /* FirebaseFunctions */; };
+		55A68F5013013F5FE64E351E /* MilestoneShareCardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73A4473F0D88B485D7FBD56 /* MilestoneShareCardTests.swift */; };
 		5719578F3701E303B3C82BAC /* QuestPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65AE049F689207B56A408E9 /* QuestPreviewView.swift */; };
+		584D508D1BBAC71290F06C3D /* MilestoneShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 439EA2FA17ECAFA7E9FC4C17 /* MilestoneShareCard.swift */; };
 		58A2BAAC6EC44EBEDA0F1961 /* MissionBriefTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26DE0D983438B1F1ACCA6B39 /* MissionBriefTests.swift */; };
 		5AFEC180419B34F7CF040EB7 /* CompletedQuestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */; };
 		5D3130594C03FEDD4E87E491 /* OpenLARPLocalDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1474B47727BE0F91D30140 /* OpenLARPLocalDataStore.swift */; };
@@ -105,10 +107,12 @@
 		AA9A8309B3F615C91455961B /* ProofArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38A7544CA52F69EBE427B74 /* ProofArchiveView.swift */; };
 		AB4887FCA0C7653AA0A5FFC0 /* OpenLARPAttachmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8140307FB53F34C6E1DD623 /* OpenLARPAttachmentStore.swift */; };
 		AB5340B620F1DACAABF1A409 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = E427862DC32A18759A6492D8 /* FirebaseStorage */; };
+		ABA4A586243CA7A686D17851 /* MilestoneShareCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE33AF4699B21389C3961F7A /* MilestoneShareCardView.swift */; };
 		AE1297BA0332DD5C9843B616 /* OpenLARPApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601E79F5844C6D89A84C354B /* OpenLARPApp.swift */; };
 		AEE37D2FD3A7FFF2F9ADF201 /* OpenLARPQuestReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = B332B0B8E65DA3BFEB21BBCC /* OpenLARPQuestReminders.swift */; };
 		B0E86A8FF829752B042D58AE /* MissionBriefReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECB05C53B4EA09E690913C9 /* MissionBriefReviewView.swift */; };
 		B499952BF2656E87AE7DBA46 /* LocalDataExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76674E2BEC070DD5982B2ED3 /* LocalDataExportTests.swift */; };
+		B63B640605F7E8382D46668B /* MilestoneShareCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE33AF4699B21389C3961F7A /* MilestoneShareCardView.swift */; };
 		B7BAAD41817C1157A1B5569B /* OpenLARPLocalDataExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BAC50140AD73A37E2DA647 /* OpenLARPLocalDataExport.swift */; };
 		B8A91DA6A6EC76569653EA37 /* CompletedQuestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */; };
 		B9F2ACEA15E34218859ECD7F /* OpenLARPStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3447BF3025FF32A58EA3A1A1 /* OpenLARPStyle.swift */; };
@@ -133,6 +137,7 @@
 		EEBBF6AEE3897263482F8023 /* OpenLARPAIWorkflowContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7F4B923B6F71934D650D8F /* OpenLARPAIWorkflowContracts.swift */; };
 		F03FDE7E904C382F81746339 /* OpenLARPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8AF0E1D740ACDC741F585D /* OpenLARPModels.swift */; };
 		F380ECF5AD25C430559A830F /* OpenLARPCloudContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D35430DA658F76CC63EB78 /* OpenLARPCloudContracts.swift */; };
+		F388215C1090C7B0997F0D12 /* MilestoneShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 439EA2FA17ECAFA7E9FC4C17 /* MilestoneShareCard.swift */; };
 		F7C9AA391A7E9FC947B0B352 /* OpenLARPLocalDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1474B47727BE0F91D30140 /* OpenLARPLocalDataStore.swift */; };
 		FBCE6E4D4C69B60EB23CEB0A /* OpenLARPFirebaseBackendServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9264BE7F3F697BC161B14E50 /* OpenLARPFirebaseBackendServices.swift */; };
 		FE1152BBB61D977068A6E8D5 /* OnboardingAccountEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110A29E9E3702EAF1A89FDDE /* OnboardingAccountEntryView.swift */; };
@@ -189,6 +194,7 @@
 		3E597104F3EE10CDAA1EBC2C /* OpenLARPSubscriptionContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPSubscriptionContracts.swift; sourceTree = "<group>"; };
 		3F1474B47727BE0F91D30140 /* OpenLARPLocalDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPLocalDataStore.swift; sourceTree = "<group>"; };
 		404CAE7BD2E7B7A1199D312D /* OpenLARPBetaMeasurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPBetaMeasurement.swift; sourceTree = "<group>"; };
+		439EA2FA17ECAFA7E9FC4C17 /* MilestoneShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MilestoneShareCard.swift; sourceTree = "<group>"; };
 		4C9DDB58985395E7EA0E0FAC /* OpenLARPEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPEngine.swift; sourceTree = "<group>"; };
 		521FE05E7476E00B73EA58E0 /* ProofAttachmentStoreLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofAttachmentStoreLifecycleTests.swift; sourceTree = "<group>"; };
 		5444139510DC649A8A9501A8 /* AppCheckReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCheckReadinessTests.swift; sourceTree = "<group>"; };
@@ -230,6 +236,7 @@
 		B404DDA9119736B85134EDDE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B52BB775BB9A302F0E588568 /* ReleaseServiceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseServiceBoundaryTests.swift; sourceTree = "<group>"; };
 		B9D4627A3B93C85AB8432AA7 /* OpenLARPShareCardExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPShareCardExport.swift; sourceTree = "<group>"; };
+		BE33AF4699B21389C3961F7A /* MilestoneShareCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MilestoneShareCardView.swift; sourceTree = "<group>"; };
 		C250E96AF97AF11EF815E0F1 /* OpenLARPUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenLARPUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedQuestDetailView.swift; sourceTree = "<group>"; };
 		C4F4602A8D25DBEC2DAAE7B4 /* OpenLARPAppStoreFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPAppStoreFactory.swift; sourceTree = "<group>"; };
@@ -244,6 +251,7 @@
 		E02D1D89FFC34F40C6425094 /* AgentDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDashboardView.swift; sourceTree = "<group>"; };
 		E2BD605A6A1C22DBF4BA95A8 /* QuestJourneyContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestJourneyContent.swift; sourceTree = "<group>"; };
 		E5ABD359BEDC7955E7EBC902 /* OpenLARPInternal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenLARPInternal.entitlements; sourceTree = "<group>"; };
+		E73A4473F0D88B485D7FBD56 /* MilestoneShareCardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MilestoneShareCardTests.swift; sourceTree = "<group>"; };
 		E9CBA4417DBE205BCE9BEEAC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		F5123580C0ECE13B609D002C /* OpenLARPProofImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenLARPProofImageProcessor.swift; sourceTree = "<group>"; };
 		FECB05C53B4EA09E690913C9 /* MissionBriefReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionBriefReviewView.swift; sourceTree = "<group>"; };
@@ -281,6 +289,7 @@
 				9B52AD535F1C64725BDCE83B /* FirebaseCareerGraphSyncReadinessTests.swift */,
 				76674E2BEC070DD5982B2ED3 /* LocalDataExportTests.swift */,
 				18B1E1EEF319484CA5E02687 /* LocalDataOwnershipTests.swift */,
+				E73A4473F0D88B485D7FBD56 /* MilestoneShareCardTests.swift */,
 				26DE0D983438B1F1ACCA6B39 /* MissionBriefTests.swift */,
 				521FE05E7476E00B73EA58E0 /* ProofAttachmentStoreLifecycleTests.swift */,
 				21F481061931A10C3D19445D /* ProofDraftStoreTests.swift */,
@@ -320,6 +329,7 @@
 				C33D12276193DA43E63EBAF2 /* CompletedQuestDetailView.swift */,
 				D946DF64F47A7C90479E8173 /* CookedShareCardView.swift */,
 				716619FBED12385EF5E1A435 /* GuidedCareerOnboardingView.swift */,
+				BE33AF4699B21389C3961F7A /* MilestoneShareCardView.swift */,
 				FECB05C53B4EA09E690913C9 /* MissionBriefReviewView.swift */,
 				110A29E9E3702EAF1A89FDDE /* OnboardingAccountEntryView.swift */,
 				12DC112A777D32FCE8C8EE04 /* ProfileView.swift */,
@@ -375,6 +385,7 @@
 		AA1F7B0DF97B169436299E1D /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				439EA2FA17ECAFA7E9FC4C17 /* MilestoneShareCard.swift */,
 				CC0ACFAB044B7890FEF3F2D6 /* OpenLARPAgentFoundation.swift */,
 				5D7F4B923B6F71934D650D8F /* OpenLARPAIWorkflowContracts.swift */,
 				C4F4602A8D25DBEC2DAAE7B4 /* OpenLARPAppStoreFactory.swift */,
@@ -660,6 +671,7 @@
 				2E0F095308879A0FF0E744BC /* FirebaseCareerGraphSyncReadinessTests.swift in Sources */,
 				B499952BF2656E87AE7DBA46 /* LocalDataExportTests.swift in Sources */,
 				24267A55433A10A71B29D407 /* LocalDataOwnershipTests.swift in Sources */,
+				55A68F5013013F5FE64E351E /* MilestoneShareCardTests.swift in Sources */,
 				58A2BAAC6EC44EBEDA0F1961 /* MissionBriefTests.swift in Sources */,
 				C309599C63C1F3805EFEABA1 /* ProofAttachmentStoreLifecycleTests.swift in Sources */,
 				1BC215AE731B9243BD4A118A /* ProofDraftStoreTests.swift in Sources */,
@@ -685,6 +697,8 @@
 				5AFEC180419B34F7CF040EB7 /* CompletedQuestDetailView.swift in Sources */,
 				80194F06EC7A0AD3A535D035 /* CookedShareCardView.swift in Sources */,
 				A41169926143AAADD2A9B105 /* GuidedCareerOnboardingView.swift in Sources */,
+				F388215C1090C7B0997F0D12 /* MilestoneShareCard.swift in Sources */,
+				B63B640605F7E8382D46668B /* MilestoneShareCardView.swift in Sources */,
 				B0E86A8FF829752B042D58AE /* MissionBriefReviewView.swift in Sources */,
 				FE1152BBB61D977068A6E8D5 /* OnboardingAccountEntryView.swift in Sources */,
 				7FED685774E3A0A37BB4692A /* OpenLARPAIWorkflowContracts.swift in Sources */,
@@ -739,6 +753,8 @@
 				B8A91DA6A6EC76569653EA37 /* CompletedQuestDetailView.swift in Sources */,
 				3CD390C93F63687423733772 /* CookedShareCardView.swift in Sources */,
 				70EF6876F14B40BB381F98BE /* GuidedCareerOnboardingView.swift in Sources */,
+				584D508D1BBAC71290F06C3D /* MilestoneShareCard.swift in Sources */,
+				ABA4A586243CA7A686D17851 /* MilestoneShareCardView.swift in Sources */,
 				34C1CA8F370728133BA3F65C /* MissionBriefReviewView.swift in Sources */,
 				04AEAD026340AC4771EB50CD /* OnboardingAccountEntryView.swift in Sources */,
 				EEBBF6AEE3897263482F8023 /* OpenLARPAIWorkflowContracts.swift in Sources */,

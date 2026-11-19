@@ -126,6 +126,7 @@ struct ProgressTabView: View {
         case .detail(let outcome):
             OutcomeDetailView(
                 outcome: outcome,
+                store: store,
                 isEditable: !state.needsGoalSetup,
                 edit: {
                     outcomeSheetDestination = .edit(outcome)
@@ -285,6 +286,18 @@ struct ProgressTabView: View {
                     SummaryTile(value: "\(state.progress.streakCount)", label: "Streak", color: .openLARPCoral)
                 }
 
+                if let card = MilestoneShareCard(selection: .streak, state: state) {
+                    MilestoneCardButton(card: card) {
+                        Label("Preview Streak Card", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("progress.shareStreak")
+                } else if state.progress.streakCount > 0, state.userProfile?.privacy.shareWins == false {
+                    Text("To make a milestone card, turn on Shareable wins in Profile.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.openLARPSoftInk)
+                }
+
                 if let recovery = MissedDayRecoveryContent(state: state) {
                     Label("\(recovery.previousStreakText). Active streak reset after \(recovery.missedDaysText.lowercased())", systemImage: "arrow.counterclockwise")
                         .font(.caption.weight(.semibold))
@@ -359,19 +372,50 @@ struct ProgressTabView: View {
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 8)], alignment: .leading, spacing: 8) {
                         ForEach(state.progress.badges) { badge in
-                            Label(badge.rawValue, systemImage: "seal.fill")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(Color.openLARPGreen)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 9)
-                                .background(Color.openLARPGreen.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            if let card = MilestoneShareCard(selection: .badge(badge), state: state) {
+                                MilestoneCardButton(card: card) {
+                                    badgeLabel(badge, shareable: true)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Preview \(badge.rawValue) badge card")
+                            } else {
+                                badgeLabel(badge, shareable: false)
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    private func badgeLabel(_ badge: Badge, shareable: Bool) -> some View {
+        HStack {
+            Label(badge.rawValue, systemImage: "seal.fill")
+            Spacer(minLength: 0)
+            if shareable {
+                Image(systemName: "square.and.arrow.up")
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.caption.weight(.bold))
+        .foregroundStyle(Color.openLARPGreen)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 44)
+        .background(Color.openLARPGreen.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct MilestoneCardButton<Label: View>: View {
+    let card: MilestoneShareCard
+    @ViewBuilder let label: () -> Label
+    @State private var showingPreview = false
+
+    var body: some View {
+        Button { showingPreview = true } label: { label() }
+            .sheet(isPresented: $showingPreview) {
+                MilestoneShareCardSheet(card: card)
+            }
     }
 }
 
@@ -384,6 +428,7 @@ struct OutcomeLogCard: View {
     var availability: OutcomeLogAvailability = .available
     let openOutcome: (CareerOutcomeRecord) -> Void
     let logOutcome: () -> Void
+    @State private var showingAllOutcomes = false
 
     var body: some View {
         Card {
@@ -423,7 +468,7 @@ struct OutcomeLogCard: View {
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ForEach(content.outcomes.prefix(recentLimit)) { outcome in
+                    ForEach(content.outcomes.prefix(showingAllOutcomes ? content.outcomes.count : recentLimit)) { outcome in
                         Button {
                             openOutcome(outcome)
                         } label: {
@@ -431,6 +476,12 @@ struct OutcomeLogCard: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Opens outcome details")
+                    }
+                    if content.outcomes.count > recentLimit {
+                        Button(showingAllOutcomes ? "Show Recent Outcomes" : "Show All \(content.outcomes.count) Outcomes") {
+                            showingAllOutcomes.toggle()
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
                     }
                 }
             }
@@ -501,7 +552,7 @@ struct OutcomeRecordRow: View {
         if let organizationText = outcome.organizationText {
             parts.append(organizationText)
         }
-        parts.append(outcome.isPrivate ? "Private" : "Marked safe to share later")
+        parts.append(outcome.isPrivate ? "Private" : "Shareable outcome type")
         return parts.joined(separator: " - ")
     }
 
@@ -571,7 +622,7 @@ struct OutcomeLogSheet: View {
                     }
                     .tint(.openLARPBlue)
                 } footer: {
-                    Text("This saves to local career history on this device. It is not uploaded, posted, or shown on a public profile.")
+                    Text("Turn off Keep Private to make the outcome type eligible for a milestone card. Your title, organization, and note stay off the card.")
                 }
             }
             .navigationTitle(outcome == nil ? "Log Outcome" : "Edit Outcome")
@@ -608,6 +659,7 @@ struct OutcomeLogSheet: View {
 
 struct OutcomeDetailView: View {
     let outcome: CareerOutcomeRecord
+    let store: OpenLARPStore
     let isEditable: Bool
     let edit: () -> Void
     let delete: () -> Void
@@ -675,9 +727,16 @@ struct OutcomeDetailView: View {
                     )
                     OutcomeDetailMetric(
                         title: "Privacy",
-                        value: outcome.isPrivate ? "Private" : "Share-safe",
+                        value: outcome.isPrivate ? "Private" : "Type only",
                         systemImage: outcome.isPrivate ? "lock.fill" : "checkmark.seal"
                     )
+                }
+
+                if let card = MilestoneShareCard(selection: .outcome(outcome.id), state: store.state) {
+                    MilestoneCardButton(card: card) {
+                        Label("Preview Outcome Card", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
                 }
             }
         }

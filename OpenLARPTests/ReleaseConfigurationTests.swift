@@ -121,7 +121,7 @@ final class ReleaseConfigurationTests: XCTestCase {
         )
 
         let privacyPresentation = ProfilePrivacyPresentation.mode(for: .appStoreMVP)
-        XCTAssertEqual(privacyPresentation.visibleControls, [])
+        XCTAssertEqual(privacyPresentation.visibleControls, [.shareableWins])
         XCTAssertEqual(
             privacyPresentation.localOnlyContent?.dataHandlingStatement,
             "OpenLARP does not upload or sync career data in this release."
@@ -187,7 +187,7 @@ final class ReleaseConfigurationTests: XCTestCase {
         let privacyPresentation = ProfilePrivacyPresentation.mode(for: .internalBeta)
         XCTAssertEqual(
             privacyPresentation.visibleControls,
-            [.privateEvidenceCloudSync]
+            [.shareableWins, .privateEvidenceCloudSync]
         )
         XCTAssertNil(privacyPresentation.localOnlyContent)
     }

@@ -1,5 +1,5 @@
 import CoreTransferable
-import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct CookedShareCardExportPayload: Equatable {
@@ -64,7 +64,7 @@ struct CookedShareCardExportPayload: Equatable {
     }
 }
 
-struct CookedShareCardImageExport: Equatable {
+struct ShareCardImageExport: Equatable {
     let pngData: Data
     let filename: String
     let caption: String
@@ -73,12 +73,34 @@ struct CookedShareCardImageExport: Equatable {
     let contentType = "image/png"
     let fileExtension = "png"
 
-    var shareItem: CookedShareCardImageShareItem {
-        CookedShareCardImageShareItem(data: pngData, filename: filename)
+    var shareItem: ShareCardImageItem {
+        ShareCardImageItem(data: pngData, filename: filename)
+    }
+
+    @MainActor
+    static func render(
+        _ artwork: some View,
+        size: CGSize,
+        scale: CGFloat = 1,
+        filename: String,
+        caption: String,
+        subject: String
+    ) throws -> Self {
+        let content = artwork
+            .frame(width: size.width, height: size.height)
+            .environment(\.colorScheme, .light)
+        let renderer = ImageRenderer(content: content)
+        renderer.proposedSize = ProposedViewSize(size)
+        renderer.scale = scale
+
+        guard let image = renderer.uiImage else { throw ShareCardExportError.renderingFailed }
+        guard let data = image.pngData(), !data.isEmpty else { throw ShareCardExportError.emptyPNGData }
+        let pixelSize = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        return Self(pngData: data, filename: filename, caption: caption, subject: subject, pixelSize: pixelSize)
     }
 }
 
-struct CookedShareCardImageShareItem: Transferable, Equatable {
+struct ShareCardImageItem: Transferable, Equatable {
     let data: Data
     let filename: String
 
@@ -92,16 +114,16 @@ struct CookedShareCardImageShareItem: Transferable, Equatable {
     }
 }
 
-enum CookedShareCardExportError: LocalizedError {
+enum ShareCardExportError: LocalizedError {
     case renderingFailed
     case emptyPNGData
 
     var errorDescription: String? {
         switch self {
         case .renderingFailed:
-            "Could not render the cooked card image."
+            "Could not render the card image."
         case .emptyPNGData:
-            "The cooked card image rendered without PNG data."
+            "The card image rendered without PNG data."
         }
     }
 }
