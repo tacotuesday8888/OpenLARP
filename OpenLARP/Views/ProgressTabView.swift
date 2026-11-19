@@ -428,6 +428,7 @@ struct OutcomeLogCard: View {
     var availability: OutcomeLogAvailability = .available
     let openOutcome: (CareerOutcomeRecord) -> Void
     let logOutcome: () -> Void
+    @State private var showingAllOutcomes = false
 
     var body: some View {
         Card {
@@ -467,7 +468,7 @@ struct OutcomeLogCard: View {
                         .foregroundStyle(Color.openLARPSoftInk)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ForEach(content.outcomes.prefix(recentLimit)) { outcome in
+                    ForEach(content.outcomes.prefix(showingAllOutcomes ? content.outcomes.count : recentLimit)) { outcome in
                         Button {
                             openOutcome(outcome)
                         } label: {
@@ -475,6 +476,12 @@ struct OutcomeLogCard: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Opens outcome details")
+                    }
+                    if content.outcomes.count > recentLimit {
+                        Button(showingAllOutcomes ? "Show Recent Outcomes" : "Show All \(content.outcomes.count) Outcomes") {
+                            showingAllOutcomes.toggle()
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
                     }
                 }
             }
